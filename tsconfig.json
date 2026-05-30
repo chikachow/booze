@@ -1,0 +1,12 @@
+{
+  "extends": ["@tsconfig/recommended", "@tsconfig/strictest", "@tsconfig/node24"],
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "noUncheckedSideEffectImports": true,
+    "verbatimModuleSyntax": true
+  }
+}
