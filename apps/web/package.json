@@ -1,0 +1,33 @@
+{
+  "name": "@chikachow/booze-web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "WRANGLER_WRITE_LOGS=false vite build",
+    "deploy": "WRANGLER_WRITE_LOGS=false vite build && WRANGLER_WRITE_LOGS=false wrangler deploy",
+    "dev": "WRANGLER_WRITE_LOGS=false vite dev",
+    "preview": "vite preview",
+    "test": "node --test --enable-source-maps",
+    "typecheck": "tsc --noEmit",
+    "wrangler:types": "wrangler types"
+  },
+  "dependencies": {
+    "@chikachow/booze-db": "workspace:*",
+    "@clerk/backend": "3.4.14",
+    "@clerk/react": "6.7.2",
+    "hono": "4.12.23",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.39.0",
+    "@cloudflare/workers-types": "4.20260529.1",
+    "@types/react": "19.2.15",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "vite": "8.0.14",
+    "wrangler": "4.95.0"
+  }
+}

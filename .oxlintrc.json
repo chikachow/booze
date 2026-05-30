@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "import", "node", "promise", "unicorn"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "restriction": "error"
+  },
+  "ignorePatterns": [
+    "apps/*/.vinext/**",
+    "apps/*/.wrangler/**",
+    "apps/*/dist/**",
+    "node_modules/**",
+    "**/generated/**"
+  ],
+  "rules": {
+    "eslint/max-lines": "off",
+    "eslint/max-lines-per-function": "off",
+    "eslint/no-undefined": "off",
+    "eslint/require-await": "off",
+    "import/no-relative-parent-imports": "off",
+    "no-async-await": "off",
+    "no-optional-chaining": "off",
+    "no-rest-spread-properties": "off",
+    "promise/prefer-await-to-callbacks": "error",
+    "promise/prefer-await-to-then": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/explicit-function-return-type": "off",
+    "typescript/no-misused-promises": [
+      "error",
+      {
+        "checksVoidReturn": {
+          "properties": false
+        }
+      }
+    ],
+    "typescript/prefer-readonly-parameter-types": "off",
+    "typescript/require-await": "off",
+    "typescript/strict-boolean-expressions": "off",
+    "typescript/strict-void-return": "error"
+  }
+}
