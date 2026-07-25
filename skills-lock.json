@@ -7,11 +7,6 @@
       "skillPath": "skills/agents-sdk/SKILL.md",
       "computedHash": "cb669fba9289d500872584ea0daab1c5114f1c8f12a991f90871431d3fadbf3c"
     },
-    "clerk-cli": {
-      "source": "/var/folders/xq/2xyb5cmd14lb8q9ycv3ylsh40000gp/T/clerk-cli-skill-Q1gNRl",
-      "sourceType": "local",
-      "computedHash": "40da1ab8bae6401f5f70657f176473f646ef517279383b0f53a3a6c75603ce68"
-    },
     "cloudflare": {
       "source": "cloudflare/skills",
       "sourceType": "github",

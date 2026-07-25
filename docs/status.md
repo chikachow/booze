@@ -13,7 +13,7 @@ packages/db
 
 `apps/web` is the deployable Cloudflare Worker application. It uses Vite, React, the Cloudflare Vite plugin, Clerk, and Hono. The Worker serves the SPA assets and API routes.
 
-`packages/db` contains the Drizzle SQLite schema and D1 migrations for users, site memberships, sites, wineries, collapsed wine vintages, grape varieties, wine constituents, bottles, storage locations, bottle locations, and label extractions.
+`packages/db` contains the Drizzle SQLite schema and append-only D1 migrations for the cellar catalogue, capture processing, critic reviews, awards, MCP audit events, and durable object cleanup.
 
 ## Current User Workflows
 
@@ -33,6 +33,10 @@ Implemented browser workflows:
 12. See bottles that are ready, soon due, or past their drink window.
 13. Move bottles between known storage locations or back to no location.
 14. Mark bottles consumed.
+15. Upload bottle images, run multi-model label extraction, and review uncertain matches before import.
+16. Record critic reviews and wine awards.
+17. Delete completed captures and sites with durable R2 object cleanup.
+18. Use audited MCP tools for read and write cellar operations.
 
 Implemented Worker routes:
 
@@ -51,6 +55,18 @@ GET    /api/storage-locations
 POST   /api/storage-locations
 PATCH  /api/storage-locations/:storageLocationId
 DELETE /api/storage-locations/:storageLocationId
+GET    /api/bottle-captures
+POST   /api/bottle-captures
+GET    /api/bottle-captures/:captureId
+POST   /api/bottle-captures/:captureId/retry
+POST   /api/bottle-captures/:captureId/import
+DELETE /api/bottle-captures/:captureId
+GET    /api/review-sources
+POST   /api/review-sources
+GET    /api/critic-reviews
+PUT    /api/critic-reviews
+PUT    /api/wines/:wineVintageId/critic-reviews
+DELETE /api/critic-reviews/:reviewId
 ```
 
 ## Authentication and Authorisation
@@ -62,11 +78,15 @@ Local development can send `x-dev-user: local-browser` only when:
 1. the request host is `localhost` or `127.0.0.1`; and
 2. `CLERK_SECRET_KEY` is unset.
 
-The app maps Clerk users to internal user rows and creates owner memberships through the current site and storage-location upsert flow. API routes enforce site membership before returning inventory or changing existing bottle, storage-location, or site records.
+The app maps Clerk users to internal user rows. New sites receive user-scoped IDs and an owner membership, so choosing another site's name cannot grant access to it.
 
-Deleting a storage location removes bottle-location rows and keeps affected bottles in the same site with no location. Deleting a site removes site-owned bottle locations, bottles, wine constituents, wine vintages, wineries, storage locations, memberships, and the site row.
+Server-side site roles enforce this matrix:
 
-Role-specific owner/editor/viewer enforcement is not implemented yet.
+- `owner`: read and write cellar content, rename a site, and delete a site;
+- `editor`: read and write cellar content, including captures and MCP mutations;
+- `viewer`: read-only access.
+
+Deleting a storage location removes bottle-location rows and keeps affected bottles in the same site with no location. Deleting a completed capture removes its runs and exclusive image assets. Deleting a site removes all site-owned catalogue and capture rows. Both deletion paths enqueue R2 keys in the same D1 transaction, then delete objects immediately or through an hourly retry. MCP audit rows are retained unchanged after site deletion.
 
 ## Product Gaps
 
@@ -77,12 +97,10 @@ Not yet implemented:
 3. richer wine and bottle detail editing beyond the current capture form;
 4. movement history and tasting notes;
 5. CSV import/export;
-6. R2 storage for label images and automated wine enrichment;
-7. Vectorize semantic search;
-8. MCP endpoint;
-9. automated test coverage for the current workflows.
+6. Vectorize semantic search;
+7. broader API and browser workflow coverage.
 
-The UI accepts label photos from mobile browsers and sends them to the label-extraction endpoint for OCR-style field suggestions. The image remains transient; it is not stored in R2 yet.
+The UI stores validated label images in R2 for the capture lifetime. Multi-model extraction can import only when the reconciliation is confident and conflict-free; all other candidates remain available for explicit review. Images and run artifacts are removed only when the capture or its site is explicitly deleted.
 
 ## Deployment
 
@@ -100,4 +118,4 @@ Latest local verification:
 node --run check
 ```
 
-This runs formatting, lint, typecheck, and package test scripts. The current package test suites contain no tests, so the next engineering priority is workflow coverage for the API and browser behavior.
+This runs formatting, lint, typecheck, and package test scripts. The Worker suite covers authorisation roles, OCR review decisions, capture artifacts, D1 deletion with foreign keys, durable R2 retry, MCP schemas and metadata, audit rollback, and OAuth metadata. Broader route-level and browser coverage remains desirable.
