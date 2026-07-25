@@ -8,6 +8,8 @@
     "restriction": "error"
   },
   "ignorePatterns": [
+    ".agents/**",
+    ".playwright-mcp/**",
     "apps/*/.vinext/**",
     "apps/*/.wrangler/**",
     "apps/*/dist/**",

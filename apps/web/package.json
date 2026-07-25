@@ -9,16 +9,19 @@
     "dev": "WRANGLER_WRITE_LOGS=false vite dev",
     "preview": "vite preview",
     "test": "node --test --enable-source-maps",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit",
     "wrangler:types": "wrangler types"
   },
   "dependencies": {
     "@chikachow/booze-db": "workspace:*",
     "@clerk/backend": "3.4.14",
     "@clerk/react": "6.12.6",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "drizzle-orm": "0.45.2",
     "hono": "4.12.31",
     "react": "19.2.8",
     "react-dom": "19.2.6",
+    "react-hook-form": "7.76.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
