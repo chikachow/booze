@@ -18,11 +18,11 @@ export function errorDetails(error: unknown): ErrorDetails {
 }
 
 export function logError(event: string, fields: Record<string, LogField>): void {
-  // oxlint-disable-next-line no-console
+  // oxlint-disable-next-line no-console -- Worker logs are the production observability sink.
   console.error(JSON.stringify({ level: "error", event, ...fields }));
 }
 
 export function logInfo(event: string, fields: Record<string, LogField>): void {
-  // oxlint-disable-next-line no-console
+  // oxlint-disable-next-line no-console -- Worker logs are the production observability sink.
   console.log(JSON.stringify({ level: "info", event, ...fields }));
 }

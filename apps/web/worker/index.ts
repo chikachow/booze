@@ -1,5 +1,5 @@
-// oxlint-disable import/no-default-export
-// oxlint-disable import/max-dependencies
+// oxlint-disable import/no-default-export -- Cloudflare Workers requires the module worker as the default export.
+// oxlint-disable import/max-dependencies -- Worker composition root explicitly registers every route and workflow.
 
 import { Hono } from "hono";
 
@@ -27,8 +27,7 @@ app.route("/api", storageLocationRoutes);
 app.route("/", mcpRoutes);
 
 app.notFound(() => problemResponse({ status: 404, title: "Not found" }));
-// oxlint-disable-next-line promise/prefer-await-to-callbacks
-app.onError(async (error) => problemResponseForError(error));
+app.onError(problemResponseForError);
 
 const worker = {
   fetch: app.fetch,

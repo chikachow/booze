@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define typescript/no-floating-promises
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -17,8 +16,8 @@ type CombinedOptions = {
   readonly wineryValue?: string | null;
 };
 
-describe("capture OCR import review decision", () => {
-  it("auto-imports only when every threshold is met", () => {
+await describe("capture OCR import review decision", async () => {
+  await it("auto-imports only when every threshold is met", () => {
     assert.deepEqual(
       decideCaptureImport({
         combined: combinedExtraction({
@@ -32,7 +31,7 @@ describe("capture OCR import review decision", () => {
     );
   });
 
-  it("requires review below the overall-confidence threshold", () => {
+  await it("requires review below the overall-confidence threshold", () => {
     const decision = decideCaptureImport({
       combined: combinedExtraction({ overallConfidence: 0.849 }),
       extractors: {},
@@ -41,7 +40,7 @@ describe("capture OCR import review decision", () => {
     assert.match(decision.reasons.join(" "), /Overall OCR confidence/u);
   });
 
-  it("requires review for missing or low-confidence producer identity", () => {
+  await it("requires review for missing or low-confidence producer identity", () => {
     for (const options of [
       { wineryValue: null },
       { wineryConfidence: 0.799 },
@@ -56,7 +55,7 @@ describe("capture OCR import review decision", () => {
     }
   });
 
-  it("preserves an incomplete candidate for manual review instead of throwing", () => {
+  await it("preserves an incomplete candidate for manual review instead of throwing", () => {
     const extracted = buildCaptureImportCandidate({
       combined: combinedExtraction({ wineryValue: null }),
       extractors: {},
@@ -65,7 +64,7 @@ describe("capture OCR import review decision", () => {
     assert.equal(extracted.candidate.wine.wineryName, "");
   });
 
-  it("requires one confident vintage, wine name, or appellation", () => {
+  await it("requires one confident vintage, wine name, or appellation", () => {
     const decision = decideCaptureImport({
       combined: combinedExtraction({
         displayNameConfidence: 0.74,
@@ -78,7 +77,7 @@ describe("capture OCR import review decision", () => {
     assert.match(decision.reasons.join(" "), /No vintage, wine name or cuvee/u);
   });
 
-  it("honours combiner review flags, reasons, and disagreements", () => {
+  await it("honours combiner review flags, reasons, and disagreements", () => {
     for (const options of [
       { requiresHumanReview: true },
       { humanReviewReasons: ["Label is obscured."] },
@@ -94,7 +93,7 @@ describe("capture OCR import review decision", () => {
     }
   });
 
-  it("requires review when any extractor sees different bottles", () => {
+  await it("requires review when any extractor sees different bottles", () => {
     const decision = decideCaptureImport({
       combined: combinedExtraction(),
       extractors: {

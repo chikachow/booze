@@ -1,5 +1,4 @@
-// oxlint-disable eslint/no-use-before-define
-// oxlint-disable import/max-dependencies
+// oxlint-disable import/max-dependencies -- MCP composition root registers the complete tool surface.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {

@@ -1,4 +1,4 @@
-// oxlint-disable import/no-default-export
+// oxlint-disable import/no-default-export -- Drizzle Kit discovers configuration through the default export.
 
 import type { Config } from "drizzle-kit";
 

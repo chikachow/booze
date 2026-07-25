@@ -1,4 +1,4 @@
-// oxlint-disable import/max-dependencies
+// oxlint-disable import/max-dependencies -- MCP contract test intentionally covers the complete public tool surface.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -104,10 +104,10 @@ function fakeD1Database(options: { readonly runErrorMessage?: string } = {}): D1
 
 function testBindings(overrides: Partial<Bindings> = {}): Bindings {
   return {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- MCP tests never invoke the workflow binding.
     BOTTLE_CAPTURE_WORKFLOW: {} as Workflow,
     DB: fakeD1Database(),
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- MCP tests never invoke the R2 binding.
     IMAGE_BUCKET: {} as R2Bucket,
     CLERK_OAUTH_ISSUER: "https://clerk.example",
     CLERK_SECRET_KEY: "sk_test_placeholder",
@@ -150,8 +150,7 @@ function assertWriteToolHidesAuditId(tool: ListedMcpTool): void {
 function testApp(): Hono<{ Bindings: Bindings }> {
   const app = new Hono<{ Bindings: Bindings }>();
   app.route("/", mcpRoutes);
-  // oxlint-disable-next-line promise/prefer-await-to-callbacks
-  app.onError((error) => problemResponseForError(error));
+  app.onError(problemResponseForError);
   return app;
 }
 

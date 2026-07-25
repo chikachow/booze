@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import {
@@ -96,7 +95,6 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
       }
     }
 
-    // oxlint-disable-next-line no-void
     void load();
   }, [loadCatalogue]);
 

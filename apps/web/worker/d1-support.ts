@@ -1,5 +1,3 @@
-// oxlint-disable eslint/no-use-before-define typescript/no-unnecessary-type-parameters
-// oxlint-disable typescript/no-unsafe-type-assertion
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
@@ -18,29 +16,6 @@ export function migratedDatabase(): DatabaseSync {
     }
   }
   return database;
-}
-
-export function asD1(database: DatabaseSync): D1Database {
-  const adapter = {
-    prepare(query: string): D1PreparedStatement {
-      return new SqliteD1Statement(database, query) as unknown as D1PreparedStatement;
-    },
-    async batch(statements: readonly D1PreparedStatement[]): Promise<readonly D1Result[]> {
-      database.exec("BEGIN");
-      try {
-        const results = [];
-        for (const statement of statements) {
-          results.push(await statement.run());
-        }
-        database.exec("COMMIT");
-        return results;
-      } catch (error) {
-        database.exec("ROLLBACK");
-        throw error;
-      }
-    },
-  };
-  return adapter as unknown as D1Database;
 }
 
 class SqliteD1Statement {
@@ -62,9 +37,11 @@ class SqliteD1Statement {
     return new SqliteD1Statement(this.database, this.query, parameters);
   }
 
-  public async all<T>(): Promise<{ readonly results: readonly T[] }> {
+  public async all(): Promise<{
+    readonly results: readonly Record<string, SQLInputValue>[];
+  }> {
     return {
-      results: this.database.prepare(this.query).all(...this.parameters) as T[],
+      results: this.database.prepare(this.query).all(...this.parameters),
     };
   }
 
@@ -77,10 +54,36 @@ class SqliteD1Statement {
 
   public async run(): Promise<D1Result> {
     const result = this.database.prepare(this.query).run(...this.parameters);
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Minimal test-only D1 metadata.
     return {
       success: true,
       results: [],
       meta: { changes: Number(result.changes) },
     } as unknown as D1Result;
   }
+}
+
+export function asD1(database: DatabaseSync): D1Database {
+  const adapter = {
+    prepare(query: string): D1PreparedStatement {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test adapter implements used D1 methods.
+      return new SqliteD1Statement(database, query) as unknown as D1PreparedStatement;
+    },
+    async batch(statements: readonly D1PreparedStatement[]): Promise<readonly D1Result[]> {
+      database.exec("BEGIN");
+      try {
+        const results = [];
+        for (const statement of statements) {
+          results.push(await statement.run());
+        }
+        database.exec("COMMIT");
+        return results;
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test adapter implements used D1 methods.
+  return adapter as unknown as D1Database;
 }

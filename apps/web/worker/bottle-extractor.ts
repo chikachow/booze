@@ -1,5 +1,3 @@
-/* oxlint-disable eslint/no-use-before-define */
-
 import type { BottleInput, WineInput } from "./api/catalogue.ts";
 import {
   BottleOcrError,

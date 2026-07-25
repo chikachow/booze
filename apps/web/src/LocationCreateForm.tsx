@@ -47,7 +47,6 @@ export function LocationCreateForm({
       className="entry-form compact-form"
       onSubmit={(event) => {
         event.preventDefault();
-        // oxlint-disable-next-line no-void
         void onSaveLocation();
       }}
     >

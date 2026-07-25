@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { createD1SessionClient } from "@chikachow/booze-db";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
@@ -213,8 +212,9 @@ function mcpCorsHeaders(): Record<string, string> {
 
 function bearerToken(headers: Headers): string | null {
   const authorizationHeader = headers.get("authorization");
-  const token = authorizationHeader?.startsWith("Bearer ")
-    ? authorizationHeader.slice("Bearer ".length)
-    : null;
+  const token =
+    authorizationHeader !== null && authorizationHeader.startsWith("Bearer ")
+      ? authorizationHeader.slice("Bearer ".length)
+      : null;
   return token === null || token === "" ? null : token;
 }

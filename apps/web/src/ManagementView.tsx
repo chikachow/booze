@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import type { ReactElement } from "react";
 
 import { LocationCreateForm } from "./LocationCreateForm.tsx";
@@ -135,7 +134,6 @@ function LocationArea({
                     <button
                       type="button"
                       onClick={() => {
-                        // oxlint-disable-next-line no-void
                         void deleteLocation(location.locationId);
                       }}
                     >
@@ -156,7 +154,6 @@ function LocationArea({
                   className="inline-edit"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    // oxlint-disable-next-line no-void
                     void onSaveLocationName(location.locationId);
                   }}
                 >
@@ -270,7 +267,6 @@ function SiteArea({
         className="entry-form compact-form"
         onSubmit={(event) => {
           event.preventDefault();
-          // oxlint-disable-next-line no-void
           void onSaveSite();
         }}
       >
@@ -313,7 +309,6 @@ function SiteArea({
                     <button
                       type="button"
                       onClick={() => {
-                        // oxlint-disable-next-line no-void
                         void deleteSite(site.siteId);
                       }}
                     >
@@ -334,7 +329,6 @@ function SiteArea({
                   className="inline-edit"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    // oxlint-disable-next-line no-void
                     void onSaveSiteName(site.siteId);
                   }}
                 >

@@ -1,5 +1,4 @@
-/* oxlint-disable eslint/no-use-before-define import/max-dependencies */
-// oxlint-disable typescript/no-floating-promises typescript/no-unsafe-type-assertion
+// oxlint-disable import/max-dependencies -- Integration test exercises authorization across three route modules.
 import assert from "node:assert/strict";
 import type { DatabaseSync } from "node:sqlite";
 import { describe, it } from "node:test";
@@ -14,8 +13,8 @@ import { siteRoutes } from "./routes/sites.ts";
 import { storageLocationRoutes } from "./routes/storage-locations.ts";
 import { asD1, migratedDatabase } from "./d1-support.ts";
 
-describe("database-backed route authorization", () => {
-  it("allows only an owner to rename or delete a site", async () => {
+await describe("database-backed route authorization", async () => {
+  await it("allows only an owner to rename or delete a site", async () => {
     for (const [role, expectedPatch, expectedDelete] of [
       ["owner", 200, 204],
       ["editor", 403, 403],
@@ -41,7 +40,7 @@ describe("database-backed route authorization", () => {
     }
   });
 
-  it("allows editors to write site content and keeps viewers read-only", async () => {
+  await it("allows editors to write site content and keeps viewers read-only", async () => {
     for (const [role, expected] of [
       ["editor", 201],
       ["viewer", 403],
@@ -61,7 +60,7 @@ describe("database-backed route authorization", () => {
     }
   });
 
-  it("conceals a site from a user without membership", async () => {
+  await it("conceals a site from a user without membership", async () => {
     const sqlite = migratedDatabase();
     seedMembership(sqlite, "owner", "owner");
 
@@ -75,7 +74,7 @@ describe("database-backed route authorization", () => {
     assert.equal(siteName(sqlite), "Cellar");
   });
 
-  it("blocks viewer capture deletion and manual import before either mutation", async () => {
+  await it("blocks viewer capture deletion and manual import before either mutation", async () => {
     const sqlite = migratedDatabase();
     seedMembership(sqlite, "viewer", "viewer");
     sqlite
@@ -105,7 +104,7 @@ describe("database-backed route authorization", () => {
     );
   });
 
-  it("uses the same database role boundary for MCP write authorization", async () => {
+  await it("uses the same database role boundary for MCP write authorization", async () => {
     const sqlite = migratedDatabase();
     seedMembership(sqlite, "editor", "editor");
     seedMembership(sqlite, "viewer", "viewer", "site-2");
@@ -167,8 +166,10 @@ function authenticatedRequest(
 }
 
 function testBindings(database: DatabaseSync): Bindings {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Tests provide only route-used bindings.
   return {
     DB: asD1(database),
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Route test only uses R2 delete.
     IMAGE_BUCKET: {
       async delete(keys: string | string[]): Promise<void> {
         assert.ok(typeof keys === "string" || Array.isArray(keys));

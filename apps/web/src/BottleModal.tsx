@@ -18,8 +18,6 @@ import type {
 } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
 
-/* oxlint-disable eslint/no-use-before-define */
-
 type BottleModalProps = {
   readonly form: FormState;
   readonly isSaving: boolean;
@@ -99,7 +97,6 @@ export function BottleModal({
           className="entry-form modal-form"
           onSubmit={(event) => {
             event.preventDefault();
-            // oxlint-disable-next-line no-void
             void submitForm(event);
           }}
         >
@@ -123,7 +120,6 @@ export function BottleModal({
                 className="secondary-action"
                 type="button"
                 onClick={() => {
-                  // oxlint-disable-next-line no-void
                   void onMarkConsumed();
                 }}
               >
@@ -135,7 +131,6 @@ export function BottleModal({
                 className="danger-action"
                 type="button"
                 onClick={() => {
-                  // oxlint-disable-next-line no-void
                   void onDelete();
                 }}
               >

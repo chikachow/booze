@@ -1,5 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
-// oxlint-disable typescript/no-floating-promises typescript/no-unsafe-type-assertion
 import assert from "node:assert/strict";
 import type { DatabaseSync } from "node:sqlite";
 import { describe, it } from "node:test";
@@ -11,8 +9,8 @@ import { deleteBottleCaptureData, deleteSiteData, drainR2ObjectDeletionQueue } f
 import { createMcpToolAuditEventInsert } from "./mcp/audit.ts";
 import { asD1, migratedDatabase } from "./d1-support.ts";
 
-describe("durable deletion", () => {
-  it("deletes a complete site while preserving audit rows unchanged", async () => {
+await describe("durable deletion", async () => {
+  await it("deletes a complete site while preserving audit rows unchanged", async () => {
     const database = migratedDatabase();
     seedSite(database, "site-1");
     seedCatalogueAndCapture(database, "site-1", "capture-1", "asset-1");
@@ -52,7 +50,7 @@ describe("durable deletion", () => {
     ]);
   });
 
-  it("keeps shared images until the last capture is deleted", async () => {
+  await it("keeps shared images until the last capture is deleted", async () => {
     const database = migratedDatabase();
     seedSite(database, "site-1");
     seedCapture(database, "site-1", "capture-1", "asset-1", 0);
@@ -87,7 +85,7 @@ describe("durable deletion", () => {
     ]);
   });
 
-  it("retains queued keys after an R2 failure and removes them after a retry", async () => {
+  await it("retains queued keys after an R2 failure and removes them after a retry", async () => {
     const database = migratedDatabase();
     database.exec(
       `INSERT INTO r2_object_deletion_queue (r2_key, source_kind, source_id)
@@ -129,7 +127,7 @@ describe("durable deletion", () => {
     assert.deepEqual(queuedKeys(database), []);
   });
 
-  it("rolls back an MCP mutation when its audit insert fails", async () => {
+  await it("rolls back an MCP mutation when its audit insert fails", async () => {
     const sqlite = migratedDatabase();
     seedSite(sqlite, "site-1");
     seedCatalogueAndCapture(sqlite, "site-1", "capture-1", "asset-1");
@@ -326,6 +324,7 @@ function bucketThatDeletes({ fail }: { readonly fail: boolean }): {
 } {
   const deleted: string[][] = [];
   return {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test double only implements delete.
     bucket: {
       async delete(keys: string | string[]): Promise<void> {
         if (fail) {
@@ -352,5 +351,5 @@ function scalar(database: DatabaseSync, query: string): number {
 function row(database: DatabaseSync, query: string): Record<string, unknown> {
   const result = database.prepare(query).get();
   assert.notEqual(result, undefined);
-  return result as Record<string, unknown>;
+  return { ...result };
 }

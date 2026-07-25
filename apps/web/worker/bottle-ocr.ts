@@ -1,5 +1,3 @@
-/* oxlint-disable eslint/no-use-before-define */
-
 import { z } from "zod";
 
 export type BottleOcrSuggestion = z.infer<typeof bottleOcrSuggestionSchema>;
@@ -648,7 +646,13 @@ function modelId(model: string): string {
     .replaceAll(/^-|-$/gu, "");
 }
 
-// oxlint-disable-next-line eslint/complexity
+function recordDiagnostic(
+  diagnostics: BottleOcrDiagnostic[] | undefined,
+  diagnostic: BottleOcrDiagnostic,
+): void {
+  diagnostics?.push(diagnostic);
+}
+
 async function callOpenRouterJson<T>({
   diagnostics,
   gatewayToken,
@@ -696,7 +700,7 @@ async function callOpenRouterJson<T>({
       signal: AbortSignal.timeout(modelRequestTimeoutMs),
     });
   } catch (error) {
-    diagnostics?.push({
+    recordDiagnostic(diagnostics, {
       stage: "request-error",
       model,
       error: error instanceof Error ? error.message : String(error),
@@ -704,7 +708,7 @@ async function callOpenRouterJson<T>({
     throw new BottleOcrError(502, `OCR model request failed: ${model}`);
   }
 
-  diagnostics?.push({
+  recordDiagnostic(diagnostics, {
     stage: "response",
     maxTokensParameter,
     model,
@@ -717,13 +721,13 @@ async function callOpenRouterJson<T>({
 
   if (!response.ok) {
     const text = await response.text();
-    diagnostics?.push({ stage: "response-error", model, error: text.slice(0, 500) });
+    recordDiagnostic(diagnostics, { stage: "response-error", model, error: text.slice(0, 500) });
     throw new BottleOcrError(502, `OCR model request failed: ${model}`);
   }
 
   const payload: unknown = await response.json();
   const completion = parseAiCompletionContent(payload);
-  diagnostics?.push({
+  recordDiagnostic(diagnostics, {
     stage: "completion",
     model,
     provider: completion.provider,
@@ -735,7 +739,7 @@ async function callOpenRouterJson<T>({
   try {
     content = parseAiJsonResponse(completion.content);
   } catch (error) {
-    diagnostics?.push({
+    recordDiagnostic(diagnostics, {
       stage: "parse",
       model,
       parsePath: "json-invalid",
@@ -743,10 +747,10 @@ async function callOpenRouterJson<T>({
     });
     throw error;
   }
-  diagnostics?.push({ stage: "parse", model, topLevelKeys: topLevelKeys(content) });
+  recordDiagnostic(diagnostics, { stage: "parse", model, topLevelKeys: topLevelKeys(content) });
   const parsed = schema.safeParse(content);
   if (!parsed.success) {
-    diagnostics?.push({
+    recordDiagnostic(diagnostics, {
       stage: "validation",
       model,
       parsePath: "schema-invalid",
@@ -757,7 +761,7 @@ async function callOpenRouterJson<T>({
       `OCR model returned schema-invalid JSON: ${model}: ${zodSummary(parsed.error)}`,
     );
   }
-  diagnostics?.push({ stage: "validation", model, parsePath: "schema" });
+  recordDiagnostic(diagnostics, { stage: "validation", model, parsePath: "schema" });
   return parsed.data;
 }
 
@@ -800,7 +804,7 @@ async function callWorkersAiJson<T>({
       },
     );
   } catch (error) {
-    diagnostics?.push({
+    recordDiagnostic(diagnostics, {
       stage: "request-error",
       model,
       error: error instanceof Error ? error.message : String(error),
@@ -808,7 +812,7 @@ async function callWorkersAiJson<T>({
     throw new BottleOcrError(502, `Workers AI model request failed: ${model}`);
   }
 
-  diagnostics?.push({
+  recordDiagnostic(diagnostics, {
     stage: "response",
     model,
     status: response.status,
@@ -817,13 +821,13 @@ async function callWorkersAiJson<T>({
 
   if (!response.ok) {
     const text = await response.text();
-    diagnostics?.push({ stage: "response-error", model, error: text.slice(0, 500) });
+    recordDiagnostic(diagnostics, { stage: "response-error", model, error: text.slice(0, 500) });
     throw new BottleOcrError(502, `Workers AI model request failed: ${model}`);
   }
 
   const payload: unknown = await response.json();
   const content = parseWorkersAiContent(payload);
-  diagnostics?.push({
+  recordDiagnostic(diagnostics, {
     stage: "completion",
     model,
     provider: "Workers AI",
@@ -836,7 +840,7 @@ async function callWorkersAiJson<T>({
   try {
     parsedContent = parseAiJsonResponse(content);
   } catch (error) {
-    diagnostics?.push({
+    recordDiagnostic(diagnostics, {
       stage: "parse",
       model,
       parsePath: "json-invalid",
@@ -845,10 +849,14 @@ async function callWorkersAiJson<T>({
     throw error;
   }
 
-  diagnostics?.push({ stage: "parse", model, topLevelKeys: topLevelKeys(parsedContent) });
+  recordDiagnostic(diagnostics, {
+    stage: "parse",
+    model,
+    topLevelKeys: topLevelKeys(parsedContent),
+  });
   const parsed = schema.safeParse(parsedContent);
   if (!parsed.success) {
-    diagnostics?.push({
+    recordDiagnostic(diagnostics, {
       stage: "validation",
       model,
       parsePath: "schema-invalid",
@@ -859,7 +867,7 @@ async function callWorkersAiJson<T>({
       `Workers AI model returned schema-invalid JSON: ${model}: ${zodSummary(parsed.error)}`,
     );
   }
-  diagnostics?.push({ stage: "validation", model, parsePath: "schema" });
+  recordDiagnostic(diagnostics, { stage: "validation", model, parsePath: "schema" });
   return parsed.data;
 }
 

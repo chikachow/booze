@@ -1,5 +1,4 @@
-// oxlint-disable eslint/no-use-before-define
-// oxlint-disable import/max-dependencies
+// oxlint-disable import/max-dependencies -- Tool registrar composes review persistence, authorization, audit, and schemas.
 import { criticReviews, sites, type createD1Client } from "@chikachow/booze-db";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { eq } from "drizzle-orm";
@@ -209,124 +208,7 @@ export function registerCriticReviewTools({
       inputSchema: upsertCriticReviewInputSchema,
       outputSchema: upsertCriticReviewOutputSchema.shape,
     },
-    // The branches mirror the schema's review-source union and keep all writes in one D1 batch.
-    // oxlint-disable-next-line eslint/complexity
-    async ({ wineId, ...input }) => {
-      const wine = await getWineVintageSummary({ database, userId, wineId });
-      await requireSitePermission({
-        database,
-        permission: "site.content.write",
-        siteId: wine.siteId,
-        userId,
-      });
-      const wineVintageId = await resolveWineVintageId({ database, userId, wineId });
-      const sourceInput =
-        input.reviewSourceName === undefined
-          ? null
-          : {
-              isActive: true,
-              name: input.reviewSourceName,
-              siteId: wine.siteId,
-              sourceType: "critic",
-            };
-      if (input.reviewSourceId === undefined && sourceInput === null) {
-        throw new HTTPException(400, { message: "Review source is required" });
-      }
-      const persistedReviewSourceId =
-        sourceInput === null
-          ? await resolveReviewSourceId({
-              database,
-              reviewSourceId: input.reviewSourceId ?? "",
-              userId,
-            })
-          : reviewSourceIdForInput(sourceInput);
-      const source = (await listReviewSources({ database, siteId: wine.siteId, userId })).find(
-        (candidate) => candidate.id === persistedReviewSourceId,
-      );
-      const reviewSourceName = source?.name ?? input.reviewSourceName;
-      if (reviewSourceName === undefined) {
-        throw new HTTPException(400, { message: "Review source is required" });
-      }
-      const existingReview = (await listCriticReviews({ database, userId, wineVintageId })).find(
-        (review) => review.reviewSourceId === persistedReviewSourceId,
-      );
-      const persistedCriticReviewId = existingReview?.id ?? generatedId("critic-review");
-      const criticReviewId = mcpEntityId("critic_review", persistedCriticReviewId);
-      const reviewInput = {
-        notes: input.notes ?? undefined,
-        provenance: input.provenance ?? undefined,
-        ratingScale: input.ratingScale ?? undefined,
-        ratingText: input.ratingText,
-        ratingValue: input.ratingValue ?? undefined,
-        reviewSourceId: persistedReviewSourceId,
-        reviewedAt: input.reviewedAt ?? undefined,
-        sourceUrl: input.sourceUrl ?? undefined,
-      };
-      const before: Record<string, unknown> =
-        existingReview === undefined ? {} : criticReviewSummary(existingReview);
-      const afterAudit = {
-        criticReviewId,
-        notes: optionalText(input.notes ?? undefined),
-        provenance: optionalText(input.provenance ?? undefined),
-        ratingScale: optionalText(input.ratingScale ?? undefined),
-        ratingText: input.ratingText.trim(),
-        ratingValue: input.ratingValue ?? null,
-        reviewSource: reviewSourceName,
-        reviewSourceId: mcpEntityId("review_source", persistedReviewSourceId),
-        reviewedAt: optionalText(input.reviewedAt ?? undefined),
-        siteId: wine.siteId,
-        sourceUrl: optionalText(input.sourceUrl ?? undefined),
-        wineId,
-      };
-      const changed = JSON.stringify(before) !== JSON.stringify(afterAudit);
-      const auditEventId = crypto.randomUUID();
-      const reviewWrite = createCriticReviewUpsert({
-        database,
-        review: reviewInput,
-        reviewId: persistedCriticReviewId,
-        reviewSourceId: persistedReviewSourceId,
-        siteId: wine.siteId,
-        userId,
-        wineVintageId,
-      });
-      const auditWrite = createMcpToolAuditEventInsert({
-        auditEventId,
-        database,
-        event: {
-          affectedRecordCount: changed ? 1 : 0,
-          after: afterAudit,
-          before,
-          input: { wineId, ...input },
-          siteId: wine.siteId,
-          targetKind: "critic_review",
-          targetMcpId: criticReviewId,
-          targetPersistedId: persistedCriticReviewId,
-          toolName: "cellar.upsert_critic_review",
-          userId,
-        },
-      });
-      if (sourceInput === null) {
-        await database.batch([reviewWrite, auditWrite]);
-      } else {
-        await database.batch([
-          createReviewSourceUpsert({
-            database,
-            input: sourceInput,
-            reviewSourceId: persistedReviewSourceId,
-          }),
-          reviewWrite,
-          auditWrite,
-        ]);
-      }
-      const storedReview = (await listCriticReviews({ database, userId, wineVintageId })).find(
-        (review) => review.id === persistedCriticReviewId,
-      );
-      if (storedReview === undefined) {
-        throw new Error("Critic review upsert did not return a row");
-      }
-      const criticReview = criticReviewSummary(storedReview);
-      return toolJson({ changed, criticReview });
-    },
+    async (input) => upsertCriticReviewTool({ database, input, userId }),
   );
 
   server.registerTool(
@@ -380,6 +262,168 @@ export function registerCriticReviewTools({
       return toolJson({ criticReview, deleted: true });
     },
   );
+}
+
+async function upsertCriticReviewTool({
+  database,
+  input: { wineId, ...input },
+  userId,
+}: {
+  readonly database: ReturnType<typeof createD1Client>;
+  readonly input: z.infer<typeof upsertCriticReviewInputSchema>;
+  readonly userId: string;
+}): Promise<ReturnType<typeof toolJson>> {
+  const wine = await getWineVintageSummary({ database, userId, wineId });
+  await requireSitePermission({
+    database,
+    permission: "site.content.write",
+    siteId: wine.siteId,
+    userId,
+  });
+  const wineVintageId = await resolveWineVintageId({ database, userId, wineId });
+  const { persistedReviewSourceId, reviewSourceName, sourceInput } =
+    await resolveUpsertReviewSource({
+      database,
+      reviewSourceId: input.reviewSourceId,
+      reviewSourceName: input.reviewSourceName,
+      siteId: wine.siteId,
+      userId,
+    });
+  const existingReview = (await listCriticReviews({ database, userId, wineVintageId })).find(
+    (review) => review.reviewSourceId === persistedReviewSourceId,
+  );
+  const persistedCriticReviewId = existingReview?.id ?? generatedId("critic-review");
+  const criticReviewId = mcpEntityId("critic_review", persistedCriticReviewId);
+  const reviewInput = {
+    notes: input.notes ?? undefined,
+    provenance: input.provenance ?? undefined,
+    ratingScale: input.ratingScale ?? undefined,
+    ratingText: input.ratingText,
+    ratingValue: input.ratingValue ?? undefined,
+    reviewSourceId: persistedReviewSourceId,
+    reviewedAt: input.reviewedAt ?? undefined,
+    sourceUrl: input.sourceUrl ?? undefined,
+  };
+  const before: Record<string, unknown> =
+    existingReview === undefined ? {} : criticReviewSummary(existingReview);
+  const afterAudit = {
+    criticReviewId,
+    notes: optionalText(input.notes ?? undefined),
+    provenance: optionalText(input.provenance ?? undefined),
+    ratingScale: optionalText(input.ratingScale ?? undefined),
+    ratingText: input.ratingText.trim(),
+    ratingValue: input.ratingValue ?? null,
+    reviewSource: reviewSourceName,
+    reviewSourceId: mcpEntityId("review_source", persistedReviewSourceId),
+    reviewedAt: optionalText(input.reviewedAt ?? undefined),
+    siteId: wine.siteId,
+    sourceUrl: optionalText(input.sourceUrl ?? undefined),
+    wineId,
+  };
+  const changed = JSON.stringify(before) !== JSON.stringify(afterAudit);
+  const auditEventId = crypto.randomUUID();
+  const reviewWrite = createCriticReviewUpsert({
+    database,
+    review: reviewInput,
+    reviewId: persistedCriticReviewId,
+    reviewSourceId: persistedReviewSourceId,
+    siteId: wine.siteId,
+    userId,
+    wineVintageId,
+  });
+  const auditWrite = createMcpToolAuditEventInsert({
+    auditEventId,
+    database,
+    event: {
+      affectedRecordCount: changed ? 1 : 0,
+      after: afterAudit,
+      before,
+      input: { wineId, ...input },
+      siteId: wine.siteId,
+      targetKind: "critic_review",
+      targetMcpId: criticReviewId,
+      targetPersistedId: persistedCriticReviewId,
+      toolName: "cellar.upsert_critic_review",
+      userId,
+    },
+  });
+  if (sourceInput === null) {
+    await database.batch([reviewWrite, auditWrite]);
+  } else {
+    await database.batch([
+      createReviewSourceUpsert({
+        database,
+        input: sourceInput,
+        reviewSourceId: persistedReviewSourceId,
+      }),
+      reviewWrite,
+      auditWrite,
+    ]);
+  }
+  const storedReview = (await listCriticReviews({ database, userId, wineVintageId })).find(
+    (review) => review.id === persistedCriticReviewId,
+  );
+  if (storedReview === undefined) {
+    throw new Error("Critic review upsert did not return a row");
+  }
+  const criticReview = criticReviewSummary(storedReview);
+  return toolJson({ changed, criticReview });
+}
+
+async function resolveUpsertReviewSource({
+  database,
+  reviewSourceId,
+  reviewSourceName,
+  siteId,
+  userId,
+}: {
+  readonly database: ReturnType<typeof createD1Client>;
+  readonly reviewSourceId?: string | undefined;
+  readonly reviewSourceName?: string | undefined;
+  readonly siteId: string;
+  readonly userId: string;
+}): Promise<{
+  readonly persistedReviewSourceId: string;
+  readonly reviewSourceName: string;
+  readonly sourceInput: {
+    readonly isActive: true;
+    readonly name: string;
+    readonly siteId: string;
+    readonly sourceType: "critic";
+  } | null;
+}> {
+  const sourceInput =
+    reviewSourceName === undefined
+      ? null
+      : {
+          isActive: true as const,
+          name: reviewSourceName,
+          siteId,
+          sourceType: "critic" as const,
+        };
+  if (reviewSourceId === undefined && sourceInput === null) {
+    throw new HTTPException(400, { message: "Review source is required" });
+  }
+  const persistedReviewSourceId =
+    sourceInput === null
+      ? await resolveReviewSourceId({
+          database,
+          reviewSourceId: reviewSourceId ?? "",
+          userId,
+        })
+      : reviewSourceIdForInput(sourceInput);
+  const source = (await listReviewSources({ database, siteId, userId })).find(
+    (candidate) => candidate.id === persistedReviewSourceId,
+  );
+  const resolvedReviewSourceName = source?.name ?? reviewSourceName;
+  if (resolvedReviewSourceName === undefined) {
+    throw new HTTPException(400, { message: "Review source is required" });
+  }
+  return {
+    persistedReviewSourceId,
+    reviewSourceName: resolvedReviewSourceName,
+    sourceInput,
+  };
 }
 
 export async function listReviewSourceSummaries({

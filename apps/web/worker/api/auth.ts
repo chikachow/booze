@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { siteMemberships, sites, users, type BoozeDatabase } from "@chikachow/booze-db";
 import { verifyToken } from "@clerk/backend";
 import { and, eq } from "drizzle-orm";
@@ -79,9 +78,10 @@ function tokenForRequest({
   readonly request: Request;
 }): string | null {
   const authorizationHeader = headers.get("authorization");
-  const bearerToken = authorizationHeader?.startsWith("Bearer ")
-    ? authorizationHeader.slice("Bearer ".length)
-    : null;
+  const bearerToken =
+    authorizationHeader !== null && authorizationHeader.startsWith("Bearer ")
+      ? authorizationHeader.slice("Bearer ".length)
+      : null;
 
   if (bearerToken !== null && bearerToken !== "") {
     return bearerToken;

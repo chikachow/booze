@@ -1,4 +1,4 @@
-// oxlint-disable eslint/no-use-before-define import/max-dependencies
+// oxlint-disable import/max-dependencies -- Capture route composes storage, workflow, OCR, import, and authorization boundaries.
 import { createD1Client, storageLocations } from "@chikachow/booze-db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
