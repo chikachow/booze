@@ -204,7 +204,7 @@ The system must:
 2. store secrets outside source control;
 3. enforce membership checks on the Worker;
 4. avoid arbitrary SQL or administrative endpoints;
-5. avoid persisting uploaded images until an R2 storage and validation path exists.
+5. validate uploaded images, store them in R2 only for the capture lifetime, and remove them through the durable deletion queue.
 
 ## Reliability and Portability
 
@@ -226,16 +226,18 @@ The system should:
 4. Resource-oriented REST routes for bottles, sites, storage locations, and label extractions.
 5. Mobile-first responsive UI with bottle and storage-location areas.
 6. Basic drink-window status calculation.
+7. R2-backed bottle captures with multi-model extraction and a human-review gate.
+8. Audited MCP read and write tools.
+9. Owner/editor/viewer enforcement in the Worker.
 
 ### Next
 
-1. Add focused API and UI tests for bottle creation, movement, storage-location rename, and cross-site denial.
-2. Add explicit site listing and site rename workflows.
-3. Add role-specific permissions for owner/editor/viewer.
-4. Add richer wine/bottle detail editing beyond the current capture form.
-5. Add CSV export before adding AI features.
-6. Add image upload/OCR only after R2 storage, validation, and privacy behavior are designed.
-7. Add read-only MCP after the inventory API and authorisation model are covered by tests.
+1. Add focused route and UI tests for bottle creation, movement, storage-location rename, and cross-site denial.
+2. Add member invitation and role-management workflows.
+3. Add richer wine/bottle detail editing beyond the current capture form.
+4. Add CSV export before adding AI features.
+5. Add capture-retention controls and operational visibility for R2 cleanup retries.
+6. Expand MCP integration tests for write-tool result shapes and authorisation denials.
 
 ## Success Criteria
 
