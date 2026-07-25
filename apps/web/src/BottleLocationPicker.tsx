@@ -1,3 +1,4 @@
+import { Selector } from "@astryxdesign/core/Selector";
 import type { ReactElement } from "react";
 
 import {
@@ -46,59 +47,61 @@ export function BottleLocationPicker({
         ? `site:${selectedSiteId}`
         : `location:${selectedStorageLocationId}`;
 
-  return (
-    <label htmlFor={`${idPrefix}-bottle-location`}>
-      Bottle location
-      <select
-        required
-        disabled={selectableSites.length === 0}
-        id={`${idPrefix}-bottle-location`}
-        value={selectedValue}
-        onChange={(event) => {
-          const [kind, id] = event.currentTarget.value.split(":");
-          if (kind === "site") {
-            const site = sites.find((candidate) => candidate.siteId === id);
-            onChange({
-              siteId: site?.siteId ?? "",
-              site: site?.site ?? "",
-              storageLocationId: "",
-              location: "",
-            });
-            return;
-          }
+  const options = selectableSites.flatMap((site) => [
+    {
+      label: `${site.site} / No specific location`,
+      value: `site:${site.siteId}`,
+    },
+    ...locations
+      .filter((location) => location.siteId === site.siteId)
+      .toSorted(compareLocationPath(locations))
+      .map((location) => ({
+        label: `${site.site} / ${locationPath(location, locations)}`,
+        value: `location:${location.locationId}`,
+      })),
+  ]);
 
-          const location = locations.find((candidate) => candidate.locationId === id);
-          const site = sites.find((candidate) => candidate.siteId === location?.siteId);
+  return (
+    <Selector
+      htmlName={`${idPrefix}.storageLocation`}
+      isRequired
+      description={
+        selectedStorageLocation === undefined
+          ? "Choose the site, or the most specific known place."
+          : selectedStorageLocation.locationType
+      }
+      disabledMessage={
+        selectableSites.length === 0
+          ? "Create a site before assigning a bottle location."
+          : undefined
+      }
+      isDisabled={selectableSites.length === 0}
+      label="Bottle location"
+      options={options}
+      placeholder={sites.length === 0 ? "Create a site first" : "Choose site or location"}
+      value={selectedValue}
+      onChange={(value: string) => {
+        const [kind, id] = value.split(":");
+        if (kind === "site") {
+          const site = sites.find((candidate) => candidate.siteId === id);
           onChange({
             siteId: site?.siteId ?? "",
             site: site?.site ?? "",
-            storageLocationId: location?.locationId ?? "",
-            location: location === undefined ? "" : locationPath(location, locations),
+            storageLocationId: "",
+            location: "",
           });
-        }}
-      >
-        <option value="" disabled>
-          {sites.length === 0 ? "Create a site first" : "Choose site or location…"}
-        </option>
-        {selectableSites.map((site) => (
-          <optgroup key={site.siteId} label={site.site}>
-            <option value={`site:${site.siteId}`}>{site.site} / No specific location</option>
-            {locations
-              .filter((location) => location.siteId === site.siteId)
-              .toSorted(compareLocationPath(locations))
-              .map((location) => (
-                <option key={location.locationId} value={`location:${location.locationId}`}>
-                  {site.site} / {locationPath(location, locations)}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
-      <span className="field-hint">
-        {selectedStorageLocation === undefined
-          ? "Choose the site, or the most specific known place."
-          : selectedStorageLocation.locationType}
-      </span>
-    </label>
+          return;
+        }
+
+        const location = locations.find((candidate) => candidate.locationId === id);
+        const site = sites.find((candidate) => candidate.siteId === location?.siteId);
+        onChange({
+          siteId: site?.siteId ?? "",
+          site: site?.site ?? "",
+          storageLocationId: location?.locationId ?? "",
+          location: location === undefined ? "" : locationPath(location, locations),
+        });
+      }}
+    />
   );
 }

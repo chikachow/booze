@@ -3,6 +3,7 @@ import { createD1Client, storageLocations } from "@chikachow/booze-db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { validateBottleQuantity } from "../../shared/quantity.ts";
 import { z } from "zod";
 
 import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
@@ -109,7 +110,7 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       files,
       images: context.env.IMAGES,
       positionHint: optionalText(stringField(formData, "positionHint")),
-      quantity: parseQuantity(stringField(formData, "quantity")),
+      quantity: parseCaptureQuantity(stringField(formData, "quantity")),
       siteId,
       storageLocationId,
       userId: authenticatedUser.userId,
@@ -469,7 +470,10 @@ function stringField(formData: FormData, name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function parseQuantity(value: string | undefined): number {
-  const quantity = Number.parseInt(value ?? "1", 10);
-  return Number.isInteger(quantity) && quantity >= 1 && quantity <= 24 ? quantity : 1;
+export function parseCaptureQuantity(value: string | undefined): number {
+  const result = validateBottleQuantity(value);
+  if (!result.ok) {
+    throw new HTTPException(400, { message: result.message });
+  }
+  return result.value;
 }

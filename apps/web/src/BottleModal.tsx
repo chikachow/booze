@@ -1,11 +1,20 @@
-import { useEffect, useState, type ReactElement } from "react";
-import {
-  useForm,
-  type UseFormRegister,
-  type UseFormSetValue,
-  type UseFormWatch,
-} from "react-hook-form";
+/* oxlint-disable import/max-dependencies -- Bottle editing composes ASTRYX fields, dialogs, and domain adapters. */
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Button } from "@astryxdesign/core/Button";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { TextArea } from "@astryxdesign/core/TextArea";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useForm, type Control, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 
+import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
+import {
+  BottleQuantityInput,
+  BottleTextArea,
+  BottleTextInput,
+  type BottleFormFieldProps,
+} from "./BottleFormFields.tsx";
 import type {
   CriticReviewInput,
   CriticReviewResource,
@@ -16,7 +25,6 @@ import type {
   WineAwardInput,
   WineAwardResource,
 } from "./inventory-model.ts";
-import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
 
 type BottleModalProps = {
   readonly form: FormState;
@@ -26,8 +34,8 @@ type BottleModalProps = {
   readonly sites: readonly SiteItem[];
   readonly title: string;
   readonly onClose: () => void;
-  readonly onDelete?: () => Promise<void>;
-  readonly onMarkConsumed?: () => Promise<void>;
+  readonly onDelete?: () => Promise<boolean>;
+  readonly onMarkConsumed?: () => Promise<boolean>;
   readonly onSubmit: (input: BottleModalSubmit) => Promise<void>;
 };
 
@@ -36,6 +44,76 @@ export type BottleModalSubmit = {
   readonly criticReviews: readonly CriticReviewInput[];
   readonly form: FormState;
 };
+
+type FormFieldConfig = Omit<BottleFormFieldProps, "control">;
+
+export type AwardDraft = Omit<WineAwardInput, "awardYear" | "points"> & {
+  readonly awardYear: string;
+  readonly points: string;
+};
+
+type ReviewErrors = {
+  readonly ratingText?: string;
+  readonly reviewSourceName?: string;
+};
+
+type AwardErrors = {
+  readonly awardLevel?: string;
+  readonly awardName?: string;
+  readonly awardYear?: string;
+  readonly points?: string;
+};
+
+const identityFields = [
+  { label: "Label / brand", name: "brandName", placeholder: "Rowlee" },
+  { label: "Winery", name: "wineryName", placeholder: "Rowlee Wines", required: true },
+  {
+    label: "Wine name",
+    name: "displayName",
+    placeholder: "Pinnacle Series Shiraz",
+    required: true,
+  },
+  { label: "Vintage", name: "vintageYear", placeholder: "2023" },
+  {
+    label: "Grape varieties",
+    name: "grapeVarieties",
+    placeholder: "Shiraz, Cabernet Sauvignon",
+  },
+] satisfies readonly FormFieldConfig[];
+
+const originFields = [
+  { label: "Region", name: "region", placeholder: "Orange" },
+  { label: "Country", name: "country", placeholder: "Australia" },
+  { label: "Appellation", name: "appellation", placeholder: "Orange GI" },
+  { label: "Classification", name: "classification", placeholder: "Grand Cru" },
+  { label: "Style", name: "wineType", placeholder: "Red wine" },
+  { label: "Colour", name: "wineColor", placeholder: "Red" },
+  { label: "Alcohol", name: "alcoholPercent", placeholder: "13.5% alc/vol" },
+] satisfies readonly FormFieldConfig[];
+
+const referenceFields = [
+  {
+    label: "Description",
+    name: "description",
+    placeholder: "Visible winery description or tasting copy",
+  },
+  {
+    label: "Drinking advice",
+    name: "drinkingAdvice",
+    placeholder: "Cellaring or serving advice",
+  },
+  { label: "Label text", name: "labelText", placeholder: "Paste label, OCR, or winery page text" },
+  {
+    label: "Wine notes",
+    name: "wineNotes",
+    placeholder: "Tasting notes, food pairing, source details",
+  },
+  {
+    label: "Bottle notes",
+    name: "bottleNotes",
+    placeholder: "Condition, purchase source, box details",
+  },
+] satisfies readonly FormFieldConfig[];
 
 export function BottleModal({
   form,
@@ -52,10 +130,17 @@ export function BottleModal({
   const [criticReviews, setCriticReviews] = useState<readonly CriticReviewInput[]>(
     criticReviewInputsForItem(item),
   );
-  const [awards, setAwards] = useState<readonly WineAwardInput[]>(awardInputsForItem(item));
+  const [awards, setAwards] = useState<readonly AwardDraft[]>(awardInputsForItem(item));
+  const [reviewErrors, setReviewErrors] = useState<readonly ReviewErrors[]>([]);
+  const [awardErrors, setAwardErrors] = useState<readonly AwardErrors[]>([]);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
+  const [consumeError, setConsumeError] = useState<string | null>(null);
   const {
+    control,
     handleSubmit,
-    register,
     reset,
     setValue,
     watch,
@@ -68,443 +153,179 @@ export function BottleModal({
     setAwards(awardInputsForItem(item));
   }, [form, item, reset]);
 
-  const submitForm = handleSubmit(async (values) =>
-    onSubmit({
-      awards: validAwards(awards),
-      criticReviews: validCriticReviews(criticReviews),
+  const submitForm = handleSubmit(async (values) => {
+    const reviewsResult = validateCriticReviews(criticReviews);
+    const awardsResult = validateAwards(awards);
+    setReviewErrors(reviewsResult.errors);
+    setAwardErrors(awardsResult.errors);
+    if (!reviewsResult.ok || !awardsResult.ok) {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>("[data-repeatable-error='true']")?.focus();
+      });
+      return;
+    }
+    await onSubmit({
+      awards: awardsResult.values,
+      criticReviews: reviewsResult.values,
       form: values,
-    }),
-  );
+    });
+  });
+
+  async function deleteBottle(): Promise<void> {
+    if (onDelete === undefined || isDeleting) {
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const deleted = await onDelete();
+      if (deleted) {
+        setIsDeleteOpen(false);
+      } else {
+        setDeleteError("Bottle was not deleted. Try again.");
+      }
+    } catch {
+      setDeleteError("Bottle was not deleted. Try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  async function markConsumed(): Promise<void> {
+    if (onMarkConsumed === undefined || isMarkingConsumed) {
+      return;
+    }
+    setIsMarkingConsumed(true);
+    setConsumeError(null);
+    try {
+      const updated = await onMarkConsumed();
+      if (!updated) {
+        setConsumeError("Bottle was not marked drunk. Try again.");
+      }
+    } catch {
+      setConsumeError("Bottle was not marked drunk. Try again.");
+    } finally {
+      setIsMarkingConsumed(false);
+    }
+  }
 
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section
-        className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bottle-modal-title"
+    <>
+      <Dialog
+        isOpen
+        maxHeight="calc(100dvh - 32px)"
+        purpose="form"
+        width="min(920px, calc(100vw - 32px))"
+        onOpenChange={(isOpen: boolean) => {
+          if (!isOpen) {
+            onClose();
+          }
+        }}
       >
-        <div className="modal-header">
-          <div>
-            <p>Bottle</p>
-            <h2 id="bottle-modal-title">{title}</h2>
-          </div>
-          <button className="secondary-action" type="button" onClick={onClose}>
-            Close
-          </button>
-        </div>
+        <DialogHeader
+          subtitle="Review the cellar record before saving."
+          title={title}
+          onOpenChange={(isOpen: boolean) => {
+            if (!isOpen) {
+              onClose();
+            }
+          }}
+        />
         <form
-          className="entry-form modal-form"
+          className="form-stack"
           onSubmit={(event) => {
             event.preventDefault();
             void submitForm(event);
           }}
         >
           <BottleFields
+            control={control}
             disableSiteSelection={item !== undefined}
             locations={locations}
-            register={register}
             setValue={setValue}
             showQuantity={item === undefined}
             sites={sites}
             watch={watch}
           />
-          <CriticReviewFields reviews={criticReviews} onChange={setCriticReviews} />
-          <AwardFields awards={awards} onChange={setAwards} />
-          <div className="modal-actions">
-            <button className="primary-action" disabled={isSaving || isSubmitting} type="submit">
-              {isSaving || isSubmitting ? "Saving..." : "Save bottle"}
-            </button>
+          <CriticReviewFields
+            errors={reviewErrors}
+            reviews={criticReviews}
+            onChange={(next) => {
+              setCriticReviews(next);
+              setReviewErrors([]);
+            }}
+          />
+          <AwardFields
+            awards={awards}
+            errors={awardErrors}
+            onChange={(next) => {
+              setAwards(next);
+              setAwardErrors([]);
+            }}
+          />
+          <div className="dialog-actions">
+            <Button
+              isLoading={isSaving || isSubmitting}
+              label="Save bottle"
+              type="submit"
+              variant="primary"
+            />
             {onMarkConsumed === undefined ? null : (
-              <button
-                className="secondary-action"
-                type="button"
+              <Button
+                isLoading={isMarkingConsumed}
+                label="Mark drunk"
                 onClick={() => {
-                  void onMarkConsumed();
+                  void markConsumed();
                 }}
-              >
-                Mark drunk
-              </button>
+              />
             )}
             {onDelete === undefined ? null : (
-              <button
-                className="danger-action"
-                type="button"
+              <Button
+                label="Delete bottle"
+                variant="destructive"
                 onClick={() => {
-                  void onDelete();
+                  setDeleteError(null);
+                  setIsDeleteOpen(true);
                 }}
-              >
-                Delete bottle
-              </button>
+              />
             )}
+            {deleteError === null ? null : <Banner status="error" title={deleteError} />}
+            {consumeError === null ? null : <Banner status="error" title={consumeError} />}
           </div>
         </form>
-      </section>
-    </div>
-  );
-}
-
-function criticReviewInputsForItem(item: InventoryItem | undefined): readonly CriticReviewInput[] {
-  return (item?.criticReviews ?? []).map((review) => criticReviewInputForResource(review));
-}
-
-function awardInputsForItem(item: InventoryItem | undefined): readonly WineAwardInput[] {
-  return (item?.awards ?? []).map((award) => awardInputForResource(award));
-}
-
-function criticReviewInputForResource(review: CriticReviewResource): CriticReviewInput {
-  return {
-    id: review.id,
-    reviewSourceId: review.reviewSourceId,
-    reviewSourceName: review.reviewSourceName,
-    ratingText: review.ratingText,
-    ratingValue: review.ratingValue ?? undefined,
-    ratingScale: review.ratingScale ?? undefined,
-    sourceUrl: review.sourceUrl ?? undefined,
-    reviewedAt: review.reviewedAt ?? undefined,
-    provenance: review.provenance ?? undefined,
-    notes: review.notes ?? undefined,
-  };
-}
-
-function awardInputForResource(award: WineAwardResource): WineAwardInput {
-  return {
-    id: award.id,
-    awardName: award.awardName,
-    awardLevel: award.awardLevel,
-    awardYear: award.awardYear ?? undefined,
-    awardBody: award.awardBody ?? undefined,
-    category: award.category ?? undefined,
-    points: award.points ?? undefined,
-    sourceUrl: award.sourceUrl ?? undefined,
-    provenance: award.provenance ?? undefined,
-    notes: award.notes ?? undefined,
-  };
-}
-
-function validCriticReviews(reviews: readonly CriticReviewInput[]): readonly CriticReviewInput[] {
-  return reviews
-    .map((review) => ({
-      ...review,
-      reviewSourceName: review.reviewSourceName?.trim(),
-      ratingText: review.ratingText.trim(),
-      sourceUrl: review.sourceUrl?.trim(),
-      provenance: review.provenance?.trim(),
-      notes: review.notes?.trim(),
-    }))
-    .filter(
-      (review) =>
-        review.ratingText !== "" &&
-        (review.reviewSourceId !== undefined ||
-          (review.reviewSourceName !== undefined && review.reviewSourceName !== "")),
-    );
-}
-
-function validAwards(awards: readonly WineAwardInput[]): readonly WineAwardInput[] {
-  return awards
-    .map((award) => ({
-      ...award,
-      awardName: award.awardName.trim(),
-      awardLevel: award.awardLevel.trim(),
-      awardBody: award.awardBody?.trim(),
-      category: award.category?.trim(),
-      sourceUrl: award.sourceUrl?.trim(),
-      provenance: award.provenance?.trim(),
-      notes: award.notes?.trim(),
-    }))
-    .filter((award) => award.awardName !== "" && award.awardLevel !== "");
-}
-
-function CriticReviewFields({
-  reviews,
-  onChange,
-}: {
-  readonly reviews: readonly CriticReviewInput[];
-  readonly onChange: (reviews: readonly CriticReviewInput[]) => void;
-}): ReactElement {
-  function updateReview(index: number, patch: Partial<CriticReviewInput>): void {
-    onChange(
-      reviews.map((review, reviewIndex) =>
-        reviewIndex === index ? { ...review, ...patch } : review,
-      ),
-    );
-  }
-
-  return (
-    <div className="form-section">
-      <div className="section-heading">
-        <h3>Critic reviews</h3>
-        <button
-          className="secondary-action"
-          type="button"
-          onClick={() => {
-            onChange([...reviews, { reviewSourceName: "", ratingText: "" }]);
+      </Dialog>
+      {onDelete === undefined ? null : (
+        <AlertDialog
+          actionLabel="Delete bottle"
+          description="This permanently removes this bottle and its inventory record. This action cannot be undone."
+          isActionLoading={isDeleting}
+          isOpen={isDeleteOpen}
+          title="Delete this bottle?"
+          onAction={() => {
+            void deleteBottle();
           }}
-        >
-          Add review
-        </button>
-      </div>
-      {reviews.length === 0 ? (
-        <p className="field-hint">No critic reviews recorded.</p>
-      ) : (
-        <div className="review-edit-list">
-          {reviews.map((review, index) => (
-            <div className="review-edit-row" key={review.id ?? `new-${index}`}>
-              <div className="field-row">
-                <label>
-                  Source
-                  <input
-                    autoComplete="off"
-                    value={review.reviewSourceName ?? ""}
-                    placeholder="Halliday Wine Companion"
-                    onChange={(event) => {
-                      updateReview(index, { reviewSourceName: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Rating
-                  <input
-                    required
-                    autoComplete="off"
-                    value={review.ratingText}
-                    placeholder="95 points"
-                    onChange={(event) => {
-                      updateReview(index, { ratingText: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-              </div>
-              <div className="field-row">
-                <label>
-                  Source URL
-                  <input
-                    inputMode="url"
-                    value={review.sourceUrl ?? ""}
-                    placeholder="https://example.com/review"
-                    onChange={(event) => {
-                      updateReview(index, { sourceUrl: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Provenance
-                  <input
-                    autoComplete="off"
-                    value={review.provenance ?? ""}
-                    placeholder="Guide, subscription database, chat note"
-                    onChange={(event) => {
-                      updateReview(index, { provenance: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-              </div>
-              <label>
-                Notes
-                <textarea
-                  value={review.notes ?? ""}
-                  placeholder="User-authored context, not copied review prose"
-                  onChange={(event) => {
-                    updateReview(index, { notes: event.currentTarget.value });
-                  }}
-                />
-              </label>
-              <button
-                className="danger-action"
-                type="button"
-                onClick={() => {
-                  onChange(reviews.filter((_, reviewIndex) => reviewIndex !== index));
-                }}
-              >
-                Remove review
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AwardFields({
-  awards,
-  onChange,
-}: {
-  readonly awards: readonly WineAwardInput[];
-  readonly onChange: (awards: readonly WineAwardInput[]) => void;
-}): ReactElement {
-  function updateAward(index: number, patch: Partial<WineAwardInput>): void {
-    onChange(
-      awards.map((award, awardIndex) => (awardIndex === index ? { ...award, ...patch } : award)),
-    );
-  }
-
-  return (
-    <div className="form-section">
-      <div className="section-heading">
-        <h3>Awards</h3>
-        <button
-          className="secondary-action"
-          type="button"
-          onClick={() => {
-            onChange([...awards, { awardName: "", awardLevel: "" }]);
+          onOpenChange={(isOpen: boolean) => {
+            if (!isDeleting) {
+              setIsDeleteOpen(isOpen);
+            }
           }}
-        >
-          Add award
-        </button>
-      </div>
-      {awards.length === 0 ? (
-        <p className="field-hint">No awards recorded.</p>
-      ) : (
-        <div className="review-edit-list">
-          {awards.map((award, index) => (
-            <div className="review-edit-row" key={award.id ?? `new-award-${index}`}>
-              <div className="field-row">
-                <label>
-                  Award
-                  <input
-                    required
-                    autoComplete="off"
-                    value={award.awardLevel}
-                    placeholder="Gold Medal"
-                    onChange={(event) => {
-                      updateAward(index, { awardLevel: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Year
-                  <input
-                    inputMode="numeric"
-                    value={award.awardYear ?? ""}
-                    placeholder="2024"
-                    onChange={(event) => {
-                      updateAward(index, { awardYear: optionalNumber(event.currentTarget.value) });
-                    }}
-                  />
-                </label>
-              </div>
-              <div className="field-row">
-                <label>
-                  Competition or source
-                  <input
-                    required
-                    autoComplete="off"
-                    value={award.awardName}
-                    placeholder="NSW Small Winemakers Wine Show"
-                    onChange={(event) => {
-                      updateAward(index, { awardName: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Body
-                  <input
-                    autoComplete="off"
-                    value={award.awardBody ?? ""}
-                    placeholder="Angullong Wines"
-                    onChange={(event) => {
-                      updateAward(index, { awardBody: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-              </div>
-              <div className="field-row">
-                <label>
-                  Class or category
-                  <input
-                    autoComplete="off"
-                    value={award.category ?? ""}
-                    placeholder="Shiraz - 2022 Vintage"
-                    onChange={(event) => {
-                      updateAward(index, { category: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Points
-                  <input
-                    inputMode="decimal"
-                    value={award.points ?? ""}
-                    placeholder="90"
-                    onChange={(event) => {
-                      updateAward(index, { points: optionalNumber(event.currentTarget.value) });
-                    }}
-                  />
-                </label>
-              </div>
-              <div className="field-row">
-                <label>
-                  Source URL
-                  <input
-                    inputMode="url"
-                    value={award.sourceUrl ?? ""}
-                    placeholder="https://example.com/results"
-                    onChange={(event) => {
-                      updateAward(index, { sourceUrl: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Provenance
-                  <input
-                    autoComplete="off"
-                    value={award.provenance ?? ""}
-                    placeholder="Winery page, wine show result PDF"
-                    onChange={(event) => {
-                      updateAward(index, { provenance: event.currentTarget.value });
-                    }}
-                  />
-                </label>
-              </div>
-              <label>
-                Notes
-                <textarea
-                  value={award.notes ?? ""}
-                  placeholder="User-authored award context"
-                  onChange={(event) => {
-                    updateAward(index, { notes: event.currentTarget.value });
-                  }}
-                />
-              </label>
-              <button
-                className="danger-action"
-                type="button"
-                onClick={() => {
-                  onChange(awards.filter((_, awardIndex) => awardIndex !== index));
-                }}
-              >
-                Remove award
-              </button>
-            </div>
-          ))}
-        </div>
+        />
       )}
-    </div>
+    </>
   );
-}
-
-function optionalNumber(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (trimmed === "") {
-    return undefined;
-  }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function BottleFields({
+  control,
   disableSiteSelection,
   locations,
-  register,
   setValue,
   showQuantity,
   sites,
   watch,
 }: {
+  readonly control: Control<FormState>;
   readonly disableSiteSelection: boolean;
   readonly locations: readonly LocationItem[];
-  readonly register: UseFormRegister<FormState>;
   readonly setValue: UseFormSetValue<FormState>;
   readonly showQuantity: boolean;
   readonly sites: readonly SiteItem[];
@@ -512,103 +333,22 @@ function BottleFields({
 }): ReactElement {
   const selectedSiteId = watch("siteId");
   const selectedStorageLocationId = watch("storageLocationId");
-
   return (
     <>
-      <div className="form-section">
-        <h3>Wine identity</h3>
-        <label>
-          Label / brand
-          <input autoComplete="off" {...register("brandName")} placeholder="Rowlee" />
-        </label>
-        <label>
-          Winery
-          <input
-            required
-            autoComplete="off"
-            {...register("wineryName", { required: true })}
-            placeholder="Rowlee Wines"
-          />
-        </label>
-        <label>
-          Wine name
-          <input
-            required
-            autoComplete="off"
-            {...register("displayName", { required: true })}
-            placeholder="Pinnacle Series Shiraz"
-          />
-        </label>
-        <div className="field-row">
-          <label>
-            Vintage
-            <input inputMode="numeric" {...register("vintageYear")} placeholder="2023" />
-          </label>
-          <label>
-            Grape varieties
-            <input
-              autoComplete="off"
-              {...register("grapeVarieties")}
-              placeholder="Shiraz, Cabernet Sauvignon"
-            />
-          </label>
-        </div>
-      </div>
-
-      <div className="form-section">
-        <h3>Origin and style</h3>
-        <div className="field-row">
-          <label>
-            Region
-            <input autoComplete="off" {...register("region")} placeholder="Orange" />
-          </label>
-          <label>
-            Country
-            <input autoComplete="off" {...register("country")} placeholder="Australia" />
-          </label>
-        </div>
-        <div className="field-row">
-          <label>
-            Appellation
-            <input autoComplete="off" {...register("appellation")} placeholder="Orange GI" />
-          </label>
-          <label>
-            Classification
-            <input autoComplete="off" {...register("classification")} placeholder="Grand Cru" />
-          </label>
-        </div>
-        <div className="field-row">
-          <label>
-            Style
-            <input autoComplete="off" {...register("wineType")} placeholder="Red wine" />
-          </label>
-          <label>
-            Colour
-            <input autoComplete="off" {...register("wineColor")} placeholder="Red" />
-          </label>
-        </div>
-        <label>
-          Alcohol
-          <input autoComplete="off" {...register("alcoholPercent")} placeholder="13.5% alc/vol" />
-        </label>
-      </div>
-
-      <div className="form-section">
-        <h3>Bottle and storage</h3>
-        <input type="hidden" {...register("site")} />
-        <input type="hidden" {...register("siteId", { required: true })} />
-        <input type="hidden" {...register("location")} />
-        <input type="hidden" {...register("storageLocationId")} />
-        <div className="field-row">
-          <label>
-            Bottle size
-            <input autoComplete="off" {...register("bottleVolumeMl")} placeholder="750ml" />
-          </label>
-          <label>
-            Barcode
-            <input autoComplete="off" {...register("barcode")} placeholder="9342675000444" />
-          </label>
-        </div>
+      <FormSection title="Wine identity">
+        <FieldGrid control={control} fields={identityFields} />
+      </FormSection>
+      <FormSection title="Origin and style">
+        <FieldGrid control={control} fields={originFields} />
+      </FormSection>
+      <FormSection title="Bottle and storage">
+        <FieldGrid
+          control={control}
+          fields={[
+            { label: "Bottle size", name: "bottleVolumeMl", placeholder: "750ml" },
+            { label: "Barcode", name: "barcode", placeholder: "9342675000444" },
+          ]}
+        />
         <BottleLocationPicker
           disabledSite={disableSiteSelection}
           idPrefix={showQuantity ? "add-bottle-storage" : "edit-bottle-storage"}
@@ -626,102 +366,469 @@ function BottleFields({
             setValue("location", selection.location, { shouldDirty: true, shouldTouch: true });
           }}
         />
-        <div className="field-row">
-          <label>
-            Lot code
-            <input autoComplete="off" {...register("lotCode")} placeholder="L23051" />
-          </label>
-          {showQuantity ? (
-            <label>
-              Quantity
-              <input
-                required
-                inputMode="numeric"
-                min="1"
-                max="24"
-                type="number"
-                {...register("quantity", { required: true })}
-              />
-            </label>
-          ) : (
-            <label>
-              Position note
-              <input autoComplete="off" {...register("position")} placeholder="row 3, slot 2" />
-            </label>
-          )}
-        </div>
-        <label>
-          Producer address
-          <textarea
-            {...register("addressQualification")}
-            placeholder="Produced by, bottled by, or address"
-          />
-        </label>
+        <FieldGrid
+          control={control}
+          fields={
+            showQuantity
+              ? [{ label: "Lot code", name: "lotCode", placeholder: "L23051" }]
+              : [
+                  { label: "Lot code", name: "lotCode", placeholder: "L23051" },
+                  { label: "Position note", name: "position", placeholder: "Row 3, slot 2" },
+                ]
+          }
+        />
+        {showQuantity ? <BottleQuantityInput control={control} /> : null}
+        <BottleTextArea
+          control={control}
+          label="Producer address"
+          name="addressQualification"
+          placeholder="Produced by, bottled by, or address"
+        />
         {showQuantity ? (
-          <label>
-            Position note
-            <input autoComplete="off" {...register("position")} placeholder="row 3, slot 2" />
-          </label>
+          <BottleTextInput
+            control={control}
+            label="Position note"
+            name="position"
+            placeholder="Row 3, slot 2"
+          />
         ) : null}
-      </div>
-
-      <div className="form-section">
-        <h3>Drink window</h3>
-        <div className="field-row">
-          <label>
-            Drink from
-            <input inputMode="numeric" {...register("drinkFromYear")} placeholder="2025" />
-          </label>
-          <label>
-            Drink to
-            <input inputMode="numeric" {...register("drinkToYear")} placeholder="2032" />
-          </label>
-        </div>
-        <label>
-          Source URL
-          <input
-            inputMode="url"
-            {...register("sourceUrl")}
-            placeholder="https://wineryName.example/wine"
-          />
-        </label>
-      </div>
-
-      <div className="form-section">
-        <h3>Wine reference</h3>
-        <label>
-          Description
-          <textarea
-            {...register("description")}
-            placeholder="Visible winery description or tasting copy"
-          />
-        </label>
-        <label>
-          Drinking advice
-          <textarea {...register("drinkingAdvice")} placeholder="Cellaring or serving advice" />
-        </label>
-        <label>
-          Label text
-          <textarea
-            {...register("labelText")}
-            placeholder="Paste label, OCR, or winery page text"
-          />
-        </label>
-        <label>
-          Wine notes
-          <textarea
-            {...register("wineNotes")}
-            placeholder="Tasting notes, food pairing, source details"
-          />
-        </label>
-        <label>
-          Bottle notes
-          <textarea
-            {...register("bottleNotes")}
-            placeholder="Condition, purchase source, box details"
-          />
-        </label>
-      </div>
+      </FormSection>
+      <FormSection title="Drink window">
+        <FieldGrid
+          control={control}
+          fields={[
+            { label: "Drink from", name: "drinkFromYear", placeholder: "2025" },
+            { label: "Drink to", name: "drinkToYear", placeholder: "2032" },
+            { label: "Source URL", name: "sourceUrl", placeholder: "https://winery.example/wine" },
+          ]}
+        />
+      </FormSection>
+      <FormSection title="Wine reference">
+        {referenceFields.map((field) => (
+          <BottleTextArea control={control} key={field.name} {...field} />
+        ))}
+      </FormSection>
     </>
   );
+}
+
+function FormSection({
+  children,
+  title,
+}: {
+  readonly children: ReactNode;
+  readonly title: string;
+}): ReactElement {
+  return (
+    <section className="form-section">
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function FieldGrid({
+  control,
+  fields,
+}: {
+  readonly control: Control<FormState>;
+  readonly fields: readonly FormFieldConfig[];
+}): ReactElement {
+  return (
+    <div className="field-row">
+      {fields.map((field) => (
+        <BottleTextInput control={control} key={field.name} {...field} />
+      ))}
+    </div>
+  );
+}
+
+function CriticReviewFields({
+  errors,
+  reviews,
+  onChange,
+}: {
+  readonly errors: readonly ReviewErrors[];
+  readonly reviews: readonly CriticReviewInput[];
+  readonly onChange: (reviews: readonly CriticReviewInput[]) => void;
+}): ReactElement {
+  const update = (index: number, patch: Partial<CriticReviewInput>): void => {
+    onChange(
+      reviews.map((review, reviewIndex) =>
+        reviewIndex === index ? { ...review, ...patch } : review,
+      ),
+    );
+  };
+  return (
+    <FormSection title="Critic reviews">
+      <div className="section-heading">
+        <p className="field-hint">Record ratings and your own source notes.</p>
+        <Button
+          label="Add review"
+          onClick={() => {
+            onChange([...reviews, { ratingText: "", reviewSourceName: "" }]);
+          }}
+        />
+      </div>
+      {reviews.length === 0 ? (
+        <p className="field-hint">No critic reviews recorded.</p>
+      ) : (
+        <div className="review-edit-list">
+          {reviews.map((review, index) => {
+            const error = errors[index];
+            return (
+              <div className="review-edit-row" key={review.id ?? `review-${index}`}>
+                <div className="field-row">
+                  <TextInput
+                    autoComplete="off"
+                    data-repeatable-error={
+                      error?.reviewSourceName === undefined ? undefined : "true"
+                    }
+                    htmlName={`criticReviews.${index}.reviewSourceName`}
+                    isRequired
+                    label="Source"
+                    placeholder="Halliday Wine Companion"
+                    value={review.reviewSourceName ?? ""}
+                    status={
+                      error?.reviewSourceName === undefined
+                        ? undefined
+                        : { message: error.reviewSourceName, type: "error" }
+                    }
+                    onChange={(value: string) => {
+                      update(index, { reviewSourceName: value });
+                    }}
+                  />
+                  <TextInput
+                    autoComplete="off"
+                    data-repeatable-error={error?.ratingText === undefined ? undefined : "true"}
+                    htmlName={`criticReviews.${index}.ratingText`}
+                    isRequired
+                    label="Rating"
+                    placeholder="95 points"
+                    value={review.ratingText}
+                    status={
+                      error?.ratingText === undefined
+                        ? undefined
+                        : { message: error.ratingText, type: "error" }
+                    }
+                    onChange={(value: string) => {
+                      update(index, { ratingText: value });
+                    }}
+                  />
+                  <TextInput
+                    autoComplete="url"
+                    htmlName={`criticReviews.${index}.sourceUrl`}
+                    label="Source URL"
+                    placeholder="https://example.com/review"
+                    value={review.sourceUrl ?? ""}
+                    onChange={(value: string) => {
+                      update(index, { sourceUrl: value });
+                    }}
+                  />
+                  <TextInput
+                    autoComplete="off"
+                    htmlName={`criticReviews.${index}.provenance`}
+                    label="Provenance"
+                    placeholder="Guide, database, or note"
+                    value={review.provenance ?? ""}
+                    onChange={(value: string) => {
+                      update(index, { provenance: value });
+                    }}
+                  />
+                </div>
+                <TextArea
+                  htmlName={`criticReviews.${index}.notes`}
+                  label="Notes"
+                  value={review.notes ?? ""}
+                  onChange={(value: string) => {
+                    update(index, { notes: value });
+                  }}
+                />
+                <Button
+                  label="Remove review"
+                  variant="destructive"
+                  onClick={() => {
+                    onChange(reviews.filter((_, reviewIndex) => reviewIndex !== index));
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </FormSection>
+  );
+}
+
+function AwardFields({
+  awards,
+  errors,
+  onChange,
+}: {
+  readonly awards: readonly AwardDraft[];
+  readonly errors: readonly AwardErrors[];
+  readonly onChange: (awards: readonly AwardDraft[]) => void;
+}): ReactElement {
+  const update = (index: number, patch: Partial<AwardDraft>): void => {
+    onChange(
+      awards.map((award, awardIndex) => (awardIndex === index ? { ...award, ...patch } : award)),
+    );
+  };
+  return (
+    <FormSection title="Awards">
+      <div className="section-heading">
+        <p className="field-hint">Track medals, competitions, and source context.</p>
+        <Button
+          label="Add award"
+          onClick={() => {
+            onChange([...awards, { awardLevel: "", awardName: "", awardYear: "", points: "" }]);
+          }}
+        />
+      </div>
+      {awards.length === 0 ? (
+        <p className="field-hint">No awards recorded.</p>
+      ) : (
+        <div className="review-edit-list">
+          {awards.map((award, index) => {
+            const error = errors[index];
+            return (
+              <div className="review-edit-row" key={award.id ?? `award-${index}`}>
+                <div className="field-row">
+                  <AwardTextInput
+                    error={error?.awardLevel}
+                    htmlName={`awards.${index}.awardLevel`}
+                    isRequired
+                    label="Award"
+                    placeholder="Gold Medal"
+                    value={award.awardLevel}
+                    onChange={(value) => {
+                      update(index, { awardLevel: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    error={error?.awardYear}
+                    htmlName={`awards.${index}.awardYear`}
+                    label="Year"
+                    placeholder="2024"
+                    value={award.awardYear}
+                    onChange={(value) => {
+                      update(index, { awardYear: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    error={error?.awardName}
+                    htmlName={`awards.${index}.awardName`}
+                    isRequired
+                    label="Competition or source"
+                    value={award.awardName}
+                    onChange={(value) => {
+                      update(index, { awardName: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    htmlName={`awards.${index}.awardBody`}
+                    label="Body"
+                    value={award.awardBody ?? ""}
+                    onChange={(value) => {
+                      update(index, { awardBody: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    htmlName={`awards.${index}.category`}
+                    label="Class or category"
+                    value={award.category ?? ""}
+                    onChange={(value) => {
+                      update(index, { category: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    error={error?.points}
+                    htmlName={`awards.${index}.points`}
+                    label="Points"
+                    value={award.points}
+                    onChange={(value) => {
+                      update(index, { points: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    htmlName={`awards.${index}.sourceUrl`}
+                    label="Source URL"
+                    value={award.sourceUrl ?? ""}
+                    onChange={(value) => {
+                      update(index, { sourceUrl: value });
+                    }}
+                  />
+                  <AwardTextInput
+                    htmlName={`awards.${index}.provenance`}
+                    label="Provenance"
+                    value={award.provenance ?? ""}
+                    onChange={(value) => {
+                      update(index, { provenance: value });
+                    }}
+                  />
+                </div>
+                <TextArea
+                  htmlName={`awards.${index}.notes`}
+                  label="Notes"
+                  value={award.notes ?? ""}
+                  onChange={(value: string) => {
+                    update(index, { notes: value });
+                  }}
+                />
+                <Button
+                  label="Remove award"
+                  variant="destructive"
+                  onClick={() => {
+                    onChange(awards.filter((_, awardIndex) => awardIndex !== index));
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </FormSection>
+  );
+}
+
+function AwardTextInput({
+  error,
+  htmlName,
+  isRequired = false,
+  label,
+  placeholder,
+  value,
+  onChange,
+}: {
+  readonly error?: string | undefined;
+  readonly htmlName: string;
+  readonly isRequired?: boolean;
+  readonly label: string;
+  readonly placeholder?: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}): ReactElement {
+  return (
+    <TextInput
+      autoComplete="off"
+      data-repeatable-error={error === undefined ? undefined : "true"}
+      htmlName={htmlName}
+      isRequired={isRequired}
+      label={label}
+      placeholder={placeholder}
+      status={error === undefined ? undefined : { message: error, type: "error" }}
+      value={value}
+      onChange={onChange}
+    />
+  );
+}
+
+function criticReviewInputsForItem(item: InventoryItem | undefined): readonly CriticReviewInput[] {
+  return (item?.criticReviews ?? []).map((review) => criticReviewInputForResource(review));
+}
+
+function criticReviewInputForResource(review: CriticReviewResource): CriticReviewInput {
+  return {
+    id: review.id,
+    notes: review.notes ?? undefined,
+    provenance: review.provenance ?? undefined,
+    ratingScale: review.ratingScale ?? undefined,
+    ratingText: review.ratingText,
+    ratingValue: review.ratingValue ?? undefined,
+    reviewedAt: review.reviewedAt ?? undefined,
+    reviewSourceId: review.reviewSourceId,
+    reviewSourceName: review.reviewSourceName,
+    sourceUrl: review.sourceUrl ?? undefined,
+  };
+}
+
+function awardInputsForItem(item: InventoryItem | undefined): readonly AwardDraft[] {
+  return (item?.awards ?? []).map((award) => awardInputForResource(award));
+}
+
+function awardInputForResource(award: WineAwardResource): AwardDraft {
+  return {
+    awardBody: award.awardBody ?? undefined,
+    awardLevel: award.awardLevel,
+    awardName: award.awardName,
+    awardYear: award.awardYear?.toString() ?? "",
+    category: award.category ?? undefined,
+    id: award.id,
+    notes: award.notes ?? undefined,
+    points: award.points?.toString() ?? "",
+    provenance: award.provenance ?? undefined,
+    sourceUrl: award.sourceUrl ?? undefined,
+  };
+}
+
+export function validateCriticReviews(reviews: readonly CriticReviewInput[]):
+  | {
+      readonly ok: true;
+      readonly errors: readonly ReviewErrors[];
+      readonly values: readonly CriticReviewInput[];
+    }
+  | { readonly ok: false; readonly errors: readonly ReviewErrors[] } {
+  const values = reviews.map((review) => ({
+    ...review,
+    notes: review.notes?.trim(),
+    provenance: review.provenance?.trim(),
+    ratingText: review.ratingText.trim(),
+    reviewSourceName: review.reviewSourceName?.trim(),
+    sourceUrl: review.sourceUrl?.trim(),
+  }));
+  const errors = values.map((review) => ({
+    ...(review.ratingText === "" ? { ratingText: "Rating is required." } : {}),
+    ...(review.reviewSourceId === undefined &&
+    (review.reviewSourceName === undefined || review.reviewSourceName === "")
+      ? { reviewSourceName: "Source is required." }
+      : {}),
+  }));
+  return errors.some((error) => Object.keys(error).length > 0)
+    ? { ok: false, errors }
+    : { ok: true, errors, values };
+}
+
+export function validateAwards(awards: readonly AwardDraft[]):
+  | {
+      readonly ok: true;
+      readonly errors: readonly AwardErrors[];
+      readonly values: readonly WineAwardInput[];
+    }
+  | { readonly ok: false; readonly errors: readonly AwardErrors[] } {
+  const normalised = awards.map((award) => ({
+    ...award,
+    awardBody: award.awardBody?.trim(),
+    awardLevel: award.awardLevel.trim(),
+    awardName: award.awardName.trim(),
+    category: award.category?.trim(),
+    notes: award.notes?.trim(),
+    provenance: award.provenance?.trim(),
+    sourceUrl: award.sourceUrl?.trim(),
+  }));
+  const errors = normalised.map((award) => ({
+    ...(award.awardLevel === "" ? { awardLevel: "Award is required." } : {}),
+    ...(award.awardName === "" ? { awardName: "Competition or source is required." } : {}),
+    ...(isOptionalInteger(award.awardYear) ? {} : { awardYear: "Year must be a whole number." }),
+    ...(isOptionalNumber(award.points) ? {} : { points: "Points must be a number." }),
+  }));
+  if (errors.some((error) => Object.keys(error).length > 0)) {
+    return { ok: false, errors };
+  }
+  return {
+    ok: true,
+    errors,
+    values: normalised.map(({ awardYear, points, ...award }) => ({
+      ...award,
+      awardYear: awardYear === "" ? undefined : Number(awardYear),
+      points: points === "" ? undefined : Number(points),
+    })),
+  };
+}
+
+function isOptionalInteger(value: string): boolean {
+  return value === "" || /^-?\d+$/u.test(value);
+}
+
+function isOptionalNumber(value: string): boolean {
+  return value === "" || Number.isFinite(Number(value));
 }

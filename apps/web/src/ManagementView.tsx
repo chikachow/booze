@@ -1,4 +1,10 @@
-import type { ReactElement } from "react";
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { useState, type ReactElement } from "react";
 
 import { LocationCreateForm } from "./LocationCreateForm.tsx";
 import {
@@ -96,12 +102,53 @@ function LocationArea({
   readonly setEditingLocationId: (value: string | null) => void;
   readonly setEditingLocationName: (value: string) => void;
   readonly setDeletingLocationId: (value: string | null) => void;
-  readonly deleteLocation: (locationId: string) => Promise<void>;
+  readonly deleteLocation: (locationId: string) => Promise<boolean>;
   readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
-  readonly onSaveLocation: () => Promise<void>;
-  readonly onSaveLocationName: (locationId: string) => Promise<void>;
+  readonly onSaveLocation: () => Promise<boolean>;
+  readonly onSaveLocationName: (locationId: string) => Promise<boolean>;
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
+  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<{
+    readonly id: string;
+    readonly message: string;
+  } | null>(null);
+
+  async function saveLocationName(locationId: string): Promise<void> {
+    setPendingRenameId(locationId);
+    setRenameError(null);
+    try {
+      const saved = await onSaveLocationName(locationId);
+      if (!saved) {
+        setRenameError({ id: locationId, message: "Location was not updated. Try again." });
+      }
+    } catch {
+      setRenameError({
+        id: locationId,
+        message: "Location was not updated. Check your connection and try again.",
+      });
+    } finally {
+      setPendingRenameId(null);
+    }
+  }
+
+  async function removeLocation(locationId: string): Promise<void> {
+    setPendingDeleteId(locationId);
+    setDeleteErrorId(null);
+    try {
+      const deleted = await deleteLocation(locationId);
+      if (!deleted) {
+        setDeleteErrorId(locationId);
+      }
+    } catch {
+      setDeleteErrorId(locationId);
+    } finally {
+      setPendingDeleteId(null);
+    }
+  }
+
   return (
     <section className="management-section" aria-labelledby="locations-title">
       <div className="section-heading">
@@ -116,68 +163,63 @@ function LocationArea({
       />
 
       {locations.length === 0 ? (
-        <div className="empty-state">
-          <h3>No locations yet</h3>
-          <p>Create a site and location before cataloguing the first bottle.</p>
-        </div>
+        <EmptyState
+          description="Create a site and location before cataloguing the first bottle."
+          title="No locations yet"
+        />
       ) : (
         <div className="location-grid">
           {locations.toSorted(compareLocationPath(locations)).map((location) => (
             <article className="location-card" key={location.locationId}>
-              {deletingLocationId === location.locationId ? (
-                <div className="inline-edit">
-                  <div>
-                    <h3>Delete {locationPath(location, locations)}?</h3>
-                    <p>Bottles in this location will stay in {location.site} with no location.</p>
-                  </div>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void deleteLocation(location.locationId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingLocationId(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : editingLocationId === location.locationId ? (
+              {editingLocationId === location.locationId ? (
                 <form
                   className="inline-edit"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void onSaveLocationName(location.locationId);
+                    if (editingLocationName.trim() === "") {
+                      setRenameError({
+                        id: location.locationId,
+                        message: "Location name is required.",
+                      });
+                      return;
+                    }
+                    if (pendingRenameId !== null) {
+                      return;
+                    }
+                    void saveLocationName(location.locationId);
                   }}
                 >
-                  <label>
-                    Location displayName
-                    <input
-                      required
-                      value={editingLocationName}
-                      onChange={(event) => {
-                        setEditingLocationName(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
+                  <TextInput
+                    autoComplete="off"
+                    htmlName="locationName"
+                    isRequired
+                    label="Location display name"
+                    status={
+                      renameError?.id === location.locationId
+                        ? { message: renameError.message, type: "error" }
+                        : undefined
+                    }
+                    value={editingLocationName}
+                    onChange={(value: string) => {
+                      setEditingLocationName(value);
+                      setRenameError(null);
+                    }}
+                  />
                   <div className="card-actions">
-                    <button type="submit">Save</button>
-                    <button
-                      type="button"
+                    <Button
+                      isLoading={pendingRenameId === location.locationId}
+                      label="Save"
+                      type="submit"
+                      variant="primary"
+                    />
+                    <Button
+                      label="Cancel"
+                      variant="ghost"
                       onClick={() => {
                         setEditingLocationId(null);
                         setEditingLocationName("");
                       }}
-                    >
-                      Cancel
-                    </button>
+                    />
                   </div>
                 </form>
               ) : (
@@ -194,35 +236,56 @@ function LocationArea({
                   </dl>
                   {writableSiteIds.has(location.siteId) ? (
                     <div className="card-actions">
-                      <button
-                        type="button"
+                      <Button
+                        label="Use for bottle"
                         onClick={() => {
                           onUseLocation(location);
                         }}
-                      >
-                        Use for bottle
-                      </button>
-                      <button
-                        type="button"
+                      />
+                      <Button
+                        label="Edit"
+                        variant="ghost"
                         onClick={() => {
                           setEditingLocationId(location.locationId);
                           setEditingLocationName(location.location);
                         }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
+                      />
+                      <Button
+                        label="Delete"
+                        variant="destructive"
                         onClick={() => {
                           setDeletingLocationId(location.locationId);
                         }}
-                      >
-                        Delete
-                      </button>
+                      />
                     </div>
                   ) : null}
                 </>
               )}
+              {deleteErrorId === location.locationId ? (
+                <Banner
+                  aria-live="assertive"
+                  status="error"
+                  title="Location was not deleted. Try again."
+                />
+              ) : null}
+              <AlertDialog
+                actionLabel="Delete location"
+                description={`Bottles in ${locationPath(location, locations)} will remain in ${location.site} without a storage location. This action cannot be undone.`}
+                isActionLoading={pendingDeleteId === location.locationId}
+                isOpen={deletingLocationId === location.locationId}
+                title={`Delete ${location.location}?`}
+                onAction={() => {
+                  if (pendingDeleteId !== null) {
+                    return;
+                  }
+                  void removeLocation(location.locationId);
+                }}
+                onOpenChange={(isOpen: boolean) => {
+                  if (pendingDeleteId === null) {
+                    setDeletingLocationId(isOpen ? location.locationId : null);
+                  }
+                }}
+              />
             </article>
           ))}
         </div>
@@ -253,106 +316,159 @@ function SiteArea({
   readonly setEditingSiteId: (value: string | null) => void;
   readonly setEditingSiteName: (value: string) => void;
   readonly setDeletingSiteId: (value: string | null) => void;
-  readonly deleteSite: (siteId: string) => Promise<void>;
+  readonly deleteSite: (siteId: string) => Promise<boolean>;
   readonly updateSiteField: (field: keyof SiteFormState, value: string) => void;
-  readonly onSaveSite: () => Promise<void>;
-  readonly onSaveSiteName: (siteId: string) => Promise<void>;
+  readonly onSaveSite: () => Promise<boolean>;
+  readonly onSaveSiteName: (siteId: string) => Promise<boolean>;
 }): ReactElement {
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [siteError, setSiteError] = useState<string | null>(null);
+  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<{
+    readonly id: string;
+    readonly message: string;
+  } | null>(null);
+
+  async function saveSite(): Promise<void> {
+    setIsSaving(true);
+    setSiteError(null);
+    try {
+      const saved = await onSaveSite();
+      if (!saved) {
+        setSiteError("Site was not saved. Try again.");
+      }
+    } catch {
+      setSiteError("Site was not saved. Check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function saveSiteName(siteId: string): Promise<void> {
+    setPendingRenameId(siteId);
+    setRenameError(null);
+    try {
+      const saved = await onSaveSiteName(siteId);
+      if (!saved) {
+        setRenameError({ id: siteId, message: "Site was not updated. Try again." });
+      }
+    } catch {
+      setRenameError({
+        id: siteId,
+        message: "Site was not updated. Check your connection and try again.",
+      });
+    } finally {
+      setPendingRenameId(null);
+    }
+  }
+
+  async function removeSite(siteId: string): Promise<void> {
+    setPendingDeleteId(siteId);
+    setDeleteErrorId(null);
+    try {
+      const deleted = await deleteSite(siteId);
+      if (!deleted) {
+        setDeleteErrorId(siteId);
+      }
+    } catch {
+      setDeleteErrorId(siteId);
+    } finally {
+      setPendingDeleteId(null);
+    }
+  }
+
   return (
     <section className="management-section" aria-labelledby="sites-title">
       <div className="section-heading">
         <h3 id="sites-title">Sites</h3>
       </div>
       <form
-        className="entry-form compact-form"
+        className="form-stack"
         onSubmit={(event) => {
           event.preventDefault();
-          void onSaveSite();
+          if (form.site.trim() === "") {
+            setSiteError("Site name is required.");
+            return;
+          }
+          if (isSaving) {
+            return;
+          }
+          void saveSite();
         }}
       >
-        <label>
-          Site
-          <input
-            required
-            autoComplete="off"
-            value={form.site}
-            onChange={(event) => {
-              updateSiteField("site", event.currentTarget.value);
-            }}
-            placeholder="home"
-          />
-        </label>
-        <button className="primary-action" type="submit">
-          Save site
-        </button>
+        <TextInput
+          autoComplete="organization"
+          htmlName="siteName"
+          isRequired
+          label="Site"
+          placeholder="Home"
+          status={siteError === null ? undefined : { message: siteError, type: "error" }}
+          value={form.site}
+          onChange={(value: string) => {
+            updateSiteField("site", value);
+            setSiteError(null);
+          }}
+        />
+        <Button isLoading={isSaving} label="Save site" type="submit" variant="primary" />
       </form>
 
       {sites.length === 0 ? (
-        <div className="empty-state">
-          <h3>No sites yet</h3>
-          <p>Create a site before cataloguing bottles or locations.</p>
-        </div>
+        <EmptyState
+          description="Create a site before cataloguing bottles or locations."
+          title="No sites yet"
+        />
       ) : (
         <div className="location-grid">
           {sites.map((site) => (
             <article className="location-card" key={site.siteId}>
-              {deletingSiteId === site.siteId ? (
-                <div className="inline-edit">
-                  <div>
-                    <h3>Delete {site.site}?</h3>
-                    <p>
-                      Bottles, wine vintages, locations, and membership records for this site will
-                      be removed.
-                    </p>
-                  </div>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void deleteSite(site.siteId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingSiteId(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : editingSiteId === site.siteId ? (
+              {editingSiteId === site.siteId ? (
                 <form
                   className="inline-edit"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    void onSaveSiteName(site.siteId);
+                    if (editingSiteName.trim() === "") {
+                      setRenameError({ id: site.siteId, message: "Site name is required." });
+                      return;
+                    }
+                    if (pendingRenameId !== null) {
+                      return;
+                    }
+                    void saveSiteName(site.siteId);
                   }}
                 >
-                  <label>
-                    Site displayName
-                    <input
-                      required
-                      value={editingSiteName}
-                      onChange={(event) => {
-                        setEditingSiteName(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
+                  <TextInput
+                    autoComplete="organization"
+                    htmlName="siteName"
+                    isRequired
+                    label="Site display name"
+                    status={
+                      renameError?.id === site.siteId
+                        ? { message: renameError.message, type: "error" }
+                        : undefined
+                    }
+                    value={editingSiteName}
+                    onChange={(value: string) => {
+                      setEditingSiteName(value);
+                      setRenameError(null);
+                    }}
+                  />
                   <div className="card-actions">
-                    <button type="submit">Save</button>
-                    <button
-                      type="button"
+                    <Button
+                      isLoading={pendingRenameId === site.siteId}
+                      label="Save"
+                      type="submit"
+                      variant="primary"
+                    />
+                    <Button
+                      label="Cancel"
+                      variant="ghost"
                       onClick={() => {
                         setEditingSiteId(null);
                         setEditingSiteName("");
                       }}
-                    >
-                      Cancel
-                    </button>
+                    />
                   </div>
                 </form>
               ) : (
@@ -360,7 +476,7 @@ function SiteArea({
                   <div>
                     <h3>{site.site}</h3>
                     <p>
-                      {site.siteId} · {site.role}
+                      {site.siteId} · <Badge label={site.role} variant="neutral" />
                     </p>
                   </div>
                   <dl>
@@ -375,27 +491,49 @@ function SiteArea({
                   </dl>
                   {site.role === "owner" ? (
                     <div className="card-actions">
-                      <button
-                        type="button"
+                      <Button
+                        label="Edit"
                         onClick={() => {
                           setEditingSiteId(site.siteId);
                           setEditingSiteName(site.site);
                         }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
+                      />
+                      <Button
+                        label="Delete"
+                        variant="destructive"
                         onClick={() => {
                           setDeletingSiteId(site.siteId);
                         }}
-                      >
-                        Delete
-                      </button>
+                      />
                     </div>
                   ) : null}
                 </>
               )}
+              {deleteErrorId === site.siteId ? (
+                <Banner
+                  aria-live="assertive"
+                  status="error"
+                  title="Site was not deleted. Try again."
+                />
+              ) : null}
+              <AlertDialog
+                actionLabel="Delete site"
+                description="This permanently removes the site, its bottles, wine vintages, locations, and membership records. This action cannot be undone."
+                isActionLoading={pendingDeleteId === site.siteId}
+                isOpen={deletingSiteId === site.siteId}
+                title={`Delete ${site.site}?`}
+                onAction={() => {
+                  if (pendingDeleteId !== null) {
+                    return;
+                  }
+                  void removeSite(site.siteId);
+                }}
+                onOpenChange={(isOpen: boolean) => {
+                  if (pendingDeleteId === null) {
+                    setDeletingSiteId(isOpen ? site.siteId : null);
+                  }
+                }}
+              />
             </article>
           ))}
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
+import { validateBottleQuantity } from "../shared/quantity.ts";
 import type { BottleModalSubmit } from "./BottleModal.tsx";
 import type { CaptureSubmitResult } from "./CaptureView.tsx";
 import {
@@ -12,7 +13,6 @@ import {
   parseOptionalDecimal,
   parseOptionalVolumeMl,
   parseOptionalYear,
-  parseQuantity,
   type Area,
   type BottlePatch,
   type CaptureFormState,
@@ -55,38 +55,47 @@ function useBottleControllerImpl({
       setStatus("Choose a site before saving the bottle.");
       return;
     }
-    setIsSaving(true);
-    setStatus("Saving bottle...");
-    const payload = bottlePayload({ awards, criticReviews, form });
-    const response = await fetch("/api/bottles", {
-      method: "POST",
-      headers: jsonHeaders(await getAuthHeaders()),
-      body: JSON.stringify({
-        ...payload,
-        siteId: form.siteId,
-        quantity: parseQuantity(form.quantity),
-        wine: {
-          ...payload.wine,
-          addressQualification: form.addressQualification,
-        },
-      }),
-    });
-    if (!response.ok) {
-      setIsSaving(false);
-      setStatus("Bottle was not saved. Check required fields.");
+    const quantity = validateBottleQuantity(form.quantity);
+    if (!quantity.ok) {
+      setStatus(quantity.message);
       return;
     }
-    setAddFormDefaults({
-      ...initialFormState,
-      siteId: form.siteId,
-      site: form.site,
-      storageLocationId: form.storageLocationId,
-      location: form.location,
-      position: form.position,
-    });
-    setIsAddOpen(false);
-    await loadCatalogue();
-    setIsSaving(false);
+    setIsSaving(true);
+    setStatus("Saving bottle...");
+    try {
+      const payload = bottlePayload({ awards, criticReviews, form });
+      const response = await fetch("/api/bottles", {
+        method: "POST",
+        headers: jsonHeaders(await getAuthHeaders()),
+        body: JSON.stringify({
+          ...payload,
+          siteId: form.siteId,
+          quantity: quantity.value,
+          wine: {
+            ...payload.wine,
+            addressQualification: form.addressQualification,
+          },
+        }),
+      });
+      if (!response.ok) {
+        setStatus("Bottle was not saved. Check required fields.");
+        return;
+      }
+      setAddFormDefaults({
+        ...initialFormState,
+        siteId: form.siteId,
+        site: form.site,
+        storageLocationId: form.storageLocationId,
+        location: form.location,
+        position: form.position,
+      });
+      setIsAddOpen(false);
+      await loadCatalogue();
+    } catch {
+      setStatus("Bottle was not saved. Check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function updateBottle({
@@ -131,13 +140,18 @@ function useBottleControllerImpl({
       return;
     }
     setIsSaving(true);
-    const updated = await updateBottle({
-      bottleId: editingBottle.bottleId,
-      payload: bottlePayload(submission),
-    });
-    setIsSaving(false);
-    if (updated) {
-      setEditingBottle(null);
+    try {
+      const updated = await updateBottle({
+        bottleId: editingBottle.bottleId,
+        payload: bottlePayload(submission),
+      });
+      if (updated) {
+        setEditingBottle(null);
+      }
+    } catch {
+      setStatus("Bottle was not updated. Check your connection and try again.");
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -194,6 +208,11 @@ function useCaptureControllerImpl({
       setStatus(message);
       return { kind: "failed", message };
     }
+    const quantity = validateBottleQuantity(form.quantity);
+    if (!quantity.ok) {
+      setStatus(quantity.message);
+      return { kind: "failed", message: quantity.message };
+    }
     setIsSaving(true);
     setStatus("Submitting capture...");
     const formData = new FormData();
@@ -202,44 +221,51 @@ function useCaptureControllerImpl({
       formData.append("storageLocationId", form.storageLocationId);
     }
     formData.append("positionHint", form.position);
-    formData.append("quantity", form.quantity);
+    formData.append("quantity", String(quantity.value));
     for (const file of files) {
       formData.append("images", file);
     }
-    const response = await fetch("/api/bottle-captures", {
-      method: "POST",
-      headers: await getAuthHeaders(),
-      body: formData,
-    });
-    setIsSaving(false);
-    if (!response.ok) {
-      const message = await responseErrorMessage(response);
-      const statusMessage =
-        message === null ? "Capture was not submitted." : `Capture failed: ${message}`;
+    try {
+      const response = await fetch("/api/bottle-captures", {
+        method: "POST",
+        headers: await getAuthHeaders(),
+        body: formData,
+      });
+      if (!response.ok) {
+        const message = await responseErrorMessage(response);
+        const statusMessage =
+          message === null ? "Capture was not submitted." : `Capture failed: ${message}`;
+        setStatus(statusMessage);
+        return { kind: "failed", message: statusMessage };
+      }
+      setCaptureForm({
+        siteId: form.siteId,
+        site: form.site,
+        storageLocationId: form.storageLocationId,
+        location: form.location,
+        position: form.position,
+        quantity: "1",
+      });
+      await loadCatalogue();
+      const message = captureSubmitErrorMessage(await response.json());
+      if (message !== null) {
+        const statusMessage = `Capture saved but not submitted: ${message}`;
+        setStatus(statusMessage);
+        return { kind: "saved_with_error", message: statusMessage };
+      }
+      const statusMessage = "Capture submitted. Extraction will run in the background.";
       setStatus(statusMessage);
-      return { kind: "failed", message: statusMessage };
+      return { kind: "submitted", message: statusMessage };
+    } catch {
+      const message = "Capture was not submitted. Check your connection and try again.";
+      setStatus(message);
+      return { kind: "failed", message };
+    } finally {
+      setIsSaving(false);
     }
-    setCaptureForm({
-      siteId: form.siteId,
-      site: form.site,
-      storageLocationId: form.storageLocationId,
-      location: form.location,
-      position: form.position,
-      quantity: "1",
-    });
-    await loadCatalogue();
-    const message = captureSubmitErrorMessage(await response.json());
-    if (message !== null) {
-      const statusMessage = `Capture saved but not submitted: ${message}`;
-      setStatus(statusMessage);
-      return { kind: "saved_with_error", message: statusMessage };
-    }
-    const statusMessage = "Capture submitted. Extraction will run in the background.";
-    setStatus(statusMessage);
-    return { kind: "submitted", message: statusMessage };
   }
 
-  async function retryCapture(captureId: string): Promise<void> {
+  async function retryCapture(captureId: string): Promise<boolean> {
     setStatus("Retrying capture...");
     const response = await fetch(`/api/bottle-captures/${captureId}/retry`, {
       method: "POST",
@@ -247,13 +273,14 @@ function useCaptureControllerImpl({
     });
     if (!response.ok) {
       setStatus("Capture was not retried.");
-      return;
+      return false;
     }
     await loadCaptures();
     setStatus("Capture retry started.");
+    return true;
   }
 
-  async function importCapture(captureId: string, wineVintageId?: string): Promise<void> {
+  async function importCapture(captureId: string, wineVintageId?: string): Promise<boolean> {
     setStatus("Importing capture...");
     const response = await fetch(`/api/bottle-captures/${captureId}/import`, {
       method: "POST",
@@ -263,13 +290,14 @@ function useCaptureControllerImpl({
     if (!response.ok) {
       const message = await responseErrorMessage(response);
       setStatus(message === null ? "Capture was not imported." : `Import failed: ${message}`);
-      return;
+      return false;
     }
     await loadCatalogue();
     setStatus("Capture imported.");
+    return true;
   }
 
-  async function deleteCapture(captureId: string): Promise<void> {
+  async function deleteCapture(captureId: string): Promise<boolean> {
     setStatus("Deleting capture...");
     const response = await fetch(`/api/bottle-captures/${captureId}`, {
       method: "DELETE",
@@ -278,10 +306,11 @@ function useCaptureControllerImpl({
     if (!response.ok) {
       const message = await responseErrorMessage(response);
       setStatus(message === null ? "Capture was not deleted." : `Delete failed: ${message}`);
-      return;
+      return false;
     }
     await loadCaptures();
     setStatus("Capture deleted.");
+    return true;
   }
 
   return {
@@ -313,10 +342,14 @@ function useLocationControllerImpl({
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  async function save(): Promise<void> {
+  async function save(): Promise<boolean> {
     if (form.siteId === "") {
       setStatus("Choose a site before saving the location.");
-      return;
+      return false;
+    }
+    if (form.location.trim() === "") {
+      setStatus("Enter a location name before saving.");
+      return false;
     }
     setStatus("Saving location...");
     const response = await fetch("/api/storage-locations", {
@@ -330,14 +363,19 @@ function useLocationControllerImpl({
     });
     if (!response.ok) {
       setStatus("Location was not saved.");
-      return;
+      return false;
     }
     setForm((current) => ({ ...current, location: "" }));
     await loadCatalogue();
     setStatus("Location saved.");
+    return true;
   }
 
-  async function saveName(locationId: string): Promise<void> {
+  async function saveName(locationId: string): Promise<boolean> {
+    if (editingName.trim() === "") {
+      setStatus("Enter a location name before saving.");
+      return false;
+    }
     setStatus("Updating location...");
     const response = await fetch(`/api/storage-locations/${locationId}`, {
       method: "PATCH",
@@ -346,15 +384,16 @@ function useLocationControllerImpl({
     });
     if (!response.ok) {
       setStatus("Location was not updated.");
-      return;
+      return false;
     }
     setEditingId(null);
     setEditingName("");
     await loadCatalogue();
     setStatus("Location updated.");
+    return true;
   }
 
-  async function remove(locationId: string): Promise<void> {
+  async function remove(locationId: string): Promise<boolean> {
     setStatus("Deleting location...");
     const response = await fetch(`/api/storage-locations/${locationId}`, {
       method: "DELETE",
@@ -362,11 +401,12 @@ function useLocationControllerImpl({
     });
     if (!response.ok) {
       setStatus("Location was not deleted.");
-      return;
+      return false;
     }
     setDeletingId(null);
     await loadCatalogue();
     setStatus("Location deleted. Bottles stayed in the site without a location.");
+    return true;
   }
 
   return {
@@ -398,7 +438,11 @@ function useSiteControllerImpl({
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  async function save(): Promise<void> {
+  async function save(): Promise<boolean> {
+    if (form.site.trim() === "") {
+      setStatus("Enter a site name before saving.");
+      return false;
+    }
     setStatus("Saving site...");
     const response = await fetch("/api/sites", {
       method: "POST",
@@ -407,14 +451,19 @@ function useSiteControllerImpl({
     });
     if (!response.ok) {
       setStatus("Site was not saved.");
-      return;
+      return false;
     }
     setForm(initialSiteFormState);
     await loadCatalogue();
     setStatus("Site saved.");
+    return true;
   }
 
-  async function saveName(siteId: string): Promise<void> {
+  async function saveName(siteId: string): Promise<boolean> {
+    if (editingName.trim() === "") {
+      setStatus("Enter a site name before saving.");
+      return false;
+    }
     setStatus("Updating site...");
     const response = await fetch(`/api/sites/${siteId}`, {
       method: "PATCH",
@@ -423,15 +472,16 @@ function useSiteControllerImpl({
     });
     if (!response.ok) {
       setStatus("Site was not updated.");
-      return;
+      return false;
     }
     setEditingId(null);
     setEditingName("");
     await loadCatalogue();
     setStatus("Site updated.");
+    return true;
   }
 
-  async function remove(siteId: string): Promise<void> {
+  async function remove(siteId: string): Promise<boolean> {
     setStatus("Deleting site...");
     const response = await fetch(`/api/sites/${siteId}`, {
       method: "DELETE",
@@ -439,11 +489,12 @@ function useSiteControllerImpl({
     });
     if (!response.ok) {
       setStatus("Site was not deleted.");
-      return;
+      return false;
     }
     setDeletingId(null);
     await loadCatalogue();
     setStatus("Site deleted.");
+    return true;
   }
 
   return {
