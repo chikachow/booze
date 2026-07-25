@@ -12,8 +12,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { requireSitePermission } from "../api/auth.ts";
-import { upsertStorageLocation } from "../api/catalogue.ts";
-import { optionalText } from "../api/ids.ts";
+import { generatedId, optionalText } from "../api/ids.ts";
 import {
   assertCanReadStorageLocation,
   createWineVintageDrinkWindowUpdate,
@@ -28,6 +27,7 @@ import {
   listLocationBottleSummaries,
 } from "./bottles.ts";
 import { registerCriticReviewTools } from "./critic-reviews.ts";
+import { mcpEntityId } from "./ids.ts";
 import {
   getInventorySummary,
   getStorageLocationSummary,
@@ -358,31 +358,36 @@ export function createBoozeMcpServer({
         drinkToYear,
       });
 
-      await database.batch([
-        createWineVintageDrinkWindowUpdate({
-          database,
-          drinkFromYear,
-          drinkToYear,
+      const auditInsert = createMcpToolAuditEventInsert({
+        auditEventId,
+        database,
+        event: {
+          affectedRecordCount: changed ? 1 : 0,
+          after: { ...afterAudit, affectedBottleCount },
+          before: wineAuditSnapshot(before),
+          input: { drinkFromYear, drinkToYear, wineId },
           siteId: before.siteId,
-          wineVintageId,
-        }),
-        createMcpToolAuditEventInsert({
-          auditEventId,
-          database,
-          event: {
-            affectedRecordCount: 1,
-            after: { ...afterAudit, affectedBottleCount },
-            before: wineAuditSnapshot(before),
-            input: { drinkFromYear, drinkToYear, wineId },
+          targetKind: "wine",
+          targetMcpId: wineId,
+          targetPersistedId: wineVintageId,
+          toolName: "cellar.set_drinking_window",
+          userId,
+        },
+      });
+      if (changed) {
+        await database.batch([
+          createWineVintageDrinkWindowUpdate({
+            database,
+            drinkFromYear,
+            drinkToYear,
             siteId: before.siteId,
-            targetKind: "wine",
-            targetMcpId: wineId,
-            targetPersistedId: wineVintageId,
-            toolName: "cellar.set_drinking_window",
-            userId,
-          },
-        }),
-      ]);
+            wineVintageId,
+          }),
+          auditInsert,
+        ]);
+      } else {
+        await database.batch([auditInsert]);
+      }
 
       const wine = await getWineVintageSummary({ database, userId, wineId });
       return toolJson({
@@ -437,37 +442,54 @@ export function createBoozeMcpServer({
         )
         .limit(1);
       const before = beforeRows[0] ?? null;
-      const { storageLocationId } = await upsertStorageLocation({
-        database,
-        locationType,
-        name,
-        parentId,
-        siteId,
-      });
-      const location = await getStorageLocationSummary({ database, storageLocationId, userId });
+      const storageLocationId = before?.id ?? generatedId("loc");
       const changed = before === null || before.locationType !== locationType;
       const auditEventId = crypto.randomUUID();
-      await createMcpToolAuditEventInsert({
-        auditEventId,
-        database,
-        event: {
-          affectedRecordCount: changed ? 1 : 0,
-          after: location,
-          before: before === null ? {} : { locationType: before.locationType },
-          input: {
-            locationType,
-            name,
-            parentStorageLocationId: parentStorageLocationId ?? null,
+      const locationMcpId = mcpEntityId("location", storageLocationId);
+      const locationWrite =
+        before === null
+          ? database.insert(storageLocations).values({
+              id: storageLocationId,
+              locationType,
+              name,
+              parentId,
+              siteId,
+            })
+          : database
+              .update(storageLocations)
+              .set({ locationType, updatedAt: sql`CURRENT_TIMESTAMP` })
+              .where(eq(storageLocations.id, storageLocationId));
+      await database.batch([
+        locationWrite,
+        createMcpToolAuditEventInsert({
+          auditEventId,
+          database,
+          event: {
+            affectedRecordCount: changed ? 1 : 0,
+            after: {
+              locationType,
+              name,
+              parentStorageLocationId: parentStorageLocationId ?? null,
+              siteId,
+              storageLocationId: locationMcpId,
+            },
+            before: before === null ? {} : { locationType: before.locationType },
+            input: {
+              locationType,
+              name,
+              parentStorageLocationId: parentStorageLocationId ?? null,
+              siteId,
+            },
             siteId,
+            targetKind: "location",
+            targetMcpId: locationMcpId,
+            targetPersistedId: storageLocationId,
+            toolName: "cellar.create_storage_location",
+            userId,
           },
-          siteId,
-          targetKind: "location",
-          targetMcpId: location.storageLocationId,
-          targetPersistedId: storageLocationId,
-          toolName: "cellar.create_storage_location",
-          userId,
-        },
-      }).run();
+        }),
+      ]);
+      const location = await getStorageLocationSummary({ database, storageLocationId, userId });
       return toolJson({ changed, location });
     },
   );
@@ -516,21 +538,7 @@ export function createBoozeMcpServer({
         before.storageLocationId !== storageLocationId || before.position !== nextPosition;
       const auditEventId = crypto.randomUUID();
 
-      if (changed) {
-        await database.delete(bottleLocations).where(eq(bottleLocations.bottleId, bottleId)).run();
-        if (persistedStorageLocationId !== null) {
-          await database
-            .insert(bottleLocations)
-            .values({
-              bottleId,
-              positionHint: nextPosition,
-              siteId: before.siteId,
-              storageLocationId: persistedStorageLocationId,
-            })
-            .run();
-        }
-      }
-      await createMcpToolAuditEventInsert({
+      const auditInsert = createMcpToolAuditEventInsert({
         auditEventId,
         database,
         event: {
@@ -548,7 +556,26 @@ export function createBoozeMcpServer({
           toolName: "cellar.set_bottle_location",
           userId,
         },
-      }).run();
+      });
+      if (!changed) {
+        await database.batch([auditInsert]);
+      } else if (persistedStorageLocationId === null) {
+        await database.batch([
+          database.delete(bottleLocations).where(eq(bottleLocations.bottleId, bottleId)),
+          auditInsert,
+        ]);
+      } else {
+        await database.batch([
+          database.delete(bottleLocations).where(eq(bottleLocations.bottleId, bottleId)),
+          database.insert(bottleLocations).values({
+            bottleId,
+            positionHint: nextPosition,
+            siteId: before.siteId,
+            storageLocationId: persistedStorageLocationId,
+          }),
+          auditInsert,
+        ]);
+      }
 
       const afterStorageLocationsById = await listStorageLocationDisplayNames({ database, userId });
       const bottle = bottleDetail({
@@ -590,14 +617,7 @@ export function createBoozeMcpServer({
       const changed = before.status !== "consumed";
       const auditEventId = crypto.randomUUID();
 
-      if (changed) {
-        await database
-          .update(bottleRows)
-          .set({ status: "consumed", updatedAt: sql`CURRENT_TIMESTAMP` })
-          .where(eq(bottleRows.id, bottleId))
-          .run();
-      }
-      await createMcpToolAuditEventInsert({
+      const auditInsert = createMcpToolAuditEventInsert({
         auditEventId,
         database,
         event: {
@@ -612,7 +632,18 @@ export function createBoozeMcpServer({
           toolName: "cellar.mark_bottle_consumed",
           userId,
         },
-      }).run();
+      });
+      if (changed) {
+        await database.batch([
+          database
+            .update(bottleRows)
+            .set({ status: "consumed", updatedAt: sql`CURRENT_TIMESTAMP` })
+            .where(eq(bottleRows.id, bottleId)),
+          auditInsert,
+        ]);
+      } else {
+        await database.batch([auditInsert]);
+      }
 
       const bottle = bottleDetail({
         bottle: withDrinkStatus(await getBottle({ bottleId, database, userId })),
