@@ -22,6 +22,7 @@ type InventoryAreaProps = {
   readonly filter: string;
   readonly grouping: InventoryGrouping;
   readonly items: readonly InventoryItem[];
+  readonly editableSiteIds: ReadonlySet<string>;
   readonly locationFilter: string;
   readonly locationOptions: readonly string[];
   readonly locations: readonly LocationItem[];
@@ -53,6 +54,7 @@ export function InventoryArea({
   filter,
   grouping,
   items,
+  editableSiteIds,
   locationFilter,
   locationOptions,
   locations,
@@ -73,9 +75,11 @@ export function InventoryArea({
           <p>Inventory</p>
           <h2 id="inventory-title">Browse bottles</h2>
         </div>
-        <button className="primary-action header-action" type="button" onClick={onAddBottle}>
-          Add bottle
-        </button>
+        {editableSiteIds.size === 0 ? null : (
+          <button className="primary-action header-action" type="button" onClick={onAddBottle}>
+            Add bottle
+          </button>
+        )}
       </div>
 
       <div className="inventory-controls">
@@ -163,19 +167,31 @@ export function InventoryArea({
           <p>Catalogue bottles with drink windows and locations to make this view useful.</p>
         </div>
       ) : grouping === "winery" ? (
-        <WineryInventory items={items} locations={locations} onEditBottle={onEditBottle} />
+        <WineryInventory
+          editableSiteIds={editableSiteIds}
+          items={items}
+          locations={locations}
+          onEditBottle={onEditBottle}
+        />
       ) : (
-        <StorageInventory items={items} locations={locations} onEditBottle={onEditBottle} />
+        <StorageInventory
+          editableSiteIds={editableSiteIds}
+          items={items}
+          locations={locations}
+          onEditBottle={onEditBottle}
+        />
       )}
     </section>
   );
 }
 
 function WineryInventory({
+  editableSiteIds,
   items,
   locations,
   onEditBottle,
 }: {
+  readonly editableSiteIds: ReadonlySet<string>;
   readonly items: readonly InventoryItem[];
   readonly locations: readonly LocationItem[];
   readonly onEditBottle: (item: InventoryItem) => void;
@@ -192,6 +208,7 @@ function WineryInventory({
           <div className="inventory-list">
             {wineRows(group.items).map((row) => (
               <WineCard
+                editable={editableSiteIds.has(row.item.siteId)}
                 key={row.item.wineVintageId}
                 locations={locations}
                 row={row}
@@ -206,10 +223,12 @@ function WineryInventory({
 }
 
 function StorageInventory({
+  editableSiteIds,
   items,
   locations,
   onEditBottle,
 }: {
+  readonly editableSiteIds: ReadonlySet<string>;
   readonly items: readonly InventoryItem[];
   readonly locations: readonly LocationItem[];
   readonly onEditBottle: (item: InventoryItem) => void;
@@ -233,6 +252,7 @@ function StorageInventory({
                 <div className="inventory-list">
                   {wineRows(locationGroup.items).map((row) => (
                     <WineCard
+                      editable={editableSiteIds.has(row.item.siteId)}
                       key={row.item.wineVintageId}
                       locations={locations}
                       row={row}
@@ -298,10 +318,12 @@ function countLabel(count: number, singular: string): string {
 }
 
 function WineCard({
+  editable,
   locations,
   row,
   onEditBottle,
 }: {
+  readonly editable: boolean;
   readonly locations: readonly LocationItem[];
   readonly row: WineRow;
   readonly onEditBottle: (item: InventoryItem) => void;
@@ -325,14 +347,16 @@ function WineCard({
           .join(" - ")}
       </p>
       <div className="card-actions">
-        <button
-          type="button"
-          onClick={() => {
-            onEditBottle(item);
-          }}
-        >
-          Edit
-        </button>
+        {editable ? (
+          <button
+            type="button"
+            onClick={() => {
+              onEditBottle(item);
+            }}
+          >
+            Edit
+          </button>
+        ) : null}
         {item.sourceUrl === null ? null : (
           <a href={item.sourceUrl} rel="noreferrer" target="_blank">
             Source

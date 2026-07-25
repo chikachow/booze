@@ -46,7 +46,7 @@ A trusted user needs to view and manage bottles in shared sites after signing in
 
 ### AI Client
 
-An MCP-capable AI client is a stretch user. It should eventually get authenticated, read-only, site-authorised inventory tools. It must not receive arbitrary SQL access or write access in the MVP.
+An MCP-capable AI client is an authenticated user of site-authorised inventory tools. It receives no arbitrary SQL access. Bounded write tools use the same database-backed site roles as the browser API and record an audit event atomically with each mutation.
 
 ## Core Concepts
 
@@ -89,9 +89,10 @@ The app must:
 1. enforce site membership server-side for site-scoped data;
 2. prevent cross-site bottle and storage-location access;
 3. create an owner membership when a user creates a site through the current upsert flow;
-4. avoid frontend-only access control.
-
-Role-specific owner/editor/viewer permission enforcement is planned but not implemented.
+4. avoid frontend-only access control;
+5. allow owners to manage a site and its content;
+6. allow editors to mutate site content but not rename or delete a site;
+7. keep viewers read-only.
 
 ## Bottle Management
 
@@ -146,14 +147,14 @@ The current drink queue displays `drink-now`, `drink-soon`, and `past-window` bo
 
 ## Image and Enrichment Requirements
 
-The current UI accepts image input from a mobile camera/file picker, but it does not upload or process the image. Users can paste extracted label text manually.
+The current capture workflow accepts multiple bottle images, stores originals and thumbnails in R2, runs asynchronous extraction, and sends uncertain results through a human-review gate. Original images remain available for the lifetime of the capture and are removed only through explicit capture or site deletion.
 
-Future image work should:
+Image processing must:
 
 1. store photos in R2, not D1;
-2. run OCR with a Cloudflare-compatible service or reliable on-device browser path;
-3. store OCR output as label text or a searchable wine document;
-4. keep D1 as the source of truth.
+2. keep R2 artifacts retryable and D1 as the source of truth;
+3. preserve uncertain candidates for authorised manual review;
+4. durably queue object deletion and retry failed R2 cleanup.
 
 Trusted wine enrichment from winery pages, technical sheets, Vivino pages, or reviews is desirable but not required for MVP. Any enrichment must preserve source URLs and should not overwrite user-entered facts without review.
 
@@ -232,12 +233,12 @@ The system should:
 
 ### Next
 
-1. Add focused route and UI tests for bottle creation, movement, storage-location rename, and cross-site denial.
+1. Add browser interaction tests for bottle creation, movement, and storage-location rename.
 2. Add member invitation and role-management workflows.
 3. Add richer wine/bottle detail editing beyond the current capture form.
 4. Add CSV export before adding AI features.
 5. Add capture-retention controls and operational visibility for R2 cleanup retries.
-6. Expand MCP integration tests for write-tool result shapes and authorisation denials.
+6. Expand MCP protocol integration tests beyond the shared database-role and atomic-audit coverage.
 
 ## Success Criteria
 

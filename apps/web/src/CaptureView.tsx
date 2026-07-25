@@ -18,6 +18,7 @@ type CaptureAreaProps = {
   readonly isSaving: boolean;
   readonly locations: readonly LocationItem[];
   readonly sites: readonly SiteItem[];
+  readonly writableSiteIds: ReadonlySet<string>;
   readonly setForm: (form: CaptureFormState) => void;
   readonly onDelete: (captureId: string) => Promise<void>;
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
@@ -48,6 +49,7 @@ export function CaptureArea({
   isSaving,
   locations,
   sites,
+  writableSiteIds,
   setForm,
   onDelete,
   onImport,
@@ -103,113 +105,118 @@ export function CaptureArea({
         </div>
       </div>
 
-      <form
-        className="capture-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          // oxlint-disable-next-line no-void
-          void submitCapture();
-        }}
-      >
-        <div className="form-section">
-          <h3>Location</h3>
-          <BottleLocationPicker
-            idPrefix="capture-storage"
-            locations={locations}
-            selectedSiteId={form.siteId}
-            selectedStorageLocationId={form.storageLocationId}
-            sites={sites}
-            onChange={(selection) => {
-              setForm({
-                ...form,
-                siteId: selection.siteId,
-                site: selection.site,
-                storageLocationId: selection.storageLocationId,
-                location: selection.location,
-              });
-            }}
-          />
-          <div className="field-row">
-            <label>
-              Position note
-              <input
-                autoComplete="off"
-                value={form.position}
-                onChange={(event) => {
-                  setForm({ ...form, position: event.currentTarget.value });
-                }}
-                placeholder="row 3, slot 2"
-              />
-            </label>
-            <label>
-              Quantity
-              <input
-                required
-                inputMode="numeric"
-                min="1"
-                max="24"
-                type="number"
-                value={form.quantity}
-                onChange={(event) => {
-                  setForm({ ...form, quantity: event.currentTarget.value });
-                }}
-              />
-            </label>
-          </div>
-        </div>
-
-        <div className="form-section">
-          <h3>Images</h3>
-          <label>
-            Bottle photos
-            <input
-              accept="image/*,.heic,.heif"
-              multiple
-              required={files.length === 0}
-              type="file"
-              onChange={(event) => {
-                setFiles([...files, ...Array.from(event.currentTarget.files ?? [])].slice(0, 4));
-                event.currentTarget.value = "";
+      {writableSiteIds.size === 0 ? (
+        <p className="field-hint">You have read-only access to these captures.</p>
+      ) : (
+        <form
+          className="capture-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            // oxlint-disable-next-line no-void
+            void submitCapture();
+          }}
+        >
+          <div className="form-section">
+            <h3>Location</h3>
+            <BottleLocationPicker
+              idPrefix="capture-storage"
+              locations={locations}
+              selectedSiteId={form.siteId}
+              selectedStorageLocationId={form.storageLocationId}
+              sites={sites}
+              onChange={(selection) => {
+                setForm({
+                  ...form,
+                  siteId: selection.siteId,
+                  site: selection.site,
+                  storageLocationId: selection.storageLocationId,
+                  location: selection.location,
+                });
               }}
             />
-          </label>
-          {files.length === 0 ? null : (
-            <ul className="photo-list" aria-label="Selected bottle photos">
-              {files.map((file, index) => (
-                <li key={`${file.name}-${file.lastModified}-${index}`}>
-                  <img alt="" className="photo-thumbnail" src={previewUrls[index]} />
-                  <span>{file.name}</span>
-                  <button
-                    className="secondary-action"
-                    type="button"
-                    onClick={() => {
-                      setFiles(files.filter((_, fileIndex) => fileIndex !== index));
-                    }}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <button
-            className="primary-action"
-            disabled={isSaving || files.length === 0}
-            type="submit"
-          >
-            {isSaving ? "Submitting..." : "Submit capture"}
-          </button>
-          {submitResult === null ? null : (
-            <p className={`form-message form-message-${submitResult.kind}`} role="status">
-              {submitResult.message}
-            </p>
-          )}
-        </div>
-      </form>
+            <div className="field-row">
+              <label>
+                Position note
+                <input
+                  autoComplete="off"
+                  value={form.position}
+                  onChange={(event) => {
+                    setForm({ ...form, position: event.currentTarget.value });
+                  }}
+                  placeholder="row 3, slot 2"
+                />
+              </label>
+              <label>
+                Quantity
+                <input
+                  required
+                  inputMode="numeric"
+                  min="1"
+                  max="24"
+                  type="number"
+                  value={form.quantity}
+                  onChange={(event) => {
+                    setForm({ ...form, quantity: event.currentTarget.value });
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Images</h3>
+            <label>
+              Bottle photos
+              <input
+                accept="image/*,.heic,.heif"
+                multiple
+                required={files.length === 0}
+                type="file"
+                onChange={(event) => {
+                  setFiles([...files, ...Array.from(event.currentTarget.files ?? [])].slice(0, 4));
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+            {files.length === 0 ? null : (
+              <ul className="photo-list" aria-label="Selected bottle photos">
+                {files.map((file, index) => (
+                  <li key={`${file.name}-${file.lastModified}-${index}`}>
+                    <img alt="" className="photo-thumbnail" src={previewUrls[index]} />
+                    <span>{file.name}</span>
+                    <button
+                      className="secondary-action"
+                      type="button"
+                      onClick={() => {
+                        setFiles(files.filter((_, fileIndex) => fileIndex !== index));
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              className="primary-action"
+              disabled={isSaving || files.length === 0}
+              type="submit"
+            >
+              {isSaving ? "Submitting..." : "Submit capture"}
+            </button>
+            {submitResult === null ? null : (
+              <p className={`form-message form-message-${submitResult.kind}`} role="status">
+                {submitResult.message}
+              </p>
+            )}
+          </div>
+        </form>
+      )}
 
       <CaptureDashboard
         captures={captures}
         locations={locations}
+        writableSiteIds={writableSiteIds}
         onDelete={onDelete}
         onImport={onImport}
         onRetry={onRetry}
@@ -221,12 +228,14 @@ export function CaptureArea({
 function CaptureDashboard({
   captures,
   locations,
+  writableSiteIds,
   onDelete,
   onImport,
   onRetry,
 }: {
   readonly captures: readonly CaptureResource[];
   readonly locations: readonly LocationItem[];
+  readonly writableSiteIds: ReadonlySet<string>;
   readonly onDelete: (captureId: string) => Promise<void>;
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
   readonly onRetry: (captureId: string) => Promise<void>;
@@ -279,6 +288,7 @@ function CaptureDashboard({
           {displayedCaptures.map((capture) => (
             <CaptureCard
               capture={capture}
+              canWrite={writableSiteIds.has(capture.siteId)}
               key={capture.id}
               locations={locations}
               onDelete={onDelete}
@@ -293,12 +303,14 @@ function CaptureDashboard({
 }
 
 function CaptureCard({
+  canWrite,
   capture,
   locations,
   onDelete,
   onImport,
   onRetry,
 }: {
+  readonly canWrite: boolean;
   readonly capture: CaptureResource;
   readonly locations: readonly LocationItem[];
   readonly onDelete: (captureId: string) => Promise<void>;
@@ -340,7 +352,7 @@ function CaptureCard({
         </div>
       </dl>
       <div className="card-actions">
-        {capture.status === "needs_review"
+        {canWrite && capture.status === "needs_review"
           ? wineVintageCandidates(capture.latestRun?.matchResult).map((candidate) => (
               <button
                 key={candidate.id}
@@ -354,7 +366,7 @@ function CaptureCard({
               </button>
             ))
           : null}
-        {capture.status === "needs_review" ? (
+        {canWrite && capture.status === "needs_review" ? (
           <button
             type="button"
             onClick={() => {
@@ -365,7 +377,7 @@ function CaptureCard({
             Create new
           </button>
         ) : null}
-        {capture.status === "failed" || capture.status === "needs_review" ? (
+        {canWrite && (capture.status === "failed" || capture.status === "needs_review") ? (
           <button
             type="button"
             onClick={() => {
@@ -376,7 +388,7 @@ function CaptureCard({
             Retry
           </button>
         ) : null}
-        {isCaptureDeletable(capture) ? (
+        {canWrite && isCaptureDeletable(capture) ? (
           confirmingDelete ? (
             <>
               <button

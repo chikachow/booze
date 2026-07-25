@@ -118,4 +118,4 @@ Latest local verification:
 node --run check
 ```
 
-This runs formatting, lint, typecheck, and package test scripts. The Worker suite covers authorisation roles, OCR review decisions, capture artifacts, D1 deletion with foreign keys, durable R2 retry, MCP schemas and metadata, audit rollback, and OAuth metadata. Broader route-level and browser coverage remains desirable.
+This runs formatting, lint, typecheck, and package test scripts. The Worker suite covers migrated-D1 route authorisation and cross-site denial, OCR review decisions, capture artifacts, D1 deletion with foreign keys, durable R2 retry, MCP schemas and metadata, audit rollback, and OAuth metadata. Browser interaction coverage remains desirable.
