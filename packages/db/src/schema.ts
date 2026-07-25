@@ -495,3 +495,22 @@ export const mcpToolAuditEvents = sqliteTable(
     index("mcp_tool_audit_events_target_idx").on(table.targetKind, table.targetPersistedId),
   ],
 );
+
+export const r2ObjectDeletionQueue = sqliteTable(
+  "r2_object_deletion_queue",
+  {
+    r2Key: text("r2_key").primaryKey(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    lastAttemptAt: text("last_attempt_at"),
+    createdAt: text("created_at").notNull().default(currentTimestamp),
+  },
+  (table) => [
+    index("r2_object_deletion_queue_attempts_created_at_idx").on(
+      table.attempts,
+      table.createdAt,
+    ),
+  ],
+);

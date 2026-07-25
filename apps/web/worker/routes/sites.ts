@@ -13,9 +13,9 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
 import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
-import { deleteSiteCatalogue } from "../api/catalogue.ts";
 import { created, locationHeader, noContent } from "../api/http.ts";
 import type { Bindings } from "../api/types.ts";
+import { deleteSiteData, tryDrainR2ObjectDeletionQueue } from "../deletion.ts";
 
 const createSiteSchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -99,9 +99,11 @@ export const siteRoutes = new Hono<{ Bindings: Bindings }>()
       siteId,
       userId: authenticatedUser.userId,
     });
-    await deleteSiteCatalogue({ database, siteId });
-    await database.delete(siteMemberships).where(eq(siteMemberships.siteId, siteId));
-    await database.delete(sites).where(eq(sites.id, siteId));
+    await deleteSiteData({ database: context.env.DB, siteId });
+    await tryDrainR2ObjectDeletionQueue({
+      bucket: context.env.IMAGE_BUCKET,
+      database: context.env.DB,
+    });
 
     return noContent();
   });
