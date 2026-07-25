@@ -508,9 +508,6 @@ export const r2ObjectDeletionQueue = sqliteTable(
     createdAt: text("created_at").notNull().default(currentTimestamp),
   },
   (table) => [
-    index("r2_object_deletion_queue_attempts_created_at_idx").on(
-      table.attempts,
-      table.createdAt,
-    ),
+    index("r2_object_deletion_queue_attempts_created_at_idx").on(table.attempts, table.createdAt),
   ],
 );

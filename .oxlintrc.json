@@ -12,6 +12,7 @@
     ".playwright-mcp/**",
     "apps/*/.vinext/**",
     "apps/*/.wrangler/**",
+    "apps/*/worker-configuration.d.ts",
     "apps/*/dist/**",
     "node_modules/**",
     "**/generated/**"

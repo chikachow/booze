@@ -143,7 +143,9 @@ export function decideCaptureImport({
     reasons.push("The reconciliation model requested human review.");
   }
   if (combined.overall_confidence < 0.85) {
-    reasons.push(`Overall OCR confidence is ${combined.overall_confidence}; at least 0.85 is required.`);
+    reasons.push(
+      `Overall OCR confidence is ${combined.overall_confidence}; at least 0.85 is required.`,
+    );
   }
 
   const winery = combined.canonical_fields.wineryName;
@@ -163,9 +165,7 @@ export function decideCaptureImport({
       (field) => field.value !== null && field.value.trim() !== "" && field.confidence >= 0.75,
     )
   ) {
-    reasons.push(
-      "No vintage, wine name or cuvee, or appellation has confidence of at least 0.75.",
-    );
+    reasons.push("No vintage, wine name or cuvee, or appellation has confidence of at least 0.75.");
   }
 
   reasons.push(

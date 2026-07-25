@@ -1,8 +1,10 @@
+// oxlint-disable typescript/no-floating-promises
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
   roleHasSitePermission,
+  siteRoleSchema,
   type SitePermission,
   type SiteRole,
 } from "./api/auth.ts";
@@ -20,7 +22,7 @@ const expectedPermissions = {
 } as const satisfies Record<SiteRole, readonly SitePermission[]>;
 
 describe("site role permissions", () => {
-  for (const role of Object.keys(expectedPermissions) as SiteRole[]) {
+  for (const role of siteRoleSchema.options) {
     it(`${role} has exactly its documented permissions`, () => {
       for (const permission of permissions) {
         assert.equal(
