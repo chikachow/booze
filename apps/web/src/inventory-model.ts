@@ -1,3 +1,5 @@
+import { isCaptureStatus, type CaptureStatus } from "../shared/capture-status.ts";
+
 export type AuthMode = "clerk" | "development";
 export type Area = "inventory" | "captures" | "management";
 export type InventoryGrouping = "winery" | "storage";
@@ -99,15 +101,6 @@ export type SiteResource = {
   readonly locationCount: number;
   readonly role: "owner" | "editor" | "viewer";
 };
-
-export type CaptureStatus =
-  | "queued"
-  | "extracting"
-  | "importing"
-  | "upload_failed"
-  | "needs_review"
-  | "imported"
-  | "failed";
 
 export type CaptureImageResource = {
   readonly imageAssetId: string;
@@ -729,6 +722,7 @@ export function isCaptureResource(value: unknown): value is CaptureResource {
     "id" in value &&
     "siteName" in value &&
     "status" in value &&
+    isCaptureStatus(value.status) &&
     "images" in value &&
     Array.isArray(value.images)
   );

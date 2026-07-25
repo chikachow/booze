@@ -545,26 +545,18 @@ function wineVintageCandidates(
   });
 }
 
+const captureLabels = {
+  queued: "Queued",
+  extracting: "Extracting",
+  importing: "Importing",
+  upload_failed: "Upload failed",
+  needs_review: "Review",
+  imported: "Imported",
+  failed: "Failed",
+} satisfies Record<CaptureResource["status"], string>;
+
 function captureLabel(status: CaptureResource["status"]): string {
-  switch (status) {
-    case "queued":
-      return "Queued";
-    case "extracting":
-      return "Extracting";
-    case "importing":
-      return "Importing";
-    case "upload_failed":
-      return "Upload failed";
-    case "needs_review":
-      return "Review";
-    case "imported":
-      return "Imported";
-    case "failed":
-      return "Failed";
-    default: {
-      return status;
-    }
-  }
+  return captureLabels[status];
 }
 
 function objectField(value: unknown, field: string): unknown {
