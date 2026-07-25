@@ -72,7 +72,7 @@ export async function importBottleCandidate({
   readonly storageLocationId: string | null;
   readonly positionHint: string | null;
 }): Promise<BottleImportResult> {
-  const matchResult = await matchCandidate({ candidate, database, siteId });
+  const matchResult = await matchBottleCandidate({ candidate, database, siteId });
   if (matchResult.kind === "needs_review") {
     return {
       kind: "needs_review",
@@ -170,7 +170,7 @@ export async function importReviewedCapture({
   };
 }
 
-async function matchCandidate({
+export async function matchBottleCandidate({
   candidate,
   database,
   siteId,
