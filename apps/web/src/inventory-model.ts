@@ -1,4 +1,5 @@
 import { isCaptureStatus, type CaptureStatus } from "../shared/capture-status.ts";
+import { validateBottleQuantity } from "../shared/quantity.ts";
 
 export type AuthMode = "clerk" | "development";
 export type Area = "inventory" | "captures" | "management";
@@ -422,11 +423,11 @@ export function parseOptionalVolumeMl(value: string): number | undefined {
 }
 
 export function parseQuantity(value: string): number {
-  const quantity = Number.parseInt(value, 10);
-  if (Number.isNaN(quantity)) {
-    return 1;
+  const result = validateBottleQuantity(value);
+  if (!result.ok) {
+    throw new RangeError(result.message);
   }
-  return Math.min(Math.max(quantity, 1), 24);
+  return result.value;
 }
 
 export function wineDisplayBrand(item: InventoryItem): string {

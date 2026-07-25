@@ -1,5 +1,11 @@
+/* oxlint-disable import/max-dependencies -- The application composition root wires each area. */
 import { RedirectToSignIn, Show, UserButton, useAuth } from "@clerk/react";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { AppShell } from "@astryxdesign/core/AppShell";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Card } from "@astryxdesign/core/Card";
+import { Tab, TabList } from "@astryxdesign/core/TabList";
+import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 // oxlint-disable-next-line import/no-unassigned-import -- Vite loads the application stylesheet for its side effect.
 import "./App.css";
@@ -44,6 +50,10 @@ const drinkStatusOrder = [
   "unknown",
 ] satisfies readonly InventoryItem["drinkStatus"][];
 
+function focusedHTMLElement(): HTMLElement | null {
+  return document.activeElement instanceof HTMLElement ? document.activeElement : null;
+}
+
 async function getDevelopmentAuthHeaders(): Promise<Record<string, string>> {
   return { "x-dev-user": "local-browser" };
 }
@@ -71,7 +81,7 @@ export function App({ authMode }: AppProps): ReactElement {
   if (authMode === "development") {
     return (
       <Catalogue
-        authControl={<span className="dev-badge">dev</span>}
+        authControl={<></>}
         authMode={authMode}
         getAuthHeaders={getDevelopmentAuthHeaders}
       />
@@ -103,19 +113,6 @@ function ClerkCatalogue({ authMode }: { readonly authMode: AuthMode }): ReactEle
 
   return (
     <Catalogue authControl={<UserButton />} authMode={authMode} getAuthHeaders={getAuthHeaders} />
-  );
-}
-
-function BrandMark(): ReactElement {
-  return (
-    <div className="brandName-mark" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-      <span />
-    </div>
   );
 }
 
@@ -157,6 +154,7 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
   const [drinkStatusFilter, setDrinkStatusFilter] = useState("");
   const [area, setArea] = useState<Area>("inventory");
   const [grouping, setGrouping] = useState<InventoryGrouping>("winery");
+  const bottleDialogTriggerRef = useRef<HTMLElement | null>(null);
   const bottleController = useBottleController({
     getAuthHeaders,
     loadCatalogue,
@@ -184,6 +182,21 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
     setStatus,
   });
   const drinkItems = useMemo(() => items.filter((item) => isDrinkQueueItem(item)), [items]);
+  const isBottleDialogOpen =
+    bottleController.isAddOpen ||
+    (bottleController.editingBottle !== null && bottleController.editingForm !== null);
+
+  useEffect(() => {
+    if (!isBottleDialogOpen && bottleDialogTriggerRef.current !== null) {
+      const trigger = bottleDialogTriggerRef.current;
+      if (trigger.isConnected) {
+        trigger.focus();
+      } else {
+        document.querySelector<HTMLElement>("#add-bottle-trigger")?.focus();
+      }
+      bottleDialogTriggerRef.current = null;
+    }
+  }, [isBottleDialogOpen]);
 
   const listedItems = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -244,163 +257,171 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
   );
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div className="brand-lockup">
-          <BrandMark />
-          <div>
-            <p>{authMode === "development" ? "Wine cellar - local development" : "Wine cellar"}</p>
-            <h1>Booze</h1>
-          </div>
-        </div>
-        {authControl}
-      </header>
-
-      <section className="hero-band" aria-label="Cellar summary">
-        <div>
-          <p>{status}</p>
-          <h2>Find the right bottle without digging through boxes.</h2>
-        </div>
-        <dl>
-          <div>
-            <dt>Bottles</dt>
-            <dd>{items.length}</dd>
-          </div>
-          <div>
-            <dt>Drink queue</dt>
-            <dd>{drinkItems.length}</dd>
-          </div>
-          <div>
-            <dt>Captures</dt>
-            <dd>{captures.filter((capture) => capture.status !== "imported").length}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <nav className="area-tabs" aria-label="Application areas">
-        <button
-          className={area === "inventory" ? "is-active" : ""}
-          type="button"
-          onClick={() => {
-            setArea("inventory");
-          }}
-        >
-          Inventory
-        </button>
-        <button
-          className={area === "captures" ? "is-active" : ""}
-          type="button"
-          onClick={() => {
-            setArea("captures");
-          }}
-        >
-          Capture
-        </button>
-        <button
-          className={area === "management" ? "is-active" : ""}
-          type="button"
-          onClick={() => {
-            setArea("management");
-          }}
-        >
-          Storage
-        </button>
-      </nav>
-
-      {area === "inventory" ? (
-        <InventoryArea
-          drinkStatusFilter={drinkStatusFilter}
-          drinkStatusOptions={drinkStatusOptions}
-          filter={filter}
-          grouping={grouping}
-          items={listedItems}
-          editableSiteIds={writableSiteIds}
-          locationFilter={locationFilter}
-          locationOptions={locationOptions}
-          locations={locations}
-          varietalFilter={varietalFilter}
-          varietalOptions={varietalOptions}
-          setDrinkStatusFilter={setDrinkStatusFilter}
-          setFilter={setFilter}
-          setGrouping={setGrouping}
-          setLocationFilter={setLocationFilter}
-          setVarietalFilter={setVarietalFilter}
-          onAddBottle={() => {
-            bottleController.setIsAddOpen(true);
-          }}
-          onEditBottle={bottleController.openBottleEditor}
+    <AppShell
+      contentPadding={0}
+      height="auto"
+      variant="elevated"
+      topNav={
+        <TopNav
+          endContent={
+            <div className="header-actions">
+              {authMode === "development" ? <Badge label="Local" variant="info" /> : null}
+              {authControl}
+            </div>
+          }
+          heading={
+            <TopNavHeading
+              heading="Booze"
+              logo={<img alt="" className="brand-logo" height="36" src="/favicon.svg" width="36" />}
+              superheading="Wine cellar"
+            />
+          }
+          label="Booze navigation"
         />
-      ) : area === "captures" ? (
-        <CaptureArea
-          captures={captures}
-          form={captureController.captureForm}
-          isSaving={captureController.isSaving}
-          locations={writableLocations}
-          sites={writableSites}
-          writableSiteIds={writableSiteIds}
-          setForm={captureController.setCaptureForm}
-          onDelete={captureController.deleteCapture}
-          onImport={captureController.importCapture}
-          onRetry={captureController.retryCapture}
-          onSubmit={captureController.submitCapture}
-        />
-      ) : (
-        <ManagementArea
-          locationController={locationController}
-          locations={locations}
-          siteController={siteController}
-          sites={sites}
-          writableSiteIds={writableSiteIds}
-          onUseLocation={bottleController.useLocation}
-        />
-      )}
+      }
+    >
+      <div className="app-content">
+        <Card padding={5}>
+          <section className="hero-band" aria-label="Cellar summary">
+            <div className="hero-copy">
+              <p aria-live="polite" role="status">
+                {status}
+              </p>
+              <h1>Find the right bottle without digging through boxes.</h1>
+            </div>
+            <dl>
+              <div>
+                <dt>Bottles</dt>
+                <dd>{items.length}</dd>
+              </div>
+              <div>
+                <dt>Drink queue</dt>
+                <dd>{drinkItems.length}</dd>
+              </div>
+              <div>
+                <dt>Captures</dt>
+                <dd>{captures.filter((capture) => capture.status !== "imported").length}</dd>
+              </div>
+            </dl>
+          </section>
+        </Card>
 
-      {bottleController.isAddOpen ? (
-        <BottleModal
-          form={bottleController.addFormDefaults}
-          isSaving={bottleController.isSaving}
-          locations={writableLocations}
-          sites={writableSites}
-          title="Add bottle"
-          onClose={() => {
-            bottleController.setIsAddOpen(false);
-          }}
-          onSubmit={bottleController.saveBottle}
-        />
-      ) : null}
-
-      {bottleController.editingBottle === null || bottleController.editingForm === null ? null : (
-        <BottleModal
-          key={bottleController.editingBottle.bottleId}
-          form={bottleController.editingForm}
-          isSaving={bottleController.isSaving}
-          item={bottleController.editingBottle}
-          locations={writableLocations}
-          sites={writableSites}
-          title="Edit bottle"
-          onClose={() => {
-            bottleController.setEditingBottle(null);
-          }}
-          onDelete={async () => {
-            const deleted = await bottleController.deleteBottle(
-              bottleController.editingBottle?.bottleId ?? "",
-            );
-            if (deleted) {
-              bottleController.setEditingBottle(null);
+        <TabList
+          hasDivider
+          layout="fill"
+          value={area}
+          onChange={(value: string) => {
+            if (value === "inventory" || value === "captures" || value === "management") {
+              setArea(value);
             }
           }}
-          onMarkConsumed={async () => {
-            const updated = await bottleController.updateBottle({
-              bottleId: bottleController.editingBottle?.bottleId ?? "",
-              payload: { status: "consumed" },
-            });
-            if (updated) {
+        >
+          <Tab label="Inventory" value="inventory" />
+          <Tab label="Capture" value="captures" />
+          <Tab label="Storage" value="management" />
+        </TabList>
+
+        {area === "inventory" ? (
+          <InventoryArea
+            drinkStatusFilter={drinkStatusFilter}
+            drinkStatusOptions={drinkStatusOptions}
+            filter={filter}
+            grouping={grouping}
+            items={listedItems}
+            editableSiteIds={writableSiteIds}
+            locationFilter={locationFilter}
+            locationOptions={locationOptions}
+            locations={locations}
+            varietalFilter={varietalFilter}
+            varietalOptions={varietalOptions}
+            setDrinkStatusFilter={setDrinkStatusFilter}
+            setFilter={setFilter}
+            setGrouping={setGrouping}
+            setLocationFilter={setLocationFilter}
+            setVarietalFilter={setVarietalFilter}
+            onAddBottle={() => {
+              bottleDialogTriggerRef.current = focusedHTMLElement();
+              bottleController.setIsAddOpen(true);
+            }}
+            onEditBottle={(item) => {
+              bottleDialogTriggerRef.current = focusedHTMLElement();
+              bottleController.openBottleEditor(item);
+            }}
+          />
+        ) : area === "captures" ? (
+          <CaptureArea
+            captures={captures}
+            form={captureController.captureForm}
+            isSaving={captureController.isSaving}
+            locations={writableLocations}
+            sites={writableSites}
+            writableSiteIds={writableSiteIds}
+            setForm={captureController.setCaptureForm}
+            onDelete={captureController.deleteCapture}
+            onImport={captureController.importCapture}
+            onRetry={captureController.retryCapture}
+            onSubmit={captureController.submitCapture}
+          />
+        ) : (
+          <ManagementArea
+            locationController={locationController}
+            locations={locations}
+            siteController={siteController}
+            sites={sites}
+            writableSiteIds={writableSiteIds}
+            onUseLocation={bottleController.useLocation}
+          />
+        )}
+
+        {bottleController.isAddOpen ? (
+          <BottleModal
+            form={bottleController.addFormDefaults}
+            isSaving={bottleController.isSaving}
+            locations={writableLocations}
+            sites={writableSites}
+            title="Add bottle"
+            onClose={() => {
+              bottleController.setIsAddOpen(false);
+            }}
+            onSubmit={bottleController.saveBottle}
+          />
+        ) : null}
+
+        {bottleController.editingBottle === null || bottleController.editingForm === null ? null : (
+          <BottleModal
+            key={bottleController.editingBottle.bottleId}
+            form={bottleController.editingForm}
+            isSaving={bottleController.isSaving}
+            item={bottleController.editingBottle}
+            locations={writableLocations}
+            sites={writableSites}
+            title="Edit bottle"
+            onClose={() => {
               bottleController.setEditingBottle(null);
-            }
-          }}
-          onSubmit={bottleController.saveBottleEdit}
-        />
-      )}
-    </main>
+            }}
+            onDelete={async () => {
+              const deleted = await bottleController.deleteBottle(
+                bottleController.editingBottle?.bottleId ?? "",
+              );
+              if (deleted) {
+                bottleController.setEditingBottle(null);
+              }
+              return deleted;
+            }}
+            onMarkConsumed={async () => {
+              const updated = await bottleController.updateBottle({
+                bottleId: bottleController.editingBottle?.bottleId ?? "",
+                payload: { status: "consumed" },
+              });
+              if (updated) {
+                bottleController.setEditingBottle(null);
+              }
+              return updated;
+            }}
+            onSubmit={bottleController.saveBottleEdit}
+          />
+        )}
+      </div>
+    </AppShell>
   );
 }

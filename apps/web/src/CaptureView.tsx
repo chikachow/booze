@@ -1,5 +1,16 @@
-import { useEffect, useState, type ReactElement } from "react";
+/* oxlint-disable import/max-dependencies -- Capture composes the ASTRYX upload, status, disclosure, and confirmation surfaces. */
+import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Badge } from "@astryxdesign/core/Badge";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { NumberInput } from "@astryxdesign/core/NumberInput";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Thumbnail } from "@astryxdesign/core/Thumbnail";
+import { useEffect, useRef, useState, type FocusEvent, type ReactElement } from "react";
 
+import { validateBottleQuantity } from "../shared/quantity.ts";
 import type {
   CaptureFormState,
   CaptureImageResource,
@@ -9,6 +20,7 @@ import type {
 } from "./inventory-model.ts";
 import { storageLocationLabel } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
+import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
 
 type CaptureAreaProps = {
   readonly captures: readonly CaptureResource[];
@@ -18,9 +30,9 @@ type CaptureAreaProps = {
   readonly sites: readonly SiteItem[];
   readonly writableSiteIds: ReadonlySet<string>;
   readonly setForm: (form: CaptureFormState) => void;
-  readonly onDelete: (captureId: string) => Promise<void>;
-  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
-  readonly onRetry: (captureId: string) => Promise<void>;
+  readonly onDelete: (captureId: string) => Promise<boolean>;
+  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onRetry: (captureId: string) => Promise<boolean>;
   readonly onSubmit: (
     form: CaptureFormState,
     files: readonly File[],
@@ -55,8 +67,13 @@ export function CaptureArea({
   onSubmit,
 }: CaptureAreaProps): ReactElement {
   const [files, setFiles] = useState<readonly File[]>([]);
+  const [fileSelectionMessage, setFileSelectionMessage] = useState<string | null>(null);
+  const [isQuantityTouched, setIsQuantityTouched] = useState(false);
   const [submitResult, setSubmitResult] = useState<CaptureSubmitResult | null>(null);
   const [previewUrls, setPreviewUrls] = useState<readonly string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const quantityValidation = validateBottleQuantity(form.quantity);
+  const numericQuantity = Number(form.quantity);
 
   useEffect(() => {
     const nextPreviewUrls = files.map((file) => URL.createObjectURL(file));
@@ -87,6 +104,12 @@ export function CaptureArea({
 
   async function submitCapture(): Promise<void> {
     setSubmitResult(null);
+    const quantity = validateBottleQuantity(form.quantity);
+    if (!quantity.ok) {
+      setIsQuantityTouched(true);
+      setSubmitResult({ kind: "failed", message: quantity.message });
+      return;
+    }
     const result = await onSubmit(form, files);
     setSubmitResult(result);
     if (result.kind !== "failed") {
@@ -132,79 +155,123 @@ export function CaptureArea({
               }}
             />
             <div className="field-row">
-              <label>
-                Position note
-                <input
-                  autoComplete="off"
-                  value={form.position}
-                  onChange={(event) => {
-                    setForm({ ...form, position: event.currentTarget.value });
-                  }}
-                  placeholder="row 3, slot 2"
-                />
-              </label>
-              <label>
-                Quantity
-                <input
-                  required
-                  inputMode="numeric"
-                  min="1"
-                  max="24"
-                  type="number"
-                  value={form.quantity}
-                  onChange={(event) => {
-                    setForm({ ...form, quantity: event.currentTarget.value });
-                  }}
-                />
-              </label>
+              <TextInput
+                label="Position note"
+                placeholder="Row 3, slot 2"
+                value={form.position}
+                onChange={(value: string) => {
+                  setForm({ ...form, position: value });
+                }}
+              />
+              <NumberInput
+                hasClear
+                isRequired
+                isIntegerOnly
+                htmlName="quantity"
+                description="Between 1 and 24 bottles."
+                label="Quantity"
+                status={
+                  isQuantityTouched && !quantityValidation.ok
+                    ? { message: quantityValidation.message, type: "error" }
+                    : undefined
+                }
+                value={
+                  form.quantity.trim() !== "" && Number.isFinite(numericQuantity)
+                    ? numericQuantity
+                    : null
+                }
+                onBlur={(event: FocusEvent<HTMLInputElement>) => {
+                  setIsQuantityTouched(true);
+                  setForm({ ...form, quantity: event.currentTarget.value });
+                }}
+                onChange={(value: number | null) => {
+                  setForm({ ...form, quantity: value === null ? "" : String(value) });
+                }}
+              />
             </div>
           </div>
 
           <div className="form-section">
             <h3>Images</h3>
-            <label>
-              Bottle photos
+            <div className="capture-file-control">
+              <div>
+                <label htmlFor="capture-bottle-photos">
+                  Bottle photos <span>Required</span>
+                </label>
+                <p id="capture-bottle-photos-description">
+                  Add up to four clear label and bottle photos. {files.length} of{" "}
+                  {MAX_CAPTURE_FILES} selected.
+                </p>
+              </div>
+              <Button
+                isDisabled={files.length >= MAX_CAPTURE_FILES}
+                label={files.length === 0 ? "Choose bottle photos" : "Add more bottle photos"}
+                onClick={() => {
+                  fileInputRef.current?.click();
+                }}
+              />
+              {/* ASTRYX FileInput 0.1.8 nests its native input inside role="button"
+                  and forwards aria-required to that role. Keep this input as a
+                  sibling of the ASTRYX trigger until upstream semantics are revalidated. */}
               <input
+                ref={fileInputRef}
                 accept="image/*,.heic,.heif"
+                aria-describedby="capture-bottle-photos-description"
+                className="capture-file-input"
+                id="capture-bottle-photos"
                 multiple
-                required={files.length === 0}
+                tabIndex={-1}
                 type="file"
                 onChange={(event) => {
-                  setFiles([...files, ...Array.from(event.currentTarget.files ?? [])].slice(0, 4));
+                  const selected = [...(event.currentTarget.files ?? [])];
+                  setFileSelectionMessage(
+                    files.length + selected.length > MAX_CAPTURE_FILES
+                      ? `Only ${MAX_CAPTURE_FILES} photos can be attached. Extra files were not added.`
+                      : null,
+                  );
+                  setFiles(mergeCaptureFiles(files, selected));
                   event.currentTarget.value = "";
                 }}
               />
-            </label>
+            </div>
+            {fileSelectionMessage === null ? null : (
+              <Banner status="warning" title={fileSelectionMessage} />
+            )}
             {files.length === 0 ? null : (
               <ul className="photo-list" aria-label="Selected bottle photos">
                 {files.map((file, index) => (
                   <li key={`${file.name}-${file.lastModified}-${index}`}>
-                    <img alt="" className="photo-thumbnail" src={previewUrls[index]} />
-                    <span>{file.name}</span>
-                    <button
-                      className="secondary-action"
-                      type="button"
-                      onClick={() => {
+                    <Thumbnail
+                      alt={`Preview of ${file.name}`}
+                      label={file.name}
+                      src={previewUrls[index]}
+                      onRemove={() => {
                         setFiles(files.filter((_, fileIndex) => fileIndex !== index));
                       }}
-                    >
-                      Remove
-                    </button>
+                    />
+                    <span>{file.name}</span>
                   </li>
                 ))}
               </ul>
             )}
-            <button
-              className="primary-action"
-              disabled={isSaving || files.length === 0}
+            <Button
+              isDisabled={files.length === 0}
+              isLoading={isSaving}
+              label="Submit capture"
               type="submit"
-            >
-              {isSaving ? "Submitting..." : "Submit capture"}
-            </button>
+              variant="primary"
+            />
             {submitResult === null ? null : (
-              <p className={`form-message form-message-${submitResult.kind}`} role="status">
-                {submitResult.message}
-              </p>
+              <Banner
+                status={
+                  submitResult.kind === "submitted"
+                    ? "success"
+                    : submitResult.kind === "failed"
+                      ? "error"
+                      : "warning"
+                }
+                title={submitResult.message}
+              />
             )}
           </div>
         </form>
@@ -233,18 +300,18 @@ function CaptureDashboard({
   readonly captures: readonly CaptureResource[];
   readonly locations: readonly LocationItem[];
   readonly writableSiteIds: ReadonlySet<string>;
-  readonly onDelete: (captureId: string) => Promise<void>;
-  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
-  readonly onRetry: (captureId: string) => Promise<void>;
+  readonly onDelete: (captureId: string) => Promise<boolean>;
+  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
 
   if (captures.length === 0) {
     return (
-      <div className="empty-state">
-        <h3>No captures yet</h3>
-        <p>Submit bottle photos here and imported bottles will appear in inventory.</p>
-      </div>
+      <EmptyState
+        description="Submit bottle photos here and imported bottles will appear in inventory."
+        title="No captures yet"
+      />
     );
   }
 
@@ -264,22 +331,20 @@ function CaptureDashboard({
           </p>
         </div>
         {hiddenCaptureCount === 0 ? null : (
-          <button
-            className="secondary-button"
-            type="button"
+          <Button
+            label={showAll ? "Show action needed" : `Show all ${captures.length}`}
+            variant="secondary"
             onClick={() => {
               setShowAll(!showAll);
             }}
-          >
-            {showAll ? "Show action needed" : `Show all ${captures.length}`}
-          </button>
+          />
         )}
       </div>
       {displayedCaptures.length === 0 ? (
-        <div className="empty-state">
-          <h3>Nothing to action</h3>
-          <p>{hiddenCaptureCount} successful capture imported without review.</p>
-        </div>
+        <EmptyState
+          description={`${hiddenCaptureCount} successful capture imported without review.`}
+          title="Nothing to action"
+        />
       ) : (
         <div className="capture-list">
           {displayedCaptures.map((capture) => (
@@ -310,11 +375,33 @@ function CaptureCard({
   readonly canWrite: boolean;
   readonly capture: CaptureResource;
   readonly locations: readonly LocationItem[];
-  readonly onDelete: (captureId: string) => Promise<void>;
-  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
-  readonly onRetry: (captureId: string) => Promise<void>;
+  readonly onDelete: (captureId: string) => Promise<boolean>;
+  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function runAction(label: string, action: () => Promise<boolean>): Promise<boolean> {
+    if (pendingAction !== null) {
+      return false;
+    }
+    setPendingAction(label);
+    setActionError(null);
+    try {
+      const succeeded = await action();
+      if (!succeeded) {
+        setActionError(`${label} failed. Try again.`);
+      }
+      return succeeded;
+    } catch {
+      setActionError(`${label} failed. Try again.`);
+      return false;
+    } finally {
+      setPendingAction(null);
+    }
+  }
 
   return (
     <article className={`capture-card capture-${capture.status}`}>
@@ -323,7 +410,7 @@ function CaptureCard({
           <h3>{captureTitle(capture)}</h3>
           <p>{captureStoragePath(capture, locations)}</p>
         </div>
-        <span>{captureLabel(capture.status)}</span>
+        <Badge label={captureLabel(capture.status)} variant={captureBadge(capture.status)} />
       </div>
       <div className="capture-thumbnails">
         {capture.images.map((image) => (
@@ -351,69 +438,77 @@ function CaptureCard({
       <div className="card-actions">
         {canWrite && capture.status === "needs_review"
           ? wineVintageCandidates(capture.latestRun?.matchResult).map((candidate) => (
-              <button
+              <Button
+                isDisabled={pendingAction !== null}
+                isLoading={pendingAction === `Import ${candidate.id}`}
+                label={`Use ${candidate.label}`}
+                size="sm"
                 key={candidate.id}
-                type="button"
                 onClick={() => {
-                  void onImport(capture.id, candidate.id);
+                  void runAction(`Import ${candidate.id}`, async () =>
+                    onImport(capture.id, candidate.id),
+                  );
                 }}
-              >
-                Use {candidate.label}
-              </button>
+              />
             ))
           : null}
         {canWrite && capture.status === "needs_review" ? (
-          <button
-            type="button"
+          <Button
+            isDisabled={pendingAction !== null}
+            isLoading={pendingAction === "Create new"}
+            label="Create new"
+            size="sm"
             onClick={() => {
-              void onImport(capture.id);
+              void runAction("Create new", async () => onImport(capture.id));
             }}
-          >
-            Create new
-          </button>
+          />
         ) : null}
         {canWrite && (capture.status === "failed" || capture.status === "needs_review") ? (
-          <button
-            type="button"
+          <Button
+            isDisabled={pendingAction !== null}
+            isLoading={pendingAction === "Retry"}
+            label="Retry"
+            size="sm"
             onClick={() => {
-              void onRetry(capture.id);
+              void runAction("Retry", async () => onRetry(capture.id));
             }}
-          >
-            Retry
-          </button>
+          />
         ) : null}
         {canWrite && isCaptureDeletable(capture) ? (
-          confirmingDelete ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  void onDelete(capture.id);
-                }}
-              >
-                Delete permanently
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setConfirmingDelete(false);
-                }}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmingDelete(true);
-              }}
-            >
-              Delete capture
-            </button>
-          )
+          <Button
+            isDisabled={pendingAction !== null}
+            label="Delete capture"
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              setConfirmingDelete(true);
+            }}
+          />
         ) : null}
       </div>
+      {actionError === null ? null : (
+        <Banner aria-live="assertive" status="error" title={actionError} />
+      )}
+      <AlertDialog
+        actionLabel="Delete capture"
+        description="This permanently removes the capture, its images, and processing history. This action cannot be undone."
+        isActionLoading={pendingAction === "Delete"}
+        isOpen={confirmingDelete}
+        title="Delete this capture?"
+        onAction={() => {
+          void (async () => {
+            const deleted = await runAction("Delete", async () => onDelete(capture.id));
+            if (deleted) {
+              setConfirmingDelete(false);
+            }
+          })();
+        }}
+        onOpenChange={(isOpen: boolean) => {
+          if (pendingAction === null) {
+            setConfirmingDelete(isOpen);
+          }
+        }}
+      />
     </article>
   );
 }
@@ -441,10 +536,9 @@ function CaptureIssue({ message }: { readonly message: string | null }): ReactEl
   }
 
   return (
-    <details className="capture-issue-details">
-      <summary>{preview}</summary>
+    <Collapsible defaultIsOpen={false} trigger={preview}>
       <p>{message}</p>
-    </details>
+    </Collapsible>
   );
 }
 
@@ -463,50 +557,13 @@ function captureStoragePath(capture: CaptureResource, locations: readonly Locati
 }
 
 function CaptureThumbnail({ image }: { readonly image: CaptureImageResource }): ReactElement {
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setFailed(false);
-  }, [image.imageUrl]);
-
-  if (failed) {
-    return (
-      <span
-        aria-label={thumbnailFallbackLabel(image)}
-        className="photo-thumbnail photo-thumbnail-fallback"
-        role="img"
-      >
-        {thumbnailFileType(image)}
-      </span>
-    );
-  }
-
   return (
-    <img
-      alt=""
-      className="photo-thumbnail"
+    <Thumbnail
+      alt={image.originalFilename ?? "Bottle photo"}
+      label={image.originalFilename ?? "Bottle photo"}
       src={image.imageUrl}
-      onError={() => {
-        setFailed(true);
-      }}
     />
   );
-}
-
-function thumbnailFallbackLabel(image: CaptureImageResource): string {
-  const filename = image.originalFilename ?? "Bottle photo";
-  return `${filename} thumbnail unavailable`;
-}
-
-function thumbnailFileType(image: CaptureImageResource): string {
-  const contentType = image.contentType.toLowerCase();
-  if (contentType.includes("heic")) {
-    return "HEIC";
-  }
-  if (contentType.includes("heif")) {
-    return "HEIF";
-  }
-  return "IMG";
 }
 
 function captureTitle(capture: CaptureResource): string {
@@ -550,6 +607,21 @@ const captureLabels = {
 
 function captureLabel(status: CaptureResource["status"]): string {
   return captureLabels[status];
+}
+
+function captureBadge(
+  status: CaptureResource["status"],
+): "neutral" | "info" | "success" | "warning" | "error" {
+  if (status === "failed" || status === "upload_failed") {
+    return "error";
+  }
+  if (status === "needs_review") {
+    return "warning";
+  }
+  if (status === "imported") {
+    return "success";
+  }
+  return status === "queued" ? "neutral" : "info";
 }
 
 function objectField(value: unknown, field: string): unknown {

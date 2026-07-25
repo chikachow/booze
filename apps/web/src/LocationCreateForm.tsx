@@ -1,4 +1,7 @@
-import { useEffect, useMemo, type ReactElement } from "react";
+import { Button } from "@astryxdesign/core/Button";
+import { Selector } from "@astryxdesign/core/Selector";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import {
   compareLocationPath,
@@ -13,7 +16,7 @@ type LocationCreateFormProps = {
   readonly locations: readonly LocationItem[];
   readonly sites: readonly SiteItem[];
   readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
-  readonly onSaveLocation: () => Promise<void>;
+  readonly onSaveLocation: () => Promise<boolean>;
 };
 
 export function LocationCreateForm({
@@ -23,6 +26,9 @@ export function LocationCreateForm({
   updateLocationField,
   onSaveLocation,
 }: LocationCreateFormProps): ReactElement {
+  const [isSaving, setIsSaving] = useState(false);
+  const [siteError, setSiteError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
   const siteLocations = useMemo(
     () =>
       locations
@@ -42,75 +48,84 @@ export function LocationCreateForm({
     }
   }, [form.parentLocationId, parentLocationId, updateLocationField]);
 
+  async function saveLocation(): Promise<void> {
+    setIsSaving(true);
+    try {
+      const saved = await onSaveLocation();
+      if (!saved) {
+        setNameError("Location was not saved. Try again.");
+      }
+    } catch {
+      setNameError("Location was not saved. Check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <form
-      className="entry-form compact-form"
+      className="form-stack"
       onSubmit={(event) => {
         event.preventDefault();
-        void onSaveLocation();
+        const nextSiteError = form.siteId === "" ? "Site is required." : null;
+        const nextNameError = form.location.trim() === "" ? "Location name is required." : null;
+        setSiteError(nextSiteError);
+        setNameError(nextNameError);
+        if (nextSiteError !== null || nextNameError !== null || isSaving) {
+          return;
+        }
+        void saveLocation();
       }}
     >
       <div className="field-row">
-        <label>
-          Site
-          <select
-            required
-            value={form.siteId}
-            onChange={(event) => {
-              const site = sites.find(
-                (candidate) => candidate.siteId === event.currentTarget.value,
-              );
-              updateLocationField("siteId", site?.siteId ?? "");
-              updateLocationField("site", site?.site ?? "");
-              updateLocationField("parentLocationId", "");
-            }}
-          >
-            <option value="" disabled>
-              {sites.length === 0 ? "Create a site first" : "Select site…"}
-            </option>
-            {sites.map((site) => (
-              <option key={site.siteId} value={site.siteId}>
-                {site.site}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Inside
-          <select
-            value={parentLocationId}
-            disabled={form.siteId === ""}
-            onChange={(event) => {
-              updateLocationField("parentLocationId", event.currentTarget.value);
-            }}
-          >
-            <option value="">Top level</option>
-            {siteLocations.map((location) => (
-              <option key={location.locationId} value={location.locationId}>
-                {locationPath(location, locations)}
-              </option>
-            ))}
-          </select>
-          <span className="field-hint">
-            Choose a containing location only when this is a smaller place inside it.
-          </span>
-        </label>
-      </div>
-      <label>
-        New location
-        <input
-          required
-          autoComplete="off"
-          value={form.location}
-          onChange={(event) => {
-            updateLocationField("location", event.currentTarget.value);
+        <Selector
+          htmlName="siteId"
+          isRequired
+          label="Site"
+          options={sites.map((site) => ({ label: site.site, value: site.siteId }))}
+          placeholder={sites.length === 0 ? "Create a site first" : "Select site"}
+          status={siteError === null ? undefined : { message: siteError, type: "error" }}
+          value={form.siteId}
+          onChange={(value: string) => {
+            const site = sites.find((candidate) => candidate.siteId === value);
+            updateLocationField("siteId", site?.siteId ?? "");
+            updateLocationField("site", site?.site ?? "");
+            updateLocationField("parentLocationId", "");
+            setSiteError(null);
           }}
-          placeholder="left rack"
         />
-      </label>
-      <button className="primary-action" type="submit">
-        Save location
-      </button>
+        <Selector
+          hasClear
+          htmlName="parentLocationId"
+          description="Choose a containing location only when this is a smaller place inside it."
+          disabledMessage={form.siteId === "" ? "Select a site first." : undefined}
+          isDisabled={form.siteId === ""}
+          label="Inside"
+          options={siteLocations.map((location) => ({
+            label: locationPath(location, locations),
+            value: location.locationId,
+          }))}
+          placeholder="Top level"
+          value={parentLocationId}
+          onChange={(value: string | null) => {
+            updateLocationField("parentLocationId", value ?? "");
+          }}
+        />
+      </div>
+      <TextInput
+        autoComplete="off"
+        htmlName="location"
+        isRequired
+        label="New location"
+        placeholder="Left rack"
+        status={nameError === null ? undefined : { message: nameError, type: "error" }}
+        value={form.location}
+        onChange={(value: string) => {
+          updateLocationField("location", value);
+          setNameError(null);
+        }}
+      />
+      <Button isLoading={isSaving} label="Save location" type="submit" variant="primary" />
     </form>
   );
 }

@@ -4,19 +4,26 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "astryx": "node node_modules/@astryxdesign/cli/bin/astryx.mjs",
     "build": "WRANGLER_WRITE_LOGS=false vite build",
     "deploy": "pnpm run build && WRANGLER_WRITE_LOGS=false wrangler deploy",
     "dev": "WRANGLER_WRITE_LOGS=false vite dev",
     "preview": "vite preview",
-    "test": "node --test --enable-source-maps",
+    "test": "node --test --enable-source-maps worker/*.test.ts && vitest run && pnpm run theme:check",
+    "theme:build": "pnpm astryx theme build src/booze-theme.ts --out src/generated/booze.css",
+    "theme:check": "node scripts/check-theme.mjs",
     "typecheck": "tsc --noEmit",
     "wrangler:types": "wrangler types --include-runtime=false"
   },
   "dependencies": {
+    "@astryxdesign/core": "0.1.8",
+    "@astryxdesign/theme-neutral": "0.1.8",
     "@chikachow/booze-db": "workspace:*",
     "@clerk/backend": "3.4.14",
     "@clerk/react": "6.12.6",
+    "@fontsource-variable/figtree": "5.3.0",
     "@modelcontextprotocol/sdk": "1.29.0",
+    "@stylexjs/stylex": "0.19.0",
     "drizzle-orm": "0.45.2",
     "hono": "4.12.31",
     "react": "19.2.8",
@@ -25,12 +32,21 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@astryxdesign/cli": "0.1.8",
     "@cloudflare/vite-plugin": "1.39.0",
     "@cloudflare/workers-types": "5.20260723.1",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
+    "axe-core": "4.12.1",
+    "gpt-tokenizer": "3.4.0",
+    "jsdom": "29.1.1",
     "vite": "8.0.16",
+    "vitest": "4.1.10",
     "wrangler": "4.95.0"
   }
 }

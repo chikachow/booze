@@ -1,3 +1,10 @@
+import { Badge } from "@astryxdesign/core/Badge";
+import { Button } from "@astryxdesign/core/Button";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Link } from "@astryxdesign/core/Link";
+import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
+import { Selector } from "@astryxdesign/core/Selector";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import type { ReactElement } from "react";
 
 import {
@@ -74,96 +81,82 @@ export function InventoryArea({
           <h2 id="inventory-title">Browse bottles</h2>
         </div>
         {editableSiteIds.size === 0 ? null : (
-          <button className="primary-action header-action" type="button" onClick={onAddBottle}>
-            Add bottle
-          </button>
+          <Button
+            id="add-bottle-trigger"
+            label="Add bottle"
+            variant="primary"
+            onClick={onAddBottle}
+          />
         )}
       </div>
 
       <div className="inventory-controls">
-        <div className="view-tabs two-up" aria-label="Inventory grouping">
-          {(["winery", "storage"] satisfies readonly InventoryGrouping[]).map((groupValue) => (
-            <button
-              className={grouping === groupValue ? "is-active" : ""}
-              key={groupValue}
-              type="button"
-              onClick={() => {
-                setGrouping(groupValue);
-              }}
-            >
-              {groupValue === "winery" ? "Winery" : "Storage"}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Inventory grouping"
+          value={grouping}
+          onChange={(value: string) => {
+            if (value === "winery" || value === "storage") {
+              setGrouping(value);
+            }
+          }}
+        >
+          <SegmentedControlItem label="Winery" value="winery" />
+          <SegmentedControlItem label="Storage" value="storage" />
+        </SegmentedControl>
       </div>
 
-      <label className="search-field">
-        Search bottles
-        <input
-          value={filter}
-          onChange={(event) => {
-            setFilter(event.currentTarget.value);
-          }}
-          placeholder="site, location, wine, grape"
-        />
-      </label>
+      <TextInput
+        autoComplete="off"
+        hasClear
+        htmlName="inventorySearch"
+        label="Search bottles"
+        placeholder="Site, location, wine, or grape"
+        startIcon="search"
+        value={filter}
+        onChange={setFilter}
+      />
 
       <div className="filter-row" aria-label="Inventory filters">
-        <label>
-          Varietal
-          <select
-            value={varietalFilter}
-            onChange={(event) => {
-              setVarietalFilter(event.currentTarget.value);
-            }}
-          >
-            <option value="">All varietals</option>
-            {varietalOptions.map((varietal) => (
-              <option key={varietal} value={varietal}>
-                {varietal}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Location
-          <select
-            value={locationFilter}
-            onChange={(event) => {
-              setLocationFilter(event.currentTarget.value);
-            }}
-          >
-            <option value="">All locations</option>
-            {locationOptions.map((location) => (
-              <option key={location} value={location}>
-                {location}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Drink status
-          <select
-            value={drinkStatusFilter}
-            onChange={(event) => {
-              setDrinkStatusFilter(event.currentTarget.value);
-            }}
-          >
-            <option value="">All statuses</option>
-            {drinkStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Selector
+          hasClear
+          htmlName="varietalFilter"
+          label="Varietal"
+          options={varietalOptions.map((varietal) => ({ label: varietal, value: varietal }))}
+          placeholder="All varietals"
+          value={varietalFilter}
+          onChange={(value: string | null) => {
+            setVarietalFilter(value ?? "");
+          }}
+        />
+        <Selector
+          hasClear
+          htmlName="locationFilter"
+          label="Location"
+          options={locationOptions.map((location) => ({ label: location, value: location }))}
+          placeholder="All locations"
+          value={locationFilter}
+          onChange={(value: string | null) => {
+            setLocationFilter(value ?? "");
+          }}
+        />
+        <Selector
+          hasClear
+          htmlName="drinkStatusFilter"
+          label="Drink status"
+          options={drinkStatusOptions}
+          placeholder="All statuses"
+          value={drinkStatusFilter}
+          onChange={(value: string | null) => {
+            setDrinkStatusFilter(value ?? "");
+          }}
+        />
       </div>
 
       {items.length === 0 ? (
-        <div className="empty-state">
-          <h3>No matching bottles</h3>
-          <p>Catalogue bottles with drink windows and locations to make this view useful.</p>
-        </div>
+        <EmptyState
+          description="Catalogue bottles with drink windows and locations, or clear the active filters."
+          title="No matching bottles"
+        />
       ) : grouping === "winery" ? (
         <WineryInventory
           editableSiteIds={editableSiteIds}
@@ -334,9 +327,9 @@ function WineCard({
           <h3>{bottleTitle(item)}</h3>
           <p>{wineSubtitle(row, locations)}</p>
         </div>
-        <span className="status-pill">{drinkLabel(item.drinkStatus)}</span>
+        <Badge label={drinkLabel(item.drinkStatus)} variant={drinkStatusBadge(item.drinkStatus)} />
         {row.bottleCount === 1 ? null : (
-          <span className="status-pill bottle-count-pill">{row.bottleCount} bottles</span>
+          <span className="bottle-count">{row.bottleCount} bottles</span>
         )}
       </div>
       <p className="bottle-row-meta">
@@ -346,23 +339,35 @@ function WineCard({
       </p>
       <div className="card-actions">
         {editable ? (
-          <button
-            type="button"
+          <Button
+            label="Edit"
+            size="sm"
+            variant="secondary"
             onClick={() => {
               onEditBottle(item);
             }}
-          >
-            Edit
-          </button>
+          />
         ) : null}
         {item.sourceUrl === null ? null : (
-          <a href={item.sourceUrl} rel="noreferrer" target="_blank">
+          <Link isExternalLink href={item.sourceUrl}>
             Source
-          </a>
+          </Link>
         )}
       </div>
     </article>
   );
+}
+
+function drinkStatusBadge(
+  status: InventoryItem["drinkStatus"],
+): "neutral" | "info" | "warning" | "error" {
+  if (status === "past-window") {
+    return "error";
+  }
+  if (status === "drink-now" || status === "drink-soon") {
+    return "warning";
+  }
+  return status === "unknown" ? "neutral" : "info";
 }
 
 function wineSubtitle(row: WineRow, locations: readonly LocationItem[]): string {
