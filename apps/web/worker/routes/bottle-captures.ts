@@ -28,10 +28,10 @@ import { errorDetails, logError } from "../observability.ts";
 
 const importCandidateSchema = z.object({
   wine: z.object({
-    wineryName: z.string().trim().min(1),
+    wineryName: z.string(),
     brandName: z.string().optional(),
     baseName: z.string().optional(),
-    designation: z.string().trim().min(1),
+    designation: z.string(),
     displayName: z.string().optional(),
     vintageYear: z.number().optional(),
     grapeVarieties: z.array(z.string()).optional(),
@@ -254,6 +254,14 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       throw new HTTPException(409, { message: "Capture has no extraction run" });
     }
     const candidate = importCandidateSchema.parse(capture.latestRun.importCandidate);
+    if (
+      payload.wineVintageId === undefined &&
+      (candidate.wine.wineryName.trim() === "" || candidate.wine.designation.trim() === "")
+    ) {
+      throw new HTTPException(400, {
+        message: "Select an existing wine before importing an incomplete OCR candidate",
+      });
+    }
     if (!(await claimCaptureForImport({ captureId: capture.id, database }))) {
       throw new HTTPException(409, {
         message: "Capture import is already in progress or complete",

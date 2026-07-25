@@ -24,6 +24,17 @@ export type ImportCandidate = {
   readonly rawSuggestion: unknown;
 };
 
+export type CaptureImportReviewDecision =
+  | {
+      readonly kind: "auto_import";
+      readonly reasons: readonly [];
+    }
+  | {
+      readonly kind: "needs_review";
+      readonly reason: "ocr_human_review_required";
+      readonly reasons: readonly string[];
+    };
+
 export type CaptureExtractorResult = {
   readonly diagnostics: readonly BottleOcrDiagnostic[];
   readonly extractorId: string;
@@ -107,12 +118,74 @@ export function buildCaptureImportCandidate({
   readonly candidate: ImportCandidate;
   readonly imageText: unknown;
   readonly model: string;
+  readonly reviewDecision: CaptureImportReviewDecision;
 } {
   const suggestion = suggestionFromBottleCombination({ combined, extractors });
-  return importCandidateFromSuggestion(suggestion);
+  return {
+    ...importCandidateFromSuggestion(suggestion),
+    reviewDecision: decideCaptureImport({ combined, extractors }),
+  };
 }
 
 export { defaultBottleExtractorConfigs };
+
+export function decideCaptureImport({
+  combined,
+  extractors,
+}: {
+  readonly combined: BottleCombinedExtraction;
+  readonly extractors: Readonly<
+    Record<string, Pick<BottleExtractorResult, "bottle_same_across_images">>
+  >;
+}): CaptureImportReviewDecision {
+  const reasons = [...combined.human_review_reasons];
+  if (combined.requires_human_review && reasons.length === 0) {
+    reasons.push("The reconciliation model requested human review.");
+  }
+  if (combined.overall_confidence < 0.85) {
+    reasons.push(`Overall OCR confidence is ${combined.overall_confidence}; at least 0.85 is required.`);
+  }
+
+  const winery = combined.canonical_fields.wineryName;
+  if (winery.value === null || winery.value.trim() === "") {
+    reasons.push("The producer or winery is missing.");
+  } else if (winery.confidence < 0.8) {
+    reasons.push(`Producer confidence is ${winery.confidence}; at least 0.8 is required.`);
+  }
+
+  const identityFields = [
+    combined.canonical_fields.vintage,
+    combined.canonical_fields.displayName,
+    combined.canonical_fields.appellation,
+  ];
+  if (
+    !identityFields.some(
+      (field) => field.value !== null && field.value.trim() !== "" && field.confidence >= 0.75,
+    )
+  ) {
+    reasons.push(
+      "No vintage, wine name or cuvee, or appellation has confidence of at least 0.75.",
+    );
+  }
+
+  reasons.push(
+    ...combined.field_disagreements.map((disagreement) => `Field disagreement: ${disagreement}`),
+  );
+  reasons.push(
+    ...Object.entries(extractors)
+      .filter(([, extractor]) => !extractor.bottle_same_across_images)
+      .map(([extractorId]) => `${extractorId} found that the images may show different bottles.`),
+  );
+
+  const uniqueReasons = [...new Set(reasons.map((reason) => reason.trim()).filter(Boolean))];
+  return uniqueReasons.length === 0
+    ? { kind: "auto_import", reasons: [] }
+    : {
+        kind: "needs_review",
+        reason: "ocr_human_review_required",
+        reasons: uniqueReasons,
+      };
+}
 
 async function captureImageContent({
   bucket,
@@ -153,11 +226,8 @@ function importCandidateFromSuggestion(suggestion: BottleOcrSuggestion): {
 }
 
 function candidateFromSuggestion(suggestion: BottleOcrSuggestion): ImportCandidate {
-  const wineryName = text(suggestion.wineryName);
-  const displayName = text(suggestion.displayName);
-  if (wineryName === null || displayName === null) {
-    throw new BottleOcrError(502, "Extraction did not identify enough wine details to import");
-  }
+  const wineryName = text(suggestion.wineryName) ?? "";
+  const displayName = text(suggestion.displayName) ?? "";
 
   return {
     wine: {

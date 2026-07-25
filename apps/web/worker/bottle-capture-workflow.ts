@@ -3,7 +3,7 @@ import { createD1Client } from "@chikachow/booze-db";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
 import type { Bindings, BottleCaptureWorkflowParams } from "./api/types.ts";
-import { importBottleCandidate } from "./bottle-importer.ts";
+import { importBottleCandidate, matchBottleCandidate } from "./bottle-importer.ts";
 import {
   buildCaptureImportCandidate,
   defaultBottleExtractorConfigs,
@@ -12,6 +12,7 @@ import {
   reconcileCaptureLabelEvidence,
   type CaptureExtractorResult,
   type CaptureReconciliationResult,
+  type CaptureImportReviewDecision,
   type ImportCandidate,
 } from "./bottle-extractor.ts";
 import { bottleExtractorId, type BottleOcrDiagnostic } from "./bottle-ocr.ts";
@@ -34,8 +35,16 @@ type CaptureImportCandidate = {
   readonly candidate: ImportCandidate;
   readonly imageText: unknown;
   readonly model: string;
+  readonly reviewDecision: CaptureImportReviewDecision;
 };
-type CaptureImportResult = Awaited<ReturnType<typeof importBottleCandidate>>;
+type CaptureImportResult =
+  | Awaited<ReturnType<typeof importBottleCandidate>>
+  | {
+      readonly kind: "needs_review";
+      readonly matchResult: Awaited<ReturnType<typeof matchBottleCandidate>>;
+      readonly reason: "ocr_human_review_required";
+      readonly reviewReasons: readonly string[];
+    };
 
 export class BottleCaptureWorkflow extends WorkflowEntrypoint<
   Bindings,
@@ -358,6 +367,7 @@ async function writeExtractionArtifact({
         importCandidate: extracted.candidate,
         model: extracted.model,
         reconciliation,
+        reviewDecision: extracted.reviewDecision,
         runId: context.runId,
       },
     }),
@@ -379,6 +389,18 @@ async function importCaptureCandidateStep({
 }): Promise<CaptureImportResult> {
   return step.do("import capture candidate", async () => {
     const database = createD1Client(env.DB);
+    if (extracted.reviewDecision.kind === "needs_review") {
+      return {
+        kind: "needs_review",
+        matchResult: await matchBottleCandidate({
+          candidate: extracted.candidate,
+          database,
+          siteId: context.capture.siteId,
+        }),
+        reason: extracted.reviewDecision.reason,
+        reviewReasons: extracted.reviewDecision.reasons,
+      };
+    }
     return importBottleCandidate({
       candidate: extracted.candidate,
       captureId,
