@@ -6,13 +6,41 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+    },
+  },
   "assets": {
     "not_found_handling": "single-page-application",
+  },
+  "vars": {
+    "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/4e7d0e9ce74b7a6ea034ccedc67ead45/chikachow/openrouter/v1/chat/completions",
+    "CLERK_OAUTH_ISSUER": "https://advanced-mullet-11.clerk.accounts.dev",
   },
   "routes": [
     {
       "pattern": "booze.chikachow.org",
       "custom_domain": true,
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGE_BUCKET",
+      "bucket_name": "booze-images",
+    },
+  ],
+  "images": {
+    "binding": "IMAGES",
+  },
+  "workflows": [
+    {
+      "name": "booze-bottle-captures",
+      "binding": "BOTTLE_CAPTURE_WORKFLOW",
+      "class_name": "BottleCaptureWorkflow",
     },
   ],
   "d1_databases": [
