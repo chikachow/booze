@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { createD1Client, wineries, wineVintages, type BoozeDatabase } from "@chikachow/booze-db";
 import { and, eq } from "drizzle-orm";
 

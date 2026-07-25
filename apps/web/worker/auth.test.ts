@@ -1,4 +1,3 @@
-// oxlint-disable typescript/no-floating-promises
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -21,9 +20,9 @@ const expectedPermissions = {
   viewer: ["site.read"],
 } as const satisfies Record<SiteRole, readonly SitePermission[]>;
 
-describe("site role permissions", () => {
+await describe("site role permissions", async () => {
   for (const role of siteRoleSchema.options) {
-    it(`${role} has exactly its documented permissions`, () => {
+    await it(`${role} has exactly its documented permissions`, () => {
       for (const permission of permissions) {
         assert.equal(
           roleHasSitePermission(role, permission),
@@ -34,11 +33,11 @@ describe("site role permissions", () => {
     });
   }
 
-  it("does not let editors manage a site", () => {
+  await it("does not let editors manage a site", () => {
     assert.equal(roleHasSitePermission("editor", "site.manage"), false);
   });
 
-  it("does not let viewers mutate site content", () => {
+  await it("does not let viewers mutate site content", () => {
     assert.equal(roleHasSitePermission("viewer", "site.content.write"), false);
     assert.equal(roleHasSitePermission("viewer", "site.manage"), false);
   });

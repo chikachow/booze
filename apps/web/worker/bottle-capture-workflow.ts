@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { createD1Client } from "@chikachow/booze-db";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 

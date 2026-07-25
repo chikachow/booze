@@ -2,7 +2,6 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import type { BottleModalSubmit } from "./BottleModal.tsx";
 import type { CaptureSubmitResult } from "./CaptureView.tsx";
-/* oxlint-disable eslint/no-use-before-define typescript/explicit-module-boundary-types */
 import {
   formStateForItem,
   initialCaptureFormState,
@@ -31,7 +30,7 @@ type SharedControllerContext = {
   readonly setStatus: (status: string) => void;
 };
 
-export function useBottleController({
+function useBottleControllerImpl({
   getAuthHeaders,
   loadCatalogue,
   locations,
@@ -172,7 +171,7 @@ export function useBottleController({
   };
 }
 
-export function useCaptureController({
+function useCaptureControllerImpl({
   getAuthHeaders,
   loadCaptures,
   loadCatalogue,
@@ -296,7 +295,7 @@ export function useCaptureController({
   };
 }
 
-export function useLocationController({
+function useLocationControllerImpl({
   getAuthHeaders,
   loadCatalogue,
   setStatus,
@@ -385,7 +384,7 @@ export function useLocationController({
   };
 }
 
-export function useSiteController({
+function useSiteControllerImpl({
   getAuthHeaders,
   loadCatalogue,
   setStatus,
@@ -462,6 +461,13 @@ export function useSiteController({
   };
 }
 
+export const useBottleController: typeof useBottleControllerImpl = useBottleControllerImpl;
+export const useCaptureController: typeof useCaptureControllerImpl = useCaptureControllerImpl;
+export const useLocationController: typeof useLocationControllerImpl = useLocationControllerImpl;
+export const useSiteController: typeof useSiteControllerImpl = useSiteControllerImpl;
+
+export type BottleController = ReturnType<typeof useBottleController>;
+export type CaptureController = ReturnType<typeof useCaptureController>;
 export type LocationController = ReturnType<typeof useLocationController>;
 export type SiteController = ReturnType<typeof useSiteController>;
 

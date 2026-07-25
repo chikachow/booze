@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { z } from "zod";
 
 export type PaginationInput = {

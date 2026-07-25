@@ -14,8 +14,6 @@ import {
   type LocationItem,
 } from "./inventory-model.ts";
 
-/* oxlint-disable eslint/no-use-before-define */
-
 type InventoryAreaProps = {
   readonly drinkStatusFilter: string;
   readonly drinkStatusOptions: readonly SelectOption[];

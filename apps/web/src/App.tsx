@@ -1,8 +1,7 @@
 import { RedirectToSignIn, Show, UserButton, useAuth } from "@clerk/react";
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 
-/* oxlint-disable eslint/no-use-before-define */
-// oxlint-disable-next-line import/no-unassigned-import
+// oxlint-disable-next-line import/no-unassigned-import -- Vite loads the application stylesheet for its side effect.
 import "./App.css";
 import { BottleModal } from "./BottleModal.tsx";
 import { CaptureArea } from "./CaptureView.tsx";
@@ -65,7 +64,6 @@ async function setDevelopmentAuthCookie(): Promise<void> {
 export function App({ authMode }: AppProps): ReactElement {
   useEffect(() => {
     if (authMode === "development") {
-      // oxlint-disable-next-line no-void
       void setDevelopmentAuthCookie();
     }
   }, [authMode]);

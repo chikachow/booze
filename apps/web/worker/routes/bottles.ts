@@ -1,5 +1,4 @@
-// oxlint-disable eslint/no-use-before-define
-// oxlint-disable import/max-dependencies
+// oxlint-disable import/max-dependencies -- Bottle route composes the full catalogue aggregate and related writes.
 import {
   bottleLocations,
   bottles,

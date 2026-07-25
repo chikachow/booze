@@ -1,4 +1,3 @@
-// oxlint-disable eslint/no-use-before-define
 import { and, or, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
 import type { Cursor, CursorValue } from "./pagination.ts";

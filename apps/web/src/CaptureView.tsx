@@ -10,8 +10,6 @@ import type {
 import { storageLocationLabel } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
 
-/* oxlint-disable eslint/no-use-before-define */
-
 type CaptureAreaProps = {
   readonly captures: readonly CaptureResource[];
   readonly form: CaptureFormState;
@@ -112,7 +110,6 @@ export function CaptureArea({
           className="capture-form"
           onSubmit={(event) => {
             event.preventDefault();
-            // oxlint-disable-next-line no-void
             void submitCapture();
           }}
         >
@@ -358,7 +355,6 @@ function CaptureCard({
                 key={candidate.id}
                 type="button"
                 onClick={() => {
-                  // oxlint-disable-next-line no-void
                   void onImport(capture.id, candidate.id);
                 }}
               >
@@ -370,7 +366,6 @@ function CaptureCard({
           <button
             type="button"
             onClick={() => {
-              // oxlint-disable-next-line no-void
               void onImport(capture.id);
             }}
           >
@@ -381,7 +376,6 @@ function CaptureCard({
           <button
             type="button"
             onClick={() => {
-              // oxlint-disable-next-line no-void
               void onRetry(capture.id);
             }}
           >
@@ -394,7 +388,6 @@ function CaptureCard({
               <button
                 type="button"
                 onClick={() => {
-                  // oxlint-disable-next-line no-void
                   void onDelete(capture.id);
                 }}
               >
