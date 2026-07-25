@@ -10,58 +10,21 @@ import {
   type SiteFormState,
   type SiteItem,
 } from "./inventory-model.ts";
+import type { LocationController, SiteController } from "./useCatalogueControllers.ts";
 
 export function ManagementArea({
-  deletingLocationId,
-  deletingSiteId,
-  editingLocationId,
-  editingLocationName,
-  editingSiteId,
-  editingSiteName,
-  locationForm,
+  locationController,
   locations,
-  siteForm,
+  siteController,
   sites,
-  setDeletingLocationId,
-  setDeletingSiteId,
-  setEditingLocationId,
-  setEditingLocationName,
-  setEditingSiteId,
-  setEditingSiteName,
-  deleteLocation,
-  deleteSite,
-  updateLocationField,
-  updateSiteField,
-  onSaveLocation,
-  onSaveLocationName,
-  onSaveSite,
-  onSaveSiteName,
+  writableSiteIds,
   onUseLocation,
 }: {
-  readonly deletingLocationId: string | null;
-  readonly deletingSiteId: string | null;
-  readonly editingLocationId: string | null;
-  readonly editingLocationName: string;
-  readonly editingSiteId: string | null;
-  readonly editingSiteName: string;
-  readonly locationForm: LocationFormState;
+  readonly locationController: LocationController;
   readonly locations: readonly LocationItem[];
-  readonly siteForm: SiteFormState;
+  readonly siteController: SiteController;
   readonly sites: readonly SiteItem[];
-  readonly setDeletingLocationId: (value: string | null) => void;
-  readonly setDeletingSiteId: (value: string | null) => void;
-  readonly setEditingLocationId: (value: string | null) => void;
-  readonly setEditingLocationName: (value: string) => void;
-  readonly setEditingSiteId: (value: string | null) => void;
-  readonly setEditingSiteName: (value: string) => void;
-  readonly deleteLocation: (locationId: string) => Promise<void>;
-  readonly deleteSite: (siteId: string) => Promise<void>;
-  readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
-  readonly updateSiteField: (field: keyof SiteFormState, value: string) => void;
-  readonly onSaveLocation: () => Promise<void>;
-  readonly onSaveLocationName: (locationId: string) => Promise<void>;
-  readonly onSaveSite: () => Promise<void>;
-  readonly onSaveSiteName: (siteId: string) => Promise<void>;
+  readonly writableSiteIds: ReadonlySet<string>;
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
   return (
@@ -73,33 +36,34 @@ export function ManagementArea({
         </div>
       </div>
       <SiteArea
-        deletingSiteId={deletingSiteId}
-        editingSiteId={editingSiteId}
-        editingSiteName={editingSiteName}
-        form={siteForm}
+        deletingSiteId={siteController.deletingId}
+        editingSiteId={siteController.editingId}
+        editingSiteName={siteController.editingName}
+        form={siteController.form}
         sites={sites}
-        setDeletingSiteId={setDeletingSiteId}
-        setEditingSiteId={setEditingSiteId}
-        setEditingSiteName={setEditingSiteName}
-        deleteSite={deleteSite}
-        updateSiteField={updateSiteField}
-        onSaveSite={onSaveSite}
-        onSaveSiteName={onSaveSiteName}
+        setDeletingSiteId={siteController.setDeletingId}
+        setEditingSiteId={siteController.setEditingId}
+        setEditingSiteName={siteController.setEditingName}
+        deleteSite={siteController.remove}
+        updateSiteField={siteController.updateField}
+        onSaveSite={siteController.save}
+        onSaveSiteName={siteController.saveName}
       />
       <LocationArea
-        deletingLocationId={deletingLocationId}
-        editingLocationId={editingLocationId}
-        editingLocationName={editingLocationName}
-        form={locationForm}
+        deletingLocationId={locationController.deletingId}
+        editingLocationId={locationController.editingId}
+        editingLocationName={locationController.editingName}
+        form={locationController.form}
         locations={locations}
         sites={sites}
-        setDeletingLocationId={setDeletingLocationId}
-        setEditingLocationId={setEditingLocationId}
-        setEditingLocationName={setEditingLocationName}
-        deleteLocation={deleteLocation}
-        updateLocationField={updateLocationField}
-        onSaveLocation={onSaveLocation}
-        onSaveLocationName={onSaveLocationName}
+        writableSiteIds={writableSiteIds}
+        setDeletingLocationId={locationController.setDeletingId}
+        setEditingLocationId={locationController.setEditingId}
+        setEditingLocationName={locationController.setEditingName}
+        deleteLocation={locationController.remove}
+        updateLocationField={locationController.updateField}
+        onSaveLocation={locationController.save}
+        onSaveLocationName={locationController.saveName}
         onUseLocation={onUseLocation}
       />
     </section>
@@ -113,6 +77,7 @@ function LocationArea({
   form,
   locations,
   sites,
+  writableSiteIds,
   setEditingLocationId,
   setEditingLocationName,
   setDeletingLocationId,
@@ -128,6 +93,7 @@ function LocationArea({
   readonly form: LocationFormState;
   readonly locations: readonly LocationItem[];
   readonly sites: readonly SiteItem[];
+  readonly writableSiteIds: ReadonlySet<string>;
   readonly setEditingLocationId: (value: string | null) => void;
   readonly setEditingLocationName: (value: string) => void;
   readonly setDeletingLocationId: (value: string | null) => void;
@@ -145,7 +111,7 @@ function LocationArea({
       <LocationCreateForm
         form={form}
         locations={locations}
-        sites={sites}
+        sites={sites.filter((site) => writableSiteIds.has(site.siteId))}
         updateLocationField={updateLocationField}
         onSaveLocation={onSaveLocation}
       />
@@ -229,33 +195,35 @@ function LocationArea({
                       <dd>{location.bottleCount} bottles</dd>
                     </div>
                   </dl>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onUseLocation(location);
-                      }}
-                    >
-                      Use for bottle
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingLocationId(location.locationId);
-                        setEditingLocationName(location.location);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingLocationId(location.locationId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  {writableSiteIds.has(location.siteId) ? (
+                    <div className="card-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUseLocation(location);
+                        }}
+                      >
+                        Use for bottle
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingLocationId(location.locationId);
+                          setEditingLocationName(location.location);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeletingLocationId(location.locationId);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ) : null}
                 </>
               )}
             </article>
