@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "node --test --enable-source-maps",
     "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit",
-    "wrangler:types": "wrangler types"
+    "wrangler:types": "wrangler types --include-runtime=false"
   },
   "dependencies": {
     "@chikachow/booze-db": "workspace:*",

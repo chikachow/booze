@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { upsertStorageLocation } from "../api/catalogue.ts";
-import { created } from "../api/http.ts";
+import { created, noContent } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
 import type { Bindings } from "../api/types.ts";
 import { putCaptureRunArtifact, type CaptureRunArtifact } from "../capture-artifacts.ts";
@@ -24,6 +24,10 @@ import {
   updateCaptureRun,
   updateCaptureStatus,
 } from "../capture-store.ts";
+import {
+  deleteBottleCaptureData,
+  tryDrainR2ObjectDeletionQueue,
+} from "../deletion.ts";
 import { errorDetails, logError } from "../observability.ts";
 
 const importCandidateSchema = z.object({
@@ -320,6 +324,41 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       });
       throw error;
     }
+  })
+  .delete("/bottle-captures/:captureId", async (context) => {
+    const database = createD1Client(context.env.DB);
+    const authenticatedUser = await requireAuthenticatedUser({
+      database,
+      request: context.req.raw,
+      headers: context.req.raw.headers,
+      secretKey: context.env.CLERK_SECRET_KEY,
+    });
+    const capture = await getBottleCapture({
+      captureId: context.req.param("captureId"),
+      database,
+      userId: authenticatedUser.userId,
+    });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId: capture.siteId,
+      userId: authenticatedUser.userId,
+    });
+    if (["queued", "extracting", "importing"].includes(capture.status)) {
+      throw new HTTPException(409, {
+        message: "Wait for capture processing to finish before deleting it",
+      });
+    }
+
+    await deleteBottleCaptureData({
+      captureId: capture.id,
+      database: context.env.DB,
+    });
+    await tryDrainR2ObjectDeletionQueue({
+      bucket: context.env.IMAGE_BUCKET,
+      database: context.env.DB,
+    });
+    return noContent();
   });
 
 function shortErrorMessage(error: unknown): string {

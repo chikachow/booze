@@ -11,6 +11,7 @@ export {
   imageAssets,
   labelExtractions,
   mcpToolAuditEvents,
+  r2ObjectDeletionQueue,
   reviewSources,
   siteMemberships,
   sites,

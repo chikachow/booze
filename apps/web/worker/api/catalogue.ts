@@ -9,7 +9,7 @@ import {
   wineVintages,
   type BoozeDatabase,
 } from "@chikachow/booze-db";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import {
   generatedId,
@@ -321,32 +321,6 @@ export async function upsertStorageLocation({
   }
 
   return { storageLocationId };
-}
-
-export async function deleteSiteCatalogue({
-  database,
-  siteId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly siteId: string;
-}): Promise<void> {
-  const siteBottles = await database
-    .select({ id: bottles.id })
-    .from(bottles)
-    .where(eq(bottles.siteId, siteId));
-  if (siteBottles.length > 0) {
-    await database.delete(bottleLocations).where(
-      inArray(
-        bottleLocations.bottleId,
-        siteBottles.map((row) => row.id),
-      ),
-    );
-  }
-  await database.delete(bottles).where(eq(bottles.siteId, siteId));
-  await database.delete(wineConstituents).where(eq(wineConstituents.siteId, siteId));
-  await database.delete(wineVintages).where(eq(wineVintages.siteId, siteId));
-  await database.delete(wineries).where(eq(wineries.siteId, siteId));
-  await database.delete(storageLocations).where(eq(storageLocations.siteId, siteId));
 }
 
 function baseNameForWine(wine: WineInput): string {
