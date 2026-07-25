@@ -1,12 +1,19 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4b393e52-dafb-44c9-9696-c38c46343e20",
+  "id": "417bb1bc-ae72-40dd-8973-75d7a71225e7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
-    "locations": {
-      "name": "locations",
+    "bottle_locations": {
+      "name": "bottle_locations",
       "columns": {
+        "bottle_id": {
+          "name": "bottle_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
         "site_id": {
           "name": "site_id",
           "type": "text",
@@ -14,6 +21,239 @@
           "notNull": true,
           "autoincrement": false
         },
+        "storage_location_id": {
+          "name": "storage_location_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "position_hint": {
+          "name": "position_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "bottle_locations_site_id_location_id_idx": {
+          "name": "bottle_locations_site_id_location_id_idx",
+          "columns": [
+            "site_id",
+            "storage_location_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "bottle_locations_bottle_id_bottles_id_fk": {
+          "name": "bottle_locations_bottle_id_bottles_id_fk",
+          "tableFrom": "bottle_locations",
+          "tableTo": "bottles",
+          "columnsFrom": [
+            "bottle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bottle_locations_site_id_sites_id_fk": {
+          "name": "bottle_locations_site_id_sites_id_fk",
+          "tableFrom": "bottle_locations",
+          "tableTo": "sites",
+          "columnsFrom": [
+            "site_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bottle_locations_site_id_storage_location_id_locations_fk": {
+          "name": "bottle_locations_site_id_storage_location_id_locations_fk",
+          "tableFrom": "bottle_locations",
+          "tableTo": "storage_locations",
+          "columnsFrom": [
+            "site_id",
+            "storage_location_id"
+          ],
+          "columnsTo": [
+            "site_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "bottles": {
+      "name": "bottles",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "site_id": {
+          "name": "site_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "wine_vintage_id": {
+          "name": "wine_vintage_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bottle_number": {
+          "name": "bottle_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "volume_ml": {
+          "name": "volume_ml",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 750
+        },
+        "barcode": {
+          "name": "barcode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lot_code": {
+          "name": "lot_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'in_stock'"
+        },
+        "acquired_at": {
+          "name": "acquired_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "purchase_price": {
+          "name": "purchase_price",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "purchase_currency": {
+          "name": "purchase_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "bottles_site_id_wine_vintage_id_idx": {
+          "name": "bottles_site_id_wine_vintage_id_idx",
+          "columns": [
+            "site_id",
+            "wine_vintage_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "bottles_site_id_sites_id_fk": {
+          "name": "bottles_site_id_sites_id_fk",
+          "tableFrom": "bottles",
+          "tableTo": "sites",
+          "columnsFrom": [
+            "site_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "bottles_site_id_wine_vintage_id_vintages_fk": {
+          "name": "bottles_site_id_wine_vintage_id_vintages_fk",
+          "tableFrom": "bottles",
+          "tableTo": "wine_vintages",
+          "columnsFrom": [
+            "site_id",
+            "wine_vintage_id"
+          ],
+          "columnsTo": [
+            "site_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "grape_varieties": {
+      "name": "grape_varieties",
+      "columns": {
         "id": {
           "name": "id",
           "type": "text",
@@ -46,29 +286,131 @@
         }
       },
       "indexes": {
-        "locations_site_id_idx": {
-          "name": "locations_site_id_idx",
+        "grape_varieties_name_unique": {
+          "name": "grape_varieties_name_unique",
           "columns": [
-            "site_id"
-          ],
-          "isUnique": false
-        },
-        "locations_site_id_id_unique": {
-          "name": "locations_site_id_id_unique",
-          "columns": [
-            "site_id",
-            "id"
+            "name"
           ],
           "isUnique": true
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "label_extractions": {
+      "name": "label_extractions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bottle_id": {
+          "name": "bottle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wine_vintage_id": {
+          "name": "wine_vintage_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "raw_text_json": {
+          "name": "raw_text_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "extracted_fields_json": {
+          "name": "extracted_fields_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "requires_review": {
+          "name": "requires_review",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "label_extractions_bottle_id_idx": {
+          "name": "label_extractions_bottle_id_idx",
+          "columns": [
+            "bottle_id"
+          ],
+          "isUnique": false
+        },
+        "label_extractions_wine_vintage_id_idx": {
+          "name": "label_extractions_wine_vintage_id_idx",
+          "columns": [
+            "wine_vintage_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
-        "locations_site_id_sites_id_fk": {
-          "name": "locations_site_id_sites_id_fk",
-          "tableFrom": "locations",
-          "tableTo": "sites",
+        "label_extractions_bottle_id_bottles_id_fk": {
+          "name": "label_extractions_bottle_id_bottles_id_fk",
+          "tableFrom": "label_extractions",
+          "tableTo": "bottles",
           "columnsFrom": [
-            "site_id"
+            "bottle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "label_extractions_wine_vintage_id_wine_vintages_id_fk": {
+          "name": "label_extractions_wine_vintage_id_wine_vintages_id_fk",
+          "tableFrom": "label_extractions",
+          "tableTo": "wine_vintages",
+          "columnsFrom": [
+            "wine_vintage_id"
           ],
           "columnsTo": [
             "id"
@@ -211,6 +553,129 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "storage_locations": {
+      "name": "storage_locations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "site_id": {
+          "name": "site_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "location_type": {
+          "name": "location_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'area'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "storage_locations_site_id_idx": {
+          "name": "storage_locations_site_id_idx",
+          "columns": [
+            "site_id"
+          ],
+          "isUnique": false
+        },
+        "storage_locations_site_id_id_unique": {
+          "name": "storage_locations_site_id_id_unique",
+          "columns": [
+            "site_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "storage_locations_site_parent_name_unique": {
+          "name": "storage_locations_site_parent_name_unique",
+          "columns": [
+            "site_id",
+            "parent_id",
+            "name"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "storage_locations_site_id_sites_id_fk": {
+          "name": "storage_locations_site_id_sites_id_fk",
+          "tableFrom": "storage_locations",
+          "tableTo": "sites",
+          "columnsFrom": [
+            "site_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "storage_locations_site_id_parent_id_self_fk": {
+          "name": "storage_locations_site_id_parent_id_self_fk",
+          "tableFrom": "storage_locations",
+          "tableTo": "storage_locations",
+          "columnsFrom": [
+            "site_id",
+            "parent_id"
+          ],
+          "columnsTo": [
+            "site_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "users": {
       "name": "users",
       "columns": {
@@ -259,16 +724,9 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "wine_bottles": {
-      "name": "wine_bottles",
+    "wine_constituents": {
+      "name": "wine_constituents",
       "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
         "site_id": {
           "name": "site_id",
           "type": "text",
@@ -276,18 +734,32 @@
           "notNull": true,
           "autoincrement": false
         },
-        "location_id": {
-          "name": "location_id",
+        "wine_vintage_id": {
+          "name": "wine_vintage_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "wine_id": {
-          "name": "wine_id",
+        "grape_variety_id": {
+          "name": "grape_variety_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "blend_text": {
+          "name": "blend_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "percentage": {
+          "name": "percentage",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "created_at": {
@@ -308,27 +780,18 @@
         }
       },
       "indexes": {
-        "wine_bottles_site_id_location_id_idx": {
-          "name": "wine_bottles_site_id_location_id_idx",
+        "wine_constituents_grape_variety_id_idx": {
+          "name": "wine_constituents_grape_variety_id_idx",
           "columns": [
-            "site_id",
-            "location_id"
-          ],
-          "isUnique": false
-        },
-        "wine_bottles_site_id_wine_id_idx": {
-          "name": "wine_bottles_site_id_wine_id_idx",
-          "columns": [
-            "site_id",
-            "wine_id"
+            "grape_variety_id"
           ],
           "isUnique": false
         }
       },
       "foreignKeys": {
-        "wine_bottles_site_id_sites_id_fk": {
-          "name": "wine_bottles_site_id_sites_id_fk",
-          "tableFrom": "wine_bottles",
+        "wine_constituents_site_id_sites_id_fk": {
+          "name": "wine_constituents_site_id_sites_id_fk",
+          "tableFrom": "wine_constituents",
           "tableTo": "sites",
           "columnsFrom": [
             "site_id"
@@ -339,13 +802,26 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "wine_bottles_site_id_location_id_locations_fk": {
-          "name": "wine_bottles_site_id_location_id_locations_fk",
-          "tableFrom": "wine_bottles",
-          "tableTo": "locations",
+        "wine_constituents_grape_variety_id_grape_varieties_id_fk": {
+          "name": "wine_constituents_grape_variety_id_grape_varieties_id_fk",
+          "tableFrom": "wine_constituents",
+          "tableTo": "grape_varieties",
+          "columnsFrom": [
+            "grape_variety_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "wine_constituents_site_id_wine_vintage_id_vintages_fk": {
+          "name": "wine_constituents_site_id_wine_vintage_id_vintages_fk",
+          "tableFrom": "wine_constituents",
+          "tableTo": "wine_vintages",
           "columnsFrom": [
             "site_id",
-            "location_id"
+            "wine_vintage_id"
           ],
           "columnsTo": [
             "site_id",
@@ -353,14 +829,264 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "wine_constituents_wine_vintage_id_grape_variety_id_pk": {
+          "columns": [
+            "wine_vintage_id",
+            "grape_variety_id"
+          ],
+          "name": "wine_constituents_wine_vintage_id_grape_variety_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "wine_vintages": {
+      "name": "wine_vintages",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
         },
-        "wine_bottles_site_id_wine_id_wines_fk": {
-          "name": "wine_bottles_site_id_wine_id_wines_fk",
-          "tableFrom": "wine_bottles",
-          "tableTo": "wines",
+        "site_id": {
+          "name": "site_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "winery_id": {
+          "name": "winery_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "brand_name": {
+          "name": "brand_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "base_name": {
+          "name": "base_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "designation": {
+          "name": "designation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "vintage_year": {
+          "name": "vintage_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "vintage_label": {
+          "name": "vintage_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "wine_type": {
+          "name": "wine_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "wine_color": {
+          "name": "wine_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "country": {
+          "name": "country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "appellation": {
+          "name": "appellation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "classification": {
+          "name": "classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "address_qualification": {
+          "name": "address_qualification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "alcohol_percent": {
+          "name": "alcohol_percent",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "drink_from_year": {
+          "name": "drink_from_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "drink_to_year": {
+          "name": "drink_to_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "drinking_advice": {
+          "name": "drinking_advice",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "label_text": {
+          "name": "label_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "indexes": {
+        "wine_vintages_site_id_idx": {
+          "name": "wine_vintages_site_id_idx",
+          "columns": [
+            "site_id"
+          ],
+          "isUnique": false
+        },
+        "wine_vintages_site_id_winery_id_idx": {
+          "name": "wine_vintages_site_id_winery_id_idx",
+          "columns": [
+            "site_id",
+            "winery_id"
+          ],
+          "isUnique": false
+        },
+        "wine_vintages_site_id_id_unique": {
+          "name": "wine_vintages_site_id_id_unique",
+          "columns": [
+            "site_id",
+            "id"
+          ],
+          "isUnique": true
+        },
+        "wine_vintages_site_id_winery_base_vintage_unique": {
+          "name": "wine_vintages_site_id_winery_base_vintage_unique",
+          "columns": [
+            "site_id",
+            "winery_id",
+            "base_name",
+            "vintage_label"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "wine_vintages_site_id_sites_id_fk": {
+          "name": "wine_vintages_site_id_sites_id_fk",
+          "tableFrom": "wine_vintages",
+          "tableTo": "sites",
+          "columnsFrom": [
+            "site_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "wine_vintages_site_id_winery_id_wineries_fk": {
+          "name": "wine_vintages_site_id_winery_id_wineries_fk",
+          "tableFrom": "wine_vintages",
+          "tableTo": "wineries",
           "columnsFrom": [
             "site_id",
-            "wine_id"
+            "winery_id"
           ],
           "columnsTo": [
             "site_id",
@@ -374,16 +1100,9 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "wines": {
-      "name": "wines",
+    "wineries": {
+      "name": "wineries",
       "columns": {
-        "site_id": {
-          "name": "site_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "id": {
           "name": "id",
           "type": "text",
@@ -391,8 +1110,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "producer": {
-          "name": "producer",
+        "site_id": {
+          "name": "site_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -405,16 +1124,37 @@
           "notNull": true,
           "autoincrement": false
         },
-        "varietal": {
-          "name": "varietal",
+        "address_text": {
+          "name": "address_text",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "vintage": {
-          "name": "vintage",
+        "country": {
+          "name": "country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "region": {
+          "name": "region",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "established_year": {
+          "name": "established_year",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -437,26 +1177,35 @@
         }
       },
       "indexes": {
-        "wines_site_id_idx": {
-          "name": "wines_site_id_idx",
+        "wineries_site_id_idx": {
+          "name": "wineries_site_id_idx",
           "columns": [
             "site_id"
           ],
           "isUnique": false
         },
-        "wines_site_id_id_unique": {
-          "name": "wines_site_id_id_unique",
+        "wineries_site_id_id_unique": {
+          "name": "wineries_site_id_id_unique",
           "columns": [
             "site_id",
             "id"
           ],
           "isUnique": true
+        },
+        "wineries_site_id_name_region_unique": {
+          "name": "wineries_site_id_name_region_unique",
+          "columns": [
+            "site_id",
+            "name",
+            "region"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {
-        "wines_site_id_sites_id_fk": {
-          "name": "wines_site_id_sites_id_fk",
-          "tableFrom": "wines",
+        "wineries_site_id_sites_id_fk": {
+          "name": "wineries_site_id_sites_id_fk",
+          "tableFrom": "wineries",
           "tableTo": "sites",
           "columnsFrom": [
             "site_id"
