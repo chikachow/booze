@@ -11,7 +11,7 @@ import {
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
-import { assertCanAccessSite } from "../api/auth.ts";
+import { requireSitePermission } from "../api/auth.ts";
 import { upsertStorageLocation } from "../api/catalogue.ts";
 import { optionalText } from "../api/ids.ts";
 import {
@@ -342,6 +342,12 @@ export function createBoozeMcpServer({
     },
     async ({ wineId, drinkFromYear, drinkToYear }) => {
       const before = await getWineVintageSummary({ database, userId, wineId });
+      await requireSitePermission({
+        database,
+        permission: "site.content.write",
+        siteId: before.siteId,
+        userId,
+      });
       const wineVintageId = await resolveWineVintageId({ database, userId, wineId });
       const affectedBottleCount = before.bottleCount;
       const auditEventId = crypto.randomUUID();
@@ -402,7 +408,12 @@ export function createBoozeMcpServer({
       outputSchema: createStorageLocationOutputSchema.shape,
     },
     async ({ siteId, parentStorageLocationId, name, locationType }) => {
-      await assertCanAccessSite({ database, siteId, userId });
+      await requireSitePermission({
+        database,
+        permission: "site.content.write",
+        siteId,
+        userId,
+      });
       const parentId =
         parentStorageLocationId === undefined || parentStorageLocationId === null
           ? null
@@ -474,6 +485,12 @@ export function createBoozeMcpServer({
     async ({ bottleId, storageLocationId, position }) => {
       const storageLocationsById = await listStorageLocationDisplayNames({ database, userId });
       const beforeBottle = withDrinkStatus(await getBottle({ bottleId, database, userId }));
+      await requireSitePermission({
+        database,
+        permission: "site.content.write",
+        siteId: beforeBottle.siteId,
+        userId,
+      });
       if (beforeBottle.status !== "in_stock") {
         throw new HTTPException(400, { message: "Only in-stock bottles can be moved" });
       }
@@ -563,6 +580,12 @@ export function createBoozeMcpServer({
     async ({ bottleId }) => {
       const storageLocationsById = await listStorageLocationDisplayNames({ database, userId });
       const beforeBottle = withDrinkStatus(await getBottle({ bottleId, database, userId }));
+      await requireSitePermission({
+        database,
+        permission: "site.content.write",
+        siteId: beforeBottle.siteId,
+        userId,
+      });
       const before = bottleDetail({ bottle: beforeBottle, storageLocationsById });
       const changed = before.status !== "consumed";
       const auditEventId = crypto.randomUUID();

@@ -10,7 +10,7 @@ import {
 import { and, asc, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
-import { assertCanAccessSite } from "./auth.ts";
+import { requireSitePermission } from "./auth.ts";
 import { generatedId, optionalText, stableId } from "./ids.ts";
 
 export type ReviewSourceInput = {
@@ -108,7 +108,12 @@ export async function createOrUpdateReviewSource({
   readonly input: ReviewSourceInput;
   readonly userId: string;
 }): Promise<ReviewSourceResource> {
-  await assertCanAccessSite({ database, siteId: input.siteId, userId });
+  await requireSitePermission({
+    database,
+    permission: "site.content.write",
+    siteId: input.siteId,
+    userId,
+  });
 
   const name = input.name.trim();
   const reviewSourceId = stableId("review-source", `${input.siteId}:${name}`);
@@ -181,6 +186,12 @@ export async function replaceCriticReviewsForWine({
   readonly userId: string;
   readonly wineVintageId: string;
 }): Promise<readonly CriticReviewResource[]> {
+  await requireSitePermission({
+    database,
+    permission: "site.content.write",
+    siteId,
+    userId,
+  });
   await assertWineVintageInSite({ database, siteId, wineVintageId });
 
   const keptReviewIds: string[] = [];
@@ -306,6 +317,12 @@ export async function deleteCriticReview({
   if (review === undefined) {
     throw new HTTPException(404, { message: "Critic review not found" });
   }
+  await requireSitePermission({
+    database,
+    permission: "site.content.write",
+    siteId: review.siteId,
+    userId,
+  });
 
   await database.delete(criticReviews).where(eq(criticReviews.id, reviewId));
   return review;

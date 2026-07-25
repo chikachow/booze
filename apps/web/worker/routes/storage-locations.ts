@@ -11,7 +11,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
-import { assertCanAccessSite, requireAuthenticatedUser, upsertSite } from "../api/auth.ts";
+import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { upsertStorageLocation } from "../api/catalogue.ts";
 import { created, locationHeader, noContent } from "../api/http.ts";
 import type { Bindings } from "../api/types.ts";
@@ -63,7 +63,12 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
         })
       ).siteId;
 
-    await assertCanAccessSite({ database, siteId, userId: authenticatedUser.userId });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId,
+      userId: authenticatedUser.userId,
+    });
 
     const result = await upsertStorageLocation({
       database,
@@ -89,8 +94,9 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
     });
     const storageLocationId = context.req.param("storageLocationId");
     const existing = await getStorageLocationSiteId({ database, storageLocationId });
-    await assertCanAccessSite({
+    await requireSitePermission({
       database,
+      permission: "site.content.write",
       siteId: existing.siteId,
       userId: authenticatedUser.userId,
     });
@@ -118,8 +124,9 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
     });
     const storageLocationId = context.req.param("storageLocationId");
     const existing = await getStorageLocationSiteId({ database, storageLocationId });
-    await assertCanAccessSite({
+    await requireSitePermission({
       database,
+      permission: "site.content.write",
       siteId: existing.siteId,
       userId: authenticatedUser.userId,
     });

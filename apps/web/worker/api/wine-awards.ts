@@ -2,6 +2,7 @@ import { siteMemberships, wineAwards, wineVintages, type BoozeDatabase } from "@
 import { and, asc, eq, notInArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
+import { requireSitePermission } from "./auth.ts";
 import { optionalText, stableId } from "./ids.ts";
 
 export type WineAwardInput = {
@@ -103,6 +104,12 @@ export async function replaceWineAwardsForWine({
   readonly userId: string;
   readonly wineVintageId: string;
 }): Promise<readonly WineAwardResource[]> {
+  await requireSitePermission({
+    database,
+    permission: "site.content.write",
+    siteId,
+    userId,
+  });
   await assertWineVintageInSite({ database, siteId, wineVintageId });
 
   const keptAwardIds: string[] = [];

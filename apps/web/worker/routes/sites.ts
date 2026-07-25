@@ -12,7 +12,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
-import { assertCanAccessSite, requireAuthenticatedUser, upsertSite } from "../api/auth.ts";
+import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { deleteSiteCatalogue } from "../api/catalogue.ts";
 import { created, locationHeader, noContent } from "../api/http.ts";
 import type { Bindings } from "../api/types.ts";
@@ -70,7 +70,12 @@ export const siteRoutes = new Hono<{ Bindings: Bindings }>()
     });
     const siteId = context.req.param("siteId");
 
-    await assertCanAccessSite({ database, siteId, userId: authenticatedUser.userId });
+    await requireSitePermission({
+      database,
+      permission: "site.manage",
+      siteId,
+      userId: authenticatedUser.userId,
+    });
     await database
       .update(sites)
       .set({ name: payload.name, updatedAt: sql`CURRENT_TIMESTAMP` })
@@ -88,7 +93,12 @@ export const siteRoutes = new Hono<{ Bindings: Bindings }>()
     });
     const siteId = context.req.param("siteId");
 
-    await assertCanAccessSite({ database, siteId, userId: authenticatedUser.userId });
+    await requireSitePermission({
+      database,
+      permission: "site.manage",
+      siteId,
+      userId: authenticatedUser.userId,
+    });
     await deleteSiteCatalogue({ database, siteId });
     await database.delete(siteMemberships).where(eq(siteMemberships.siteId, siteId));
     await database.delete(sites).where(eq(sites.id, siteId));

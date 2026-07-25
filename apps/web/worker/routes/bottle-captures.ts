@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
-import { assertCanAccessSite, requireAuthenticatedUser, upsertSite } from "../api/auth.ts";
+import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { upsertStorageLocation } from "../api/catalogue.ts";
 import { created } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
@@ -93,7 +93,12 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       secretKey: context.env.CLERK_SECRET_KEY,
     });
     const siteId = await siteIdFromForm({ database, formData, userId: authenticatedUser.userId });
-    await assertCanAccessSite({ database, siteId, userId: authenticatedUser.userId });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId,
+      userId: authenticatedUser.userId,
+    });
     const storageLocationId = await storageLocationIdFromForm({ database, formData, siteId });
     const files = formData.getAll("images").filter((entry) => entry instanceof File);
 
@@ -195,6 +200,12 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       database,
       userId: authenticatedUser.userId,
     });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId: capture.siteId,
+      userId: authenticatedUser.userId,
+    });
     if (!canRetryCapture(capture.status)) {
       throw new HTTPException(409, { message: "Capture is not retryable" });
     }
@@ -228,6 +239,12 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
     const capture = await getBottleCapture({
       captureId: context.req.param("captureId"),
       database,
+      userId: authenticatedUser.userId,
+    });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId: capture.siteId,
       userId: authenticatedUser.userId,
     });
     if (!canImportCapture(capture.status)) {
