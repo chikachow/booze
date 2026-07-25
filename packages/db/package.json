@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "node --test --enable-source-maps",
-    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2"

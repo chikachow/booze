@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "WRANGLER_WRITE_LOGS=false vite build",
-    "deploy": "WRANGLER_WRITE_LOGS=false vite build && WRANGLER_WRITE_LOGS=false wrangler deploy",
+    "deploy": "pnpm run build && WRANGLER_WRITE_LOGS=false wrangler deploy",
     "dev": "WRANGLER_WRITE_LOGS=false vite dev",
     "preview": "vite preview",
     "test": "node --test --enable-source-maps",
-    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "wrangler:types": "wrangler types --include-runtime=false"
   },
   "dependencies": {
