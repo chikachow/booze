@@ -24,10 +24,7 @@ import {
   updateCaptureRun,
   updateCaptureStatus,
 } from "../capture-store.ts";
-import {
-  deleteBottleCaptureData,
-  tryDrainR2ObjectDeletionQueue,
-} from "../deletion.ts";
+import { deleteBottleCaptureData, tryDrainR2ObjectDeletionQueue } from "../deletion.ts";
 import { errorDetails, logError } from "../observability.ts";
 
 const importCandidateSchema = z.object({

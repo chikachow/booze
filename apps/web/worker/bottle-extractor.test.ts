@@ -1,3 +1,4 @@
+// oxlint-disable eslint/no-use-before-define typescript/no-floating-promises
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -107,24 +108,17 @@ describe("capture OCR import review decision", () => {
 });
 
 function combinedExtraction(options: CombinedOptions = {}): BottleCombinedExtraction {
-  const textField = (value: string | null, confidence = 0.9) => ({
-    value,
-    confidence,
-    supported_by: ["first", "second"],
-    evidence: value === null ? [] : [value],
-    decision_reason: null,
-  });
   return {
     model_role: "combiner",
     canonical_fields: {
       wineryName: textField(
-        "wineryValue" in options ? options.wineryValue ?? null : "Example Estate",
+        "wineryValue" in options ? (options.wineryValue ?? null) : "Example Estate",
         options.wineryConfidence ?? 0.9,
       ),
       brandName: textField(null),
       displayName: textField("Reserve", options.displayNameConfidence ?? 0.9),
       vintage: textField(
-        "vintageValue" in options ? options.vintageValue ?? null : "2020",
+        "vintageValue" in options ? (options.vintageValue ?? null) : "2020",
         options.vintageConfidence ?? 0.9,
       ),
       wineType: textField("red wine"),
@@ -153,5 +147,15 @@ function combinedExtraction(options: CombinedOptions = {}): BottleCombinedExtrac
     requires_human_review: options.requiresHumanReview ?? false,
     human_review_reasons: [...(options.humanReviewReasons ?? [])],
     overall_confidence: options.overallConfidence ?? 0.9,
+  };
+}
+
+function textField(value: string | null, confidence = 0.9) {
+  return {
+    value,
+    confidence,
+    supported_by: ["first", "second"],
+    evidence: value === null ? [] : [value],
+    decision_reason: null,
   };
 }

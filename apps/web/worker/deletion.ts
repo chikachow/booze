@@ -3,6 +3,11 @@ import { errorDetails, logError, logInfo } from "./observability.ts";
 const deletionBatchSize = 1_000;
 const maximumDeletionBatchesPerDrain = 10;
 
+function shortQueueError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length <= 1_000 ? message : `${message.slice(0, 997)}...`;
+}
+
 export async function deleteBottleCaptureData({
   captureId,
   database,
@@ -265,9 +270,4 @@ export async function tryDrainR2ObjectDeletionQueue({
   } catch (error) {
     logError("r2_deletion_queue_drain_failed", { error: errorDetails(error) });
   }
-}
-
-function shortQueueError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.length <= 1_000 ? message : `${message.slice(0, 997)}...`;
 }
