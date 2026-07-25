@@ -19,6 +19,7 @@ type CaptureAreaProps = {
   readonly locations: readonly LocationItem[];
   readonly sites: readonly SiteItem[];
   readonly setForm: (form: CaptureFormState) => void;
+  readonly onDelete: (captureId: string) => Promise<void>;
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
   readonly onRetry: (captureId: string) => Promise<void>;
   readonly onSubmit: (
@@ -48,6 +49,7 @@ export function CaptureArea({
   locations,
   sites,
   setForm,
+  onDelete,
   onImport,
   onRetry,
   onSubmit,
@@ -208,6 +210,7 @@ export function CaptureArea({
       <CaptureDashboard
         captures={captures}
         locations={locations}
+        onDelete={onDelete}
         onImport={onImport}
         onRetry={onRetry}
       />
@@ -218,11 +221,13 @@ export function CaptureArea({
 function CaptureDashboard({
   captures,
   locations,
+  onDelete,
   onImport,
   onRetry,
 }: {
   readonly captures: readonly CaptureResource[];
   readonly locations: readonly LocationItem[];
+  readonly onDelete: (captureId: string) => Promise<void>;
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
   readonly onRetry: (captureId: string) => Promise<void>;
 }): ReactElement {
@@ -276,6 +281,7 @@ function CaptureDashboard({
               capture={capture}
               key={capture.id}
               locations={locations}
+              onDelete={onDelete}
               onImport={onImport}
               onRetry={onRetry}
             />
@@ -289,14 +295,18 @@ function CaptureDashboard({
 function CaptureCard({
   capture,
   locations,
+  onDelete,
   onImport,
   onRetry,
 }: {
   readonly capture: CaptureResource;
   readonly locations: readonly LocationItem[];
+  readonly onDelete: (captureId: string) => Promise<void>;
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<void>;
   readonly onRetry: (captureId: string) => Promise<void>;
 }): ReactElement {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
   return (
     <article className={`capture-card capture-${capture.status}`}>
       <div className="card-title">
@@ -366,9 +376,45 @@ function CaptureCard({
             Retry
           </button>
         ) : null}
+        {isCaptureDeletable(capture) ? (
+          confirmingDelete ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  // oxlint-disable-next-line no-void
+                  void onDelete(capture.id);
+                }}
+              >
+                Delete permanently
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmingDelete(true);
+              }}
+            >
+              Delete capture
+            </button>
+          )
+        ) : null}
       </div>
     </article>
   );
+}
+
+function isCaptureDeletable(capture: CaptureResource): boolean {
+  return !["queued", "extracting", "importing"].includes(capture.status);
 }
 
 function isActionableCapture(capture: CaptureResource): boolean {

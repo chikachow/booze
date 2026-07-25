@@ -120,6 +120,7 @@ async function listSites({
     readonly name: string;
     readonly bottleCount: number;
     readonly locationCount: number;
+    readonly role: string;
   }[]
 > {
   const bottleCountsBySite = database
@@ -146,6 +147,7 @@ async function listSites({
       name: sites.name,
       bottleCount: sql<number>`coalesce(${bottleCountsBySite.bottleCount}, 0)`,
       locationCount: sql<number>`coalesce(${locationCountsBySite.locationCount}, 0)`,
+      role: siteMemberships.role,
     })
     .from(sites)
     .innerJoin(siteMemberships, eq(sites.id, siteMemberships.siteId))
