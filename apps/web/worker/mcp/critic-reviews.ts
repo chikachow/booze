@@ -1,20 +1,27 @@
 // oxlint-disable eslint/no-use-before-define
-import type { createD1Client } from "@chikachow/booze-db";
+// oxlint-disable import/max-dependencies
+import { criticReviews, sites, type createD1Client } from "@chikachow/booze-db";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
+import { requireSitePermission } from "../api/auth.ts";
 import {
+  createCriticReviewUpsert,
   createOrUpdateReviewSource,
+  createReviewSourceUpsert,
   deleteCriticReview,
   listCriticReviews,
   listReviewSources,
+  reviewSourceIdForInput,
   upsertCriticReview,
   type CriticReviewResource,
   type ReviewSourceResource,
 } from "../api/critic-reviews.ts";
+import { generatedId, optionalText } from "../api/ids.ts";
 import { createMcpToolAuditEventInsert } from "./audit.ts";
-import { resolveWineVintageId } from "./catalogue.ts";
+import { getWineVintageSummary, resolveWineVintageId } from "./catalogue.ts";
 import { mcpEntityId } from "./ids.ts";
 import {
   decodePageCursor,
@@ -94,30 +101,77 @@ export function registerCriticReviewTools({
       outputSchema: createReviewSourceOutputSchema.shape,
     },
     async (input) => {
-      const reviewSource = await createReviewSourceSummary({ database, input, userId });
-      const persistedReviewSourceId = await resolveReviewSourceId({
+      await requireSitePermission({
         database,
-        reviewSourceId: reviewSource.reviewSourceId,
+        permission: "site.content.write",
+        siteId: input.siteId,
         userId,
       });
+      const sourceInput = {
+        isActive: input.isActive,
+        name: input.name,
+        notes: input.notes ?? undefined,
+        siteId: input.siteId,
+        sourceType: input.sourceType,
+        url: input.url ?? undefined,
+      };
+      const persistedReviewSourceId = reviewSourceIdForInput(sourceInput);
+      const reviewSourceId = mcpEntityId("review_source", persistedReviewSourceId);
+      const site = await database
+        .select({ name: sites.name })
+        .from(sites)
+        .where(eq(sites.id, input.siteId))
+        .limit(1);
+      const siteName = site[0]?.name;
+      if (siteName === undefined) {
+        throw new HTTPException(404, { message: "Site not found" });
+      }
+      const beforeSource = (
+        await listReviewSources({ database, siteId: input.siteId, userId })
+      ).find((source) => source.id === persistedReviewSourceId);
+      const before = beforeSource === undefined ? {} : reviewSourceSummary(beforeSource);
+      const afterAudit = {
+        isActive: input.isActive,
+        notes: optionalText(input.notes ?? undefined),
+        reviewSource: input.name.trim(),
+        reviewSourceId,
+        site: siteName,
+        siteId: input.siteId,
+        sourceType: optionalText(input.sourceType) ?? "critic",
+        url: optionalText(input.url ?? undefined),
+      };
+      const changed = JSON.stringify(before) !== JSON.stringify(afterAudit);
       const auditEventId = crypto.randomUUID();
-      await createMcpToolAuditEventInsert({
-        auditEventId,
-        database,
-        event: {
-          affectedRecordCount: 1,
-          after: reviewSource,
-          before: {},
-          input,
-          siteId: input.siteId,
-          targetKind: "review_source",
-          targetMcpId: reviewSource.reviewSourceId,
-          targetPersistedId: persistedReviewSourceId,
-          toolName: "cellar.create_review_source",
-          userId,
-        },
-      }).run();
-      return toolJson({ changed: true, reviewSource });
+      await database.batch([
+        createReviewSourceUpsert({
+          database,
+          input: sourceInput,
+          reviewSourceId: persistedReviewSourceId,
+        }),
+        createMcpToolAuditEventInsert({
+          auditEventId,
+          database,
+          event: {
+            affectedRecordCount: changed ? 1 : 0,
+            after: afterAudit,
+            before,
+            input,
+            siteId: input.siteId,
+            targetKind: "review_source",
+            targetMcpId: reviewSourceId,
+            targetPersistedId: persistedReviewSourceId,
+            toolName: "cellar.create_review_source",
+            userId,
+          },
+        }),
+      ]);
+      const source = (await listReviewSources({ database, siteId: input.siteId, userId })).find(
+        (candidate) => candidate.id === persistedReviewSourceId,
+      );
+      if (source === undefined) {
+        throw new Error("Review source upsert did not return a row");
+      }
+      return toolJson({ changed, reviewSource: reviewSourceSummary(source) });
     },
   );
 
@@ -155,49 +209,122 @@ export function registerCriticReviewTools({
       inputSchema: upsertCriticReviewInputSchema,
       outputSchema: upsertCriticReviewOutputSchema.shape,
     },
+    // The branches mirror the schema's review-source union and keep all writes in one D1 batch.
+    // oxlint-disable-next-line eslint/complexity
     async ({ wineId, ...input }) => {
+      const wine = await getWineVintageSummary({ database, userId, wineId });
+      await requireSitePermission({
+        database,
+        permission: "site.content.write",
+        siteId: wine.siteId,
+        userId,
+      });
       const wineVintageId = await resolveWineVintageId({ database, userId, wineId });
-      const beforePage = await listCriticReviewSummaries({
-        database,
-        input: { limit: 25, wineId },
-        userId,
-        wineVintageId,
-      });
-      const criticReview = await upsertCriticReviewSummary({
-        database,
-        input,
-        userId,
-        wineVintageId,
-      });
+      const sourceInput =
+        input.reviewSourceName === undefined
+          ? null
+          : {
+              isActive: true,
+              name: input.reviewSourceName,
+              siteId: wine.siteId,
+              sourceType: "critic",
+            };
+      if (input.reviewSourceId === undefined && sourceInput === null) {
+        throw new HTTPException(400, { message: "Review source is required" });
+      }
+      const persistedReviewSourceId =
+        sourceInput === null
+          ? await resolveReviewSourceId({
+              database,
+              reviewSourceId: input.reviewSourceId ?? "",
+              userId,
+            })
+          : reviewSourceIdForInput(sourceInput);
+      const source = (await listReviewSources({ database, siteId: wine.siteId, userId })).find(
+        (candidate) => candidate.id === persistedReviewSourceId,
+      );
+      const reviewSourceName = source?.name ?? input.reviewSourceName;
+      if (reviewSourceName === undefined) {
+        throw new HTTPException(400, { message: "Review source is required" });
+      }
+      const existingReview = (await listCriticReviews({ database, userId, wineVintageId })).find(
+        (review) => review.reviewSourceId === persistedReviewSourceId,
+      );
+      const persistedCriticReviewId = existingReview?.id ?? generatedId("critic-review");
+      const criticReviewId = mcpEntityId("critic_review", persistedCriticReviewId);
+      const reviewInput = {
+        notes: input.notes ?? undefined,
+        provenance: input.provenance ?? undefined,
+        ratingScale: input.ratingScale ?? undefined,
+        ratingText: input.ratingText,
+        ratingValue: input.ratingValue ?? undefined,
+        reviewSourceId: persistedReviewSourceId,
+        reviewedAt: input.reviewedAt ?? undefined,
+        sourceUrl: input.sourceUrl ?? undefined,
+      };
       const before: Record<string, unknown> =
-        beforePage.items.find(
-          (review) =>
-            review.criticReviewId === criticReview.criticReviewId ||
-            review.reviewSourceId === criticReview.reviewSourceId,
-        ) ?? {};
-      const changed = JSON.stringify(before) !== JSON.stringify(criticReview);
-      const persistedCriticReviewId = await resolveCriticReviewId({
-        criticReviewId: criticReview.criticReviewId,
-        database,
-        userId,
-      });
+        existingReview === undefined ? {} : criticReviewSummary(existingReview);
+      const afterAudit = {
+        criticReviewId,
+        notes: optionalText(input.notes ?? undefined),
+        provenance: optionalText(input.provenance ?? undefined),
+        ratingScale: optionalText(input.ratingScale ?? undefined),
+        ratingText: input.ratingText.trim(),
+        ratingValue: input.ratingValue ?? null,
+        reviewSource: reviewSourceName,
+        reviewSourceId: mcpEntityId("review_source", persistedReviewSourceId),
+        reviewedAt: optionalText(input.reviewedAt ?? undefined),
+        siteId: wine.siteId,
+        sourceUrl: optionalText(input.sourceUrl ?? undefined),
+        wineId,
+      };
+      const changed = JSON.stringify(before) !== JSON.stringify(afterAudit);
       const auditEventId = crypto.randomUUID();
-      await createMcpToolAuditEventInsert({
+      const reviewWrite = createCriticReviewUpsert({
+        database,
+        review: reviewInput,
+        reviewId: persistedCriticReviewId,
+        reviewSourceId: persistedReviewSourceId,
+        siteId: wine.siteId,
+        userId,
+        wineVintageId,
+      });
+      const auditWrite = createMcpToolAuditEventInsert({
         auditEventId,
         database,
         event: {
           affectedRecordCount: changed ? 1 : 0,
-          after: criticReview,
+          after: afterAudit,
           before,
           input: { wineId, ...input },
-          siteId: criticReview.siteId,
+          siteId: wine.siteId,
           targetKind: "critic_review",
-          targetMcpId: criticReview.criticReviewId,
+          targetMcpId: criticReviewId,
           targetPersistedId: persistedCriticReviewId,
           toolName: "cellar.upsert_critic_review",
           userId,
         },
-      }).run();
+      });
+      if (sourceInput === null) {
+        await database.batch([reviewWrite, auditWrite]);
+      } else {
+        await database.batch([
+          createReviewSourceUpsert({
+            database,
+            input: sourceInput,
+            reviewSourceId: persistedReviewSourceId,
+          }),
+          reviewWrite,
+          auditWrite,
+        ]);
+      }
+      const storedReview = (await listCriticReviews({ database, userId, wineVintageId })).find(
+        (review) => review.id === persistedCriticReviewId,
+      );
+      if (storedReview === undefined) {
+        throw new Error("Critic review upsert did not return a row");
+      }
+      const criticReview = criticReviewSummary(storedReview);
       return toolJson({ changed, criticReview });
     },
   );
@@ -217,28 +344,39 @@ export function registerCriticReviewTools({
         database,
         userId,
       });
-      const criticReview = await deleteCriticReviewSummary({
-        criticReviewId,
+      const persistedReview = (await listCriticReviews({ database, userId })).find(
+        (review) => review.id === persistedCriticReviewId,
+      );
+      if (persistedReview === undefined) {
+        throw new HTTPException(404, { message: "Critic review not found" });
+      }
+      await requireSitePermission({
         database,
+        permission: "site.content.write",
+        siteId: persistedReview.siteId,
         userId,
       });
+      const criticReview = criticReviewSummary(persistedReview);
       const auditEventId = crypto.randomUUID();
-      await createMcpToolAuditEventInsert({
-        auditEventId,
-        database,
-        event: {
-          affectedRecordCount: 1,
-          after: {},
-          before: criticReview,
-          input: { criticReviewId },
-          siteId: criticReview.siteId,
-          targetKind: "critic_review",
-          targetMcpId: criticReview.criticReviewId,
-          targetPersistedId: persistedCriticReviewId,
-          toolName: "cellar.delete_critic_review",
-          userId,
-        },
-      }).run();
+      await database.batch([
+        database.delete(criticReviews).where(eq(criticReviews.id, persistedCriticReviewId)),
+        createMcpToolAuditEventInsert({
+          auditEventId,
+          database,
+          event: {
+            affectedRecordCount: 1,
+            after: {},
+            before: criticReview,
+            input: { criticReviewId },
+            siteId: criticReview.siteId,
+            targetKind: "critic_review",
+            targetMcpId: criticReview.criticReviewId,
+            targetPersistedId: persistedCriticReviewId,
+            toolName: "cellar.delete_critic_review",
+            userId,
+          },
+        }),
+      ]);
       return toolJson({ criticReview, deleted: true });
     },
   );

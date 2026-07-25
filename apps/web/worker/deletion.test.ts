@@ -1,13 +1,16 @@
+// oxlint-disable eslint/no-use-before-define
+// oxlint-disable typescript/no-floating-promises typescript/no-unsafe-type-assertion
+// oxlint-disable typescript/no-unnecessary-type-parameters
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { describe, it } from "node:test";
 
-import {
-  deleteBottleCaptureData,
-  deleteSiteData,
-  drainR2ObjectDeletionQueue,
-} from "./deletion.ts";
+import { createD1Client } from "@chikachow/booze-db";
+
+import { createWineVintageDrinkWindowUpdate } from "./api/inventory.ts";
+import { deleteBottleCaptureData, deleteSiteData, drainR2ObjectDeletionQueue } from "./deletion.ts";
+import { createMcpToolAuditEventInsert } from "./mcp/audit.ts";
 
 describe("durable deletion", () => {
   it("deletes a complete site while preserving audit rows unchanged", async () => {
@@ -126,13 +129,62 @@ describe("durable deletion", () => {
     assert.deepEqual(successfulBucket.deleted, [["one", "two"]]);
     assert.deepEqual(queuedKeys(database), []);
   });
+
+  it("rolls back an MCP mutation when its audit insert fails", async () => {
+    const sqlite = migratedDatabase();
+    seedSite(sqlite, "site-1");
+    seedCatalogueAndCapture(sqlite, "site-1", "capture-1", "asset-1");
+    const database = createD1Client(asD1(sqlite));
+
+    await assert.rejects(
+      database.batch([
+        createWineVintageDrinkWindowUpdate({
+          database,
+          drinkFromYear: 2025,
+          drinkToYear: 2030,
+          siteId: "site-1",
+          wineVintageId: "wine-1",
+        }),
+        createMcpToolAuditEventInsert({
+          auditEventId: "invalid-audit",
+          database,
+          event: {
+            affectedRecordCount: 1,
+            after: { drinkFromYear: 2025, drinkToYear: 2030 },
+            before: { drinkFromYear: null, drinkToYear: null },
+            input: { wineId: "wine-1" },
+            siteId: "site-1",
+            targetKind: "wine",
+            targetMcpId: "wine-1",
+            targetPersistedId: "wine-1",
+            toolName: "cellar.set_drinking_window",
+            userId: "missing-user",
+          },
+        }),
+      ]),
+      /FOREIGN KEY constraint failed/u,
+    );
+
+    const wine = row(
+      sqlite,
+      "SELECT drink_from_year, drink_to_year FROM wine_vintages WHERE id = 'wine-1'",
+    );
+    assert.equal(wine["drink_from_year"], null);
+    assert.equal(wine["drink_to_year"], null);
+    assert.equal(
+      scalar(sqlite, "SELECT count(*) FROM mcp_tool_audit_events WHERE id = 'invalid-audit'"),
+      0,
+    );
+  });
 });
 
 function migratedDatabase(): DatabaseSync {
   const database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
   const migrationsDirectory = new URL("../../../packages/db/migrations/", import.meta.url);
-  for (const filename of readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort()) {
+  for (const filename of readdirSync(migrationsDirectory)
+    .filter((name) => name.endsWith(".sql"))
+    .toSorted()) {
     const migration = readFileSync(new URL(filename, migrationsDirectory), "utf8");
     for (const statement of migration.split("--> statement-breakpoint")) {
       if (statement.trim() !== "") {
@@ -172,9 +224,7 @@ function seedCatalogueAndCapture(
        ) VALUES ('wine-1', ?, 'winery-1', 'Reserve', 'Reserve', '2020')`,
     )
     .run(siteId);
-  database
-    .prepare("INSERT INTO grape_varieties (id, name) VALUES ('grape-1', 'Shiraz')")
-    .run();
+  database.prepare("INSERT INTO grape_varieties (id, name) VALUES ('grape-1', 'Shiraz')").run();
   database
     .prepare(
       `INSERT INTO wine_constituents (site_id, wine_vintage_id, grape_variety_id)
