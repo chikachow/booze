@@ -7,13 +7,10 @@ import "./App.css";
 import { BottleModal, type BottleModalSubmit } from "./BottleModal.tsx";
 import { CaptureArea, type CaptureSubmitResult } from "./CaptureView.tsx";
 import { InventoryArea } from "./InventoryView.tsx";
-import { LocationCreateForm } from "./LocationCreateForm.tsx";
+import { ManagementArea } from "./ManagementView.tsx";
+import { useCatalogue } from "./useCatalogue.ts";
 import {
   awardSummary,
-  apiBottleToInventoryItem,
-  apiLocationToLocationItem,
-  apiSiteToSiteItem,
-  compareLocationPath,
   criticReviewSummary,
   drinkLabel,
   formStateForItem,
@@ -21,12 +18,7 @@ import {
   initialCaptureFormState,
   initialLocationFormState,
   initialSiteFormState,
-  isApiEnvelope,
-  isBottleResource,
-  isCaptureResource,
   isDrinkQueueItem,
-  isSiteResource,
-  isStorageLocationResource,
   locationPath,
   storageLocationPath,
   parseOptionalDecimal,
@@ -37,14 +29,12 @@ import {
   type AuthMode,
   type BottlePatch,
   type CaptureFormState,
-  type CaptureResource,
   type FormState,
   type InventoryGrouping,
   type InventoryItem,
   type LocationFormState,
   type LocationItem,
   type SiteFormState,
-  type SiteItem,
 } from "./inventory-model.ts";
 
 type AppProps = {
@@ -201,10 +191,8 @@ async function responseErrorMessage(response: Response): Promise<string | null> 
 }
 
 function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): ReactElement {
-  const [items, setItems] = useState<readonly InventoryItem[]>([]);
-  const [captures, setCaptures] = useState<readonly CaptureResource[]>([]);
-  const [locations, setLocations] = useState<readonly LocationItem[]>([]);
-  const [sites, setSites] = useState<readonly SiteItem[]>([]);
+  const { captures, items, loadCaptures, loadCatalogue, locations, sites, status, setStatus } =
+    useCatalogue(getAuthHeaders);
   const [addFormDefaults, setAddFormDefaults] = useState<FormState>(initialFormState);
   const [captureForm, setCaptureForm] = useState<CaptureFormState>(initialCaptureFormState);
   const [editingBottle, setEditingBottle] = useState<InventoryItem | null>(null);
@@ -223,91 +211,7 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
   const [area, setArea] = useState<Area>("inventory");
   const [grouping, setGrouping] = useState<InventoryGrouping>("winery");
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [status, setStatus] = useState("Loading inventory...");
   const [isSaving, setIsSaving] = useState(false);
-
-  async function loadInventory(): Promise<void> {
-    const response = await fetch("/api/bottles", { headers: await getAuthHeaders() });
-    if (!response.ok) {
-      throw new Error("Inventory request failed");
-    }
-    const payload: unknown = await response.json();
-    if (
-      !isApiEnvelope(payload, (data): data is readonly unknown[] => Array.isArray(data)) ||
-      !payload.data.every(isBottleResource)
-    ) {
-      throw new Error("Inventory response was invalid");
-    }
-    const nextItems = payload.data.map(apiBottleToInventoryItem);
-    setItems(nextItems);
-    setStatus(
-      nextItems.length === 0
-        ? "No bottles catalogued yet."
-        : `${nextItems.length} bottles available.`,
-    );
-  }
-
-  async function loadLocations(): Promise<void> {
-    const response = await fetch("/api/storage-locations", { headers: await getAuthHeaders() });
-    if (!response.ok) {
-      throw new Error("Locations request failed");
-    }
-    const payload: unknown = await response.json();
-    if (
-      !isApiEnvelope(payload, (data): data is readonly unknown[] => Array.isArray(data)) ||
-      !payload.data.every(isStorageLocationResource)
-    ) {
-      throw new Error("Locations response was invalid");
-    }
-    setLocations(payload.data.map(apiLocationToLocationItem));
-  }
-
-  async function loadSites(): Promise<void> {
-    const response = await fetch("/api/sites", { headers: await getAuthHeaders() });
-    if (!response.ok) {
-      throw new Error("Sites request failed");
-    }
-    const payload: unknown = await response.json();
-    if (
-      !isApiEnvelope(payload, (data): data is readonly unknown[] => Array.isArray(data)) ||
-      !payload.data.every(isSiteResource)
-    ) {
-      throw new Error("Sites response was invalid");
-    }
-    setSites(payload.data.map(apiSiteToSiteItem));
-  }
-
-  async function loadCaptures(): Promise<void> {
-    const response = await fetch("/api/bottle-captures", { headers: await getAuthHeaders() });
-    if (!response.ok) {
-      throw new Error("Captures request failed");
-    }
-    const payload: unknown = await response.json();
-    if (
-      !isApiEnvelope(payload, (data): data is readonly unknown[] => Array.isArray(data)) ||
-      !payload.data.every(isCaptureResource)
-    ) {
-      throw new Error("Captures response was invalid");
-    }
-    setCaptures(payload.data);
-  }
-
-  async function loadCatalogue(): Promise<void> {
-    await Promise.all([loadInventory(), loadLocations(), loadSites(), loadCaptures()]);
-  }
-
-  useEffect(() => {
-    async function load(): Promise<void> {
-      try {
-        await loadCatalogue();
-      } catch {
-        setStatus("Could not load inventory.");
-      }
-    }
-
-    // oxlint-disable-next-line no-void
-    void load();
-  }, []);
 
   useEffect(() => {
     const defaultSite = sites[0];
@@ -560,6 +464,21 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
     }
     await loadCatalogue();
     setStatus("Capture imported.");
+  }
+
+  async function deleteCapture(captureId: string): Promise<void> {
+    setStatus("Deleting capture...");
+    const response = await fetch(`/api/bottle-captures/${captureId}`, {
+      method: "DELETE",
+      headers: await getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const message = await responseErrorMessage(response);
+      setStatus(message === null ? "Capture was not deleted." : `Delete failed: ${message}`);
+      return;
+    }
+    await loadCaptures();
+    setStatus("Capture deleted.");
   }
 
   async function saveLocation(): Promise<void> {
@@ -883,6 +802,7 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
           locations={locations}
           sites={sites}
           setForm={setCaptureForm}
+          onDelete={deleteCapture}
           onImport={importCapture}
           onRetry={retryCapture}
           onSubmit={submitCapture}
@@ -962,432 +882,5 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
         />
       )}
     </main>
-  );
-}
-
-function ManagementArea({
-  deletingLocationId,
-  deletingSiteId,
-  editingLocationId,
-  editingLocationName,
-  editingSiteId,
-  editingSiteName,
-  locationForm,
-  locations,
-  siteForm,
-  sites,
-  setDeletingLocationId,
-  setDeletingSiteId,
-  setEditingLocationId,
-  setEditingLocationName,
-  setEditingSiteId,
-  setEditingSiteName,
-  deleteLocation,
-  deleteSite,
-  updateLocationField,
-  updateSiteField,
-  onSaveLocation,
-  onSaveLocationName,
-  onSaveSite,
-  onSaveSiteName,
-  onUseLocation,
-}: {
-  readonly deletingLocationId: string | null;
-  readonly deletingSiteId: string | null;
-  readonly editingLocationId: string | null;
-  readonly editingLocationName: string;
-  readonly editingSiteId: string | null;
-  readonly editingSiteName: string;
-  readonly locationForm: LocationFormState;
-  readonly locations: readonly LocationItem[];
-  readonly siteForm: SiteFormState;
-  readonly sites: readonly SiteItem[];
-  readonly setDeletingLocationId: (value: string | null) => void;
-  readonly setDeletingSiteId: (value: string | null) => void;
-  readonly setEditingLocationId: (value: string | null) => void;
-  readonly setEditingLocationName: (value: string) => void;
-  readonly setEditingSiteId: (value: string | null) => void;
-  readonly setEditingSiteName: (value: string) => void;
-  readonly deleteLocation: (locationId: string) => Promise<void>;
-  readonly deleteSite: (siteId: string) => Promise<void>;
-  readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
-  readonly updateSiteField: (field: keyof SiteFormState, value: string) => void;
-  readonly onSaveLocation: () => Promise<void>;
-  readonly onSaveLocationName: (locationId: string) => Promise<void>;
-  readonly onSaveSite: () => Promise<void>;
-  readonly onSaveSiteName: (siteId: string) => Promise<void>;
-  readonly onUseLocation: (location: LocationItem) => void;
-}): ReactElement {
-  return (
-    <section className="workspace management-workspace" aria-labelledby="management-title">
-      <div className="workspace-header">
-        <div>
-          <p>Management</p>
-          <h2 id="management-title">Sites and locations</h2>
-        </div>
-      </div>
-      <SiteArea
-        deletingSiteId={deletingSiteId}
-        editingSiteId={editingSiteId}
-        editingSiteName={editingSiteName}
-        form={siteForm}
-        sites={sites}
-        setDeletingSiteId={setDeletingSiteId}
-        setEditingSiteId={setEditingSiteId}
-        setEditingSiteName={setEditingSiteName}
-        deleteSite={deleteSite}
-        updateSiteField={updateSiteField}
-        onSaveSite={onSaveSite}
-        onSaveSiteName={onSaveSiteName}
-      />
-      <LocationArea
-        deletingLocationId={deletingLocationId}
-        editingLocationId={editingLocationId}
-        editingLocationName={editingLocationName}
-        form={locationForm}
-        locations={locations}
-        sites={sites}
-        setDeletingLocationId={setDeletingLocationId}
-        setEditingLocationId={setEditingLocationId}
-        setEditingLocationName={setEditingLocationName}
-        deleteLocation={deleteLocation}
-        updateLocationField={updateLocationField}
-        onSaveLocation={onSaveLocation}
-        onSaveLocationName={onSaveLocationName}
-        onUseLocation={onUseLocation}
-      />
-    </section>
-  );
-}
-
-function LocationArea({
-  deletingLocationId,
-  editingLocationId,
-  editingLocationName,
-  form,
-  locations,
-  sites,
-  setEditingLocationId,
-  setEditingLocationName,
-  setDeletingLocationId,
-  deleteLocation,
-  updateLocationField,
-  onSaveLocation,
-  onSaveLocationName,
-  onUseLocation,
-}: {
-  readonly editingLocationId: string | null;
-  readonly deletingLocationId: string | null;
-  readonly editingLocationName: string;
-  readonly form: LocationFormState;
-  readonly locations: readonly LocationItem[];
-  readonly sites: readonly SiteItem[];
-  readonly setEditingLocationId: (value: string | null) => void;
-  readonly setEditingLocationName: (value: string) => void;
-  readonly setDeletingLocationId: (value: string | null) => void;
-  readonly deleteLocation: (locationId: string) => Promise<void>;
-  readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
-  readonly onSaveLocation: () => Promise<void>;
-  readonly onSaveLocationName: (locationId: string) => Promise<void>;
-  readonly onUseLocation: (location: LocationItem) => void;
-}): ReactElement {
-  return (
-    <section className="management-section" aria-labelledby="locations-title">
-      <div className="section-heading">
-        <h3 id="locations-title">Locations</h3>
-      </div>
-      <LocationCreateForm
-        form={form}
-        locations={locations}
-        sites={sites}
-        updateLocationField={updateLocationField}
-        onSaveLocation={onSaveLocation}
-      />
-
-      {locations.length === 0 ? (
-        <div className="empty-state">
-          <h3>No locations yet</h3>
-          <p>Create a site and location before cataloguing the first bottle.</p>
-        </div>
-      ) : (
-        <div className="location-grid">
-          {locations.toSorted(compareLocationPath(locations)).map((location) => (
-            <article className="location-card" key={location.locationId}>
-              {deletingLocationId === location.locationId ? (
-                <div className="inline-edit">
-                  <div>
-                    <h3>Delete {locationPath(location, locations)}?</h3>
-                    <p>Bottles in this location will stay in {location.site} with no location.</p>
-                  </div>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // oxlint-disable-next-line no-void
-                        void deleteLocation(location.locationId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingLocationId(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : editingLocationId === location.locationId ? (
-                <form
-                  className="inline-edit"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    // oxlint-disable-next-line no-void
-                    void onSaveLocationName(location.locationId);
-                  }}
-                >
-                  <label>
-                    Location displayName
-                    <input
-                      required
-                      value={editingLocationName}
-                      onChange={(event) => {
-                        setEditingLocationName(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <div className="card-actions">
-                    <button type="submit">Save</button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingLocationId(null);
-                        setEditingLocationName("");
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <>
-                  <div>
-                    <h3>{locationPath(location, locations)}</h3>
-                    <p>{location.site}</p>
-                  </div>
-                  <dl>
-                    <div>
-                      <dt>Available</dt>
-                      <dd>{location.bottleCount} bottles</dd>
-                    </div>
-                  </dl>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onUseLocation(location);
-                      }}
-                    >
-                      Use for bottle
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingLocationId(location.locationId);
-                        setEditingLocationName(location.location);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingLocationId(location.locationId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function SiteArea({
-  deletingSiteId,
-  editingSiteId,
-  editingSiteName,
-  form,
-  sites,
-  setEditingSiteId,
-  setEditingSiteName,
-  setDeletingSiteId,
-  deleteSite,
-  updateSiteField,
-  onSaveSite,
-  onSaveSiteName,
-}: {
-  readonly editingSiteId: string | null;
-  readonly deletingSiteId: string | null;
-  readonly editingSiteName: string;
-  readonly form: SiteFormState;
-  readonly sites: readonly SiteItem[];
-  readonly setEditingSiteId: (value: string | null) => void;
-  readonly setEditingSiteName: (value: string) => void;
-  readonly setDeletingSiteId: (value: string | null) => void;
-  readonly deleteSite: (siteId: string) => Promise<void>;
-  readonly updateSiteField: (field: keyof SiteFormState, value: string) => void;
-  readonly onSaveSite: () => Promise<void>;
-  readonly onSaveSiteName: (siteId: string) => Promise<void>;
-}): ReactElement {
-  return (
-    <section className="management-section" aria-labelledby="sites-title">
-      <div className="section-heading">
-        <h3 id="sites-title">Sites</h3>
-      </div>
-      <form
-        className="entry-form compact-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          // oxlint-disable-next-line no-void
-          void onSaveSite();
-        }}
-      >
-        <label>
-          Site
-          <input
-            required
-            autoComplete="off"
-            value={form.site}
-            onChange={(event) => {
-              updateSiteField("site", event.currentTarget.value);
-            }}
-            placeholder="home"
-          />
-        </label>
-        <button className="primary-action" type="submit">
-          Save site
-        </button>
-      </form>
-
-      {sites.length === 0 ? (
-        <div className="empty-state">
-          <h3>No sites yet</h3>
-          <p>Create a site before cataloguing bottles or locations.</p>
-        </div>
-      ) : (
-        <div className="location-grid">
-          {sites.map((site) => (
-            <article className="location-card" key={site.siteId}>
-              {deletingSiteId === site.siteId ? (
-                <div className="inline-edit">
-                  <div>
-                    <h3>Delete {site.site}?</h3>
-                    <p>
-                      Bottles, wine vintages, locations, and membership records for this site will
-                      be removed.
-                    </p>
-                  </div>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // oxlint-disable-next-line no-void
-                        void deleteSite(site.siteId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingSiteId(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : editingSiteId === site.siteId ? (
-                <form
-                  className="inline-edit"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    // oxlint-disable-next-line no-void
-                    void onSaveSiteName(site.siteId);
-                  }}
-                >
-                  <label>
-                    Site displayName
-                    <input
-                      required
-                      value={editingSiteName}
-                      onChange={(event) => {
-                        setEditingSiteName(event.currentTarget.value);
-                      }}
-                    />
-                  </label>
-                  <div className="card-actions">
-                    <button type="submit">Save</button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingSiteId(null);
-                        setEditingSiteName("");
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <>
-                  <div>
-                    <h3>{site.site}</h3>
-                    <p>{site.siteId}</p>
-                  </div>
-                  <dl>
-                    <div>
-                      <dt>Available</dt>
-                      <dd>{site.bottleCount} bottles</dd>
-                    </div>
-                    <div>
-                      <dt>Locations</dt>
-                      <dd>{site.locationCount}</dd>
-                    </div>
-                  </dl>
-                  <div className="card-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingSiteId(site.siteId);
-                        setEditingSiteName(site.site);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeletingSiteId(site.siteId);
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }

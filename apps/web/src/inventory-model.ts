@@ -97,6 +97,7 @@ export type SiteResource = {
   readonly name: string;
   readonly bottleCount: number;
   readonly locationCount: number;
+  readonly role: "owner" | "editor" | "viewer";
 };
 
 export type CaptureStatus =
@@ -226,6 +227,7 @@ export type SiteItem = {
   readonly site: string;
   readonly bottleCount: number;
   readonly locationCount: number;
+  readonly role: SiteResource["role"];
 };
 
 export type SitesResponse = {
@@ -714,7 +716,9 @@ export function isSiteResource(value: unknown): value is SiteResource {
     "id" in value &&
     "name" in value &&
     "bottleCount" in value &&
-    "locationCount" in value
+    "locationCount" in value &&
+    "role" in value &&
+    (value.role === "owner" || value.role === "editor" || value.role === "viewer")
   );
 }
 
@@ -798,6 +802,7 @@ export function apiSiteToSiteItem(resource: SiteResource): SiteItem {
     site: resource.name,
     bottleCount: resource.bottleCount,
     locationCount: resource.locationCount,
+    role: resource.role,
   };
 }
 
