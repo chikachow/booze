@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { problemResponseForError } from "./api/http.ts";
 import { calculateDrinkStatus } from "./api/inventory.ts";
-import { createMcpToolAuditEvent, mcpToolAuditEventInputSchema } from "./mcp/audit.ts";
+import { mcpToolAuditEventInputSchema } from "./mcp/audit.ts";
 import { mcpEntityId } from "./mcp/ids.ts";
 import { decodePageCursor, pageFromRows, rowsAfterCursor, toolJson } from "./mcp/pagination.ts";
 import {
@@ -503,37 +503,6 @@ await test("MCP audit event input schema accepts compact write audit payloads", 
       targetPersistedId: "vintage_home_abc",
       toolName: "cellar.set_drinking_window",
       userId: "user_abc",
-    },
-  );
-});
-
-await test("MCP audit writer fails instead of hiding insert failures", async () => {
-  const failingDatabase = createD1Client(
-    fakeD1Database({ runErrorMessage: "audit insert failed" }),
-  );
-
-  await assert.rejects(
-    createMcpToolAuditEvent({
-      database: failingDatabase,
-      event: {
-        affectedRecordCount: 1,
-        after: { drinkFromYear: 2026, drinkToYear: 2030, wineId: "wine_abc" },
-        before: { drinkFromYear: null, drinkToYear: null, wineId: "wine_abc" },
-        input: { drinkFromYear: 2026, drinkToYear: 2030, wineId: "wine_abc" },
-        siteId: "site_home",
-        targetKind: "wine",
-        targetMcpId: "wine_abc",
-        targetPersistedId: "vintage_home_abc",
-        toolName: "cellar.set_drinking_window",
-        userId: "user_abc",
-      },
-    }),
-    (error): boolean => {
-      assert.ok(error instanceof Error);
-      assert.match(error.message, /Failed query/u);
-      assert.ok(error.cause instanceof Error);
-      assert.equal(error.cause.message, "audit insert failed");
-      return true;
     },
   );
 });

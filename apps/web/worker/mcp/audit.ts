@@ -49,15 +49,3 @@ export function createMcpToolAuditEventInsert({
     .insert(mcpToolAuditEvents)
     .values(mcpToolAuditEventValues({ auditEventId, event }));
 }
-
-export async function createMcpToolAuditEvent({
-  database,
-  event,
-}: {
-  readonly database: ReturnType<typeof createD1Client>;
-  readonly event: z.infer<typeof mcpToolAuditEventInputSchema>;
-}): Promise<{ readonly auditEventId: string }> {
-  const auditEventId = crypto.randomUUID();
-  await createMcpToolAuditEventInsert({ auditEventId, database, event }).run();
-  return { auditEventId };
-}
