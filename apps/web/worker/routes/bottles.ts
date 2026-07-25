@@ -13,7 +13,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
-import { assertCanAccessSite, requireAuthenticatedUser, upsertSite } from "../api/auth.ts";
+import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { createBottles, upsertStorageLocation, upsertWineVintage } from "../api/catalogue.ts";
 import { replaceCriticReviewsForWine } from "../api/critic-reviews.ts";
 import { created, locationHeader, noContent } from "../api/http.ts";
@@ -134,7 +134,12 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
         })
       ).siteId;
 
-    await assertCanAccessSite({ database, siteId, userId: authenticatedUser.userId });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId,
+      userId: authenticatedUser.userId,
+    });
 
     const storageLocationId =
       payload.storageLocationId ??
@@ -214,8 +219,9 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
     const bottleId = context.req.param("bottleId");
     const existing = await getBottleSiteAndVintage({ database, bottleId });
 
-    await assertCanAccessSite({
+    await requireSitePermission({
       database,
+      permission: "site.content.write",
       siteId: existing.siteId,
       userId: authenticatedUser.userId,
     });
@@ -316,8 +322,9 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
     const bottleId = context.req.param("bottleId");
     const existing = await getBottleSiteAndVintage({ database, bottleId });
 
-    await assertCanAccessSite({
+    await requireSitePermission({
       database,
+      permission: "site.content.write",
       siteId: existing.siteId,
       userId: authenticatedUser.userId,
     });

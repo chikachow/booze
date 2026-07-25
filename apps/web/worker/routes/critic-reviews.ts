@@ -2,7 +2,7 @@ import { createD1Client } from "@chikachow/booze-db";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { assertCanAccessSite, requireAuthenticatedUser } from "../api/auth.ts";
+import { requireAuthenticatedUser, requireSitePermission } from "../api/auth.ts";
 import {
   createOrUpdateReviewSource,
   deleteCriticReview,
@@ -136,8 +136,9 @@ export const criticReviewRoutes = new Hono<{ Bindings: Bindings }>()
       headers: context.req.raw.headers,
       secretKey: context.env.CLERK_SECRET_KEY,
     });
-    await assertCanAccessSite({
+    await requireSitePermission({
       database,
+      permission: "site.content.write",
       siteId: payload.siteId,
       userId: authenticatedUser.userId,
     });

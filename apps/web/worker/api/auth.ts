@@ -1,11 +1,28 @@
 // oxlint-disable eslint/no-use-before-define
 import { siteMemberships, sites, users, type BoozeDatabase } from "@chikachow/booze-db";
 import { verifyToken } from "@clerk/backend";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
 
 import { stableId, userIdForClerkUser } from "./ids.ts";
 import type { AuthenticatedUser } from "./types.ts";
+
+export const siteRoleSchema = z.enum(["owner", "editor", "viewer"]);
+export type SiteRole = z.infer<typeof siteRoleSchema>;
+
+export const sitePermissionSchema = z.enum(["site.read", "site.content.write", "site.manage"]);
+export type SitePermission = z.infer<typeof sitePermissionSchema>;
+
+const permissionsByRole = {
+  owner: new Set<SitePermission>(["site.read", "site.content.write", "site.manage"]),
+  editor: new Set<SitePermission>(["site.read", "site.content.write"]),
+  viewer: new Set<SitePermission>(["site.read"]),
+} satisfies Record<SiteRole, ReadonlySet<SitePermission>>;
+
+export function roleHasSitePermission(role: SiteRole, permission: SitePermission): boolean {
+  return permissionsByRole[role].has(permission);
+}
 
 export async function requireAuthenticatedUser({
   database,
@@ -141,40 +158,58 @@ export async function upsertSite({
   readonly site: string;
   readonly userId: string;
 }): Promise<{ readonly siteId: string }> {
-  const siteId = stableId("site", site);
+  const legacySiteId = stableId("site", site);
+  const existingMembership = await database
+    .select({ siteId: siteMemberships.siteId })
+    .from(siteMemberships)
+    .where(and(eq(siteMemberships.siteId, legacySiteId), eq(siteMemberships.userId, userId)))
+    .limit(1);
+  if (existingMembership[0] !== undefined) {
+    return { siteId: legacySiteId };
+  }
 
-  await database
-    .insert(sites)
-    .values({ id: siteId, name: site })
-    .onConflictDoUpdate({
+  // Site names are not globally unique. New IDs include the owner so one user cannot
+  // acquire membership in another user's deterministic legacy site by choosing its name.
+  const siteId = stableId("site", `${userId}:${site}`);
+  await database.batch([
+    database.insert(sites).values({ id: siteId, name: site }).onConflictDoNothing({
       target: sites.id,
-      set: { name: site, updatedAt: sql`CURRENT_TIMESTAMP` },
-    });
-
-  await database
-    .insert(siteMemberships)
-    .values({ siteId, userId, role: "owner" })
-    .onConflictDoNothing({ target: [siteMemberships.siteId, siteMemberships.userId] });
+    }),
+    database
+      .insert(siteMemberships)
+      .values({ siteId, userId, role: "owner" })
+      .onConflictDoNothing({ target: [siteMemberships.siteId, siteMemberships.userId] }),
+  ]);
 
   return { siteId };
 }
 
-export async function assertCanAccessSite({
+export async function requireSitePermission({
   database,
+  permission,
   siteId,
   userId,
 }: {
   readonly database: BoozeDatabase;
+  readonly permission: SitePermission;
   readonly siteId: string;
   readonly userId: string;
-}): Promise<void> {
+}): Promise<{ readonly role: SiteRole }> {
   const membership = await database
-    .select({ siteId: siteMemberships.siteId })
+    .select({ role: siteMemberships.role })
     .from(siteMemberships)
     .where(and(eq(siteMemberships.siteId, siteId), eq(siteMemberships.userId, userId)))
     .limit(1);
 
-  if (membership.length === 0) {
+  const row = membership[0];
+  if (row === undefined) {
     throw new HTTPException(404, { message: "Site not found" });
   }
+
+  const parsedRole = siteRoleSchema.safeParse(row.role);
+  if (!parsedRole.success || !roleHasSitePermission(parsedRole.data, permission)) {
+    throw new HTTPException(403, { message: "Site permission required" });
+  }
+
+  return { role: parsedRole.data };
 }
