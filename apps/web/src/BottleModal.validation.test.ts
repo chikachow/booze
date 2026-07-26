@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { validateAwards, validateCriticReviews, type AwardDraft } from "./bottle-metadata.ts";
+import {
+  parseGrapeVarieties,
+  validateAwards,
+  validateCriticReviews,
+  type AwardDraft,
+} from "./bottle-metadata.ts";
 import type { CriticReviewInput } from "./inventory-model.ts";
 
 describe("repeatable bottle metadata validation", () => {
@@ -85,5 +90,19 @@ describe("repeatable bottle metadata validation", () => {
         },
       ],
     });
+  });
+});
+
+describe("grape variety parsing", () => {
+  it("trims and removes empty entries while preserving order, casing, and duplicates", () => {
+    expect(parseGrapeVarieties("  Shiraz, , Grenache,Shiraz, ")).toEqual([
+      "Shiraz",
+      "Grenache",
+      "Shiraz",
+    ]);
+  });
+
+  it.each(["", " ", ",,,"])("returns no varieties for %j", (value) => {
+    expect(parseGrapeVarieties(value)).toEqual([]);
   });
 });
