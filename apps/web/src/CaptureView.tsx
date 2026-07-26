@@ -21,6 +21,7 @@ import { storageLocationLabel } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
 import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
+import { captureStatus } from "./capture-status.ts";
 
 type CaptureAreaProps = {
   readonly captures: readonly CaptureResource[];
@@ -398,23 +399,26 @@ function CaptureCard({
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<CaptureCardAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  async function runAction(label: string, action: () => Promise<boolean>): Promise<boolean> {
+  async function runAction(
+    pending: CaptureCardAction,
+    action: () => Promise<boolean>,
+  ): Promise<boolean> {
     if (pendingAction !== null) {
       return false;
     }
-    setPendingAction(label);
+    setPendingAction(pending);
     setActionError(null);
     try {
       const succeeded = await action();
       if (!succeeded) {
-        setActionError(`${label} failed. Try again.`);
+        setActionError(`${captureActionLabel(pending)} failed. Try again.`);
       }
       return succeeded;
     } catch {
-      setActionError(`${label} failed. Try again.`);
+      setActionError(`${captureActionLabel(pending)} failed. Try again.`);
       return false;
     } finally {
       setPendingAction(null);
@@ -428,7 +432,10 @@ function CaptureCard({
           <h3>{captureTitle(capture)}</h3>
           <p>{captureStoragePath(capture, locations)}</p>
         </div>
-        <Badge label={captureLabel(capture.status)} variant={captureBadge(capture.status)} />
+        <Badge
+          label={captureStatus(capture.status).label}
+          variant={captureStatus(capture.status).badge}
+        />
       </div>
       <div className="capture-thumbnails">
         {capture.images.map((image) => (
@@ -458,12 +465,15 @@ function CaptureCard({
           ? wineVintageCandidates(capture.latestRun?.matchResult).map((candidate) => (
               <Button
                 isDisabled={pendingAction !== null}
-                isLoading={pendingAction === `Import ${candidate.id}`}
+                isLoading={isCaptureAction(pendingAction, {
+                  kind: "import",
+                  wineVintageId: candidate.id,
+                })}
                 label={`Use ${candidate.label}`}
                 size="sm"
                 key={candidate.id}
                 onClick={() => {
-                  void runAction(`Import ${candidate.id}`, async () =>
+                  void runAction({ kind: "import", wineVintageId: candidate.id }, async () =>
                     onImport(capture.id, candidate.id),
                   );
                 }}
@@ -473,22 +483,22 @@ function CaptureCard({
         {canWrite && capture.status === "needs_review" ? (
           <Button
             isDisabled={pendingAction !== null}
-            isLoading={pendingAction === "Create new"}
+            isLoading={isCaptureAction(pendingAction, { kind: "create" })}
             label="Create new"
             size="sm"
             onClick={() => {
-              void runAction("Create new", async () => onImport(capture.id));
+              void runAction({ kind: "create" }, async () => onImport(capture.id));
             }}
           />
         ) : null}
         {canWrite && (capture.status === "failed" || capture.status === "needs_review") ? (
           <Button
             isDisabled={pendingAction !== null}
-            isLoading={pendingAction === "Retry"}
+            isLoading={isCaptureAction(pendingAction, { kind: "retry" })}
             label="Retry"
             size="sm"
             onClick={() => {
-              void runAction("Retry", async () => onRetry(capture.id));
+              void runAction({ kind: "retry" }, async () => onRetry(capture.id));
             }}
           />
         ) : null}
@@ -520,16 +530,30 @@ function CaptureCard({
   );
 }
 
+type CaptureCardAction =
+  | { readonly kind: "create" }
+  | { readonly kind: "import"; readonly wineVintageId: string }
+  | { readonly kind: "retry" };
+
+function captureActionLabel(action: CaptureCardAction): string {
+  return action.kind === "create" ? "Create new" : action.kind === "retry" ? "Retry" : "Import";
+}
+
+function isCaptureAction(current: CaptureCardAction | null, expected: CaptureCardAction): boolean {
+  return (
+    current !== null &&
+    current.kind === expected.kind &&
+    (current.kind !== "import" ||
+      (expected.kind === "import" && current.wineVintageId === expected.wineVintageId))
+  );
+}
+
 function isCaptureDeletable(capture: CaptureResource): boolean {
-  return !["queued", "extracting", "importing"].includes(capture.status);
+  return captureStatus(capture.status).deletable;
 }
 
 function isActionableCapture(capture: CaptureResource): boolean {
-  return (
-    capture.status === "failed" ||
-    capture.status === "needs_review" ||
-    capture.status === "upload_failed"
-  );
+  return captureStatus(capture.status).actionable;
 }
 
 function CaptureIssue({ message }: { readonly message: string | null }): ReactElement {
@@ -600,35 +624,6 @@ function wineVintageCandidates(
     const label = stringField(candidate, "label");
     return id === undefined || label === undefined ? [] : [{ id, label }];
   });
-}
-
-const captureLabels = {
-  queued: "Queued",
-  extracting: "Extracting",
-  importing: "Importing",
-  upload_failed: "Upload failed",
-  needs_review: "Review",
-  imported: "Imported",
-  failed: "Failed",
-} satisfies Record<CaptureResource["status"], string>;
-
-function captureLabel(status: CaptureResource["status"]): string {
-  return captureLabels[status];
-}
-
-function captureBadge(
-  status: CaptureResource["status"],
-): "neutral" | "info" | "success" | "warning" | "error" {
-  if (status === "failed" || status === "upload_failed") {
-    return "error";
-  }
-  if (status === "needs_review") {
-    return "warning";
-  }
-  if (status === "imported") {
-    return "success";
-  }
-  return status === "queued" ? "neutral" : "info";
 }
 
 function objectField(value: unknown, field: string): unknown {
