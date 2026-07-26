@@ -1,5 +1,5 @@
 /* oxlint-disable typescript/no-unsafe-assignment, typescript/no-unsafe-call, typescript/no-unsafe-member-access, typescript/no-unsafe-return, typescript/no-unsafe-type-assertion -- Page evaluation runs in Chrome's DOM context rather than the Worker TypeScript environment. */
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { createRequire } from "node:module";
 
 import { bottles, captures, locations, sites } from "./catalogue-fixtures.ts";
@@ -12,6 +12,7 @@ type CatalogueFixtures = {
   readonly locationData?: readonly (typeof locations)[number][];
   readonly siteData?: readonly (typeof sites)[number][];
   readonly successfulDeletes?: boolean;
+  readonly successfulRenames?: boolean;
 };
 
 type StaleRefreshScenario = {
@@ -20,6 +21,45 @@ type StaleRefreshScenario = {
   readonly mutationPath: string;
   readonly refreshFailurePath: string;
 };
+
+async function fulfillSuccessfulRename(
+  route: Route,
+  locationData: readonly (typeof locations)[number][],
+  siteData: readonly (typeof sites)[number][],
+): Promise<{
+  readonly locationData: readonly (typeof locations)[number][];
+  readonly siteData: readonly (typeof sites)[number][];
+}> {
+  const request = route.request();
+  const path = new URL(request.url()).pathname;
+  const id = path.split("/").at(-1);
+  const payload: unknown = request.postDataJSON();
+  const name =
+    typeof payload === "object" &&
+    payload !== null &&
+    "name" in payload &&
+    typeof payload.name === "string"
+      ? payload.name
+      : null;
+  let nextLocationData = locationData;
+  let nextSiteData = siteData;
+  if (name === null) {
+    await route.fulfill({ body: "Invalid rename payload", status: 400 });
+    return { locationData: nextLocationData, siteData: nextSiteData };
+  }
+  if (path.startsWith("/api/storage-locations/")) {
+    nextLocationData = locationData.map((location) =>
+      location.id === id ? { ...location, name } : location,
+    );
+  } else if (path.startsWith("/api/sites/")) {
+    nextSiteData = siteData.map((site) => (site.id === id ? { ...site, name } : site));
+  } else {
+    await route.fulfill({ body: `Unexpected PATCH ${path}`, status: 501 });
+    return { locationData: nextLocationData, siteData: nextSiteData };
+  }
+  await route.fulfill({ body: "{}", contentType: "application/json", status: 200 });
+  return { locationData: nextLocationData, siteData: nextSiteData };
+}
 
 async function mockCatalogue(page: Page, fixtures: CatalogueFixtures = {}): Promise<void> {
   let bottleData = fixtures.bottleData ?? bottles;
@@ -30,6 +70,10 @@ async function mockCatalogue(page: Page, fixtures: CatalogueFixtures = {}): Prom
     const request = route.request();
     const path = new URL(request.url()).pathname;
     const method = request.method();
+    if (method === "PATCH" && fixtures.successfulRenames === true) {
+      ({ locationData, siteData } = await fulfillSuccessfulRename(route, locationData, siteData));
+      return;
+    }
     if (method === "DELETE" && fixtures.successfulDeletes === true) {
       const id = path.split("/").at(-1);
       if (path.startsWith("/api/bottle-captures/")) {
@@ -181,6 +225,8 @@ async function failDestructiveAction(
   await expect(dialog.getByRole("alert")).toContainText(failureMessage);
   await expect(dialog).toBeVisible();
   await expectNoAxeViolations(page);
+  await action.focus();
+  await expect(action).toBeFocused();
   for (let index = 0; index < 4; index += 1) {
     await page.keyboard.press("Tab");
     expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
@@ -285,6 +331,46 @@ test("keeps failed editor values and rejects malformed award numbers", async ({ 
   await expect(winery).toHaveValue("Unsaved Browser Winery");
   await expect(dialog.locator("[name='criticReviews.0.ratingText']")).toHaveValue("96 points");
   await expect(dialog.locator("[name='awards.0.awardName']")).toHaveValue("Browser show");
+});
+
+test("keeps named resource rename state on failure and completes successful renames", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Storage" }).click();
+  let locationsRegion = page.getByRole("region", { exact: true, name: "Locations" });
+  await locationsRegion.getByRole("button", { name: "Edit" }).first().click();
+  const failedLocationName = locationsRegion.getByRole("textbox", {
+    name: "Location display name",
+  });
+  await failedLocationName.fill("Lower rack");
+  await locationsRegion.getByRole("button", { exact: true, name: "Save" }).click();
+  await expect(locationsRegion.getByText("Location was not updated. Try again.")).toBeVisible();
+  await expect(failedLocationName).toHaveValue("Lower rack");
+
+  await page.unroute("**/api/**");
+  await mockCatalogue(page, { successfulRenames: true });
+  await page.reload();
+  await page.getByRole("button", { name: "Storage" }).click();
+
+  locationsRegion = page.getByRole("region", { exact: true, name: "Locations" });
+  await locationsRegion.getByRole("button", { name: "Edit" }).first().click();
+  const locationName = locationsRegion.getByRole("textbox", {
+    name: "Location display name",
+  });
+  await locationName.fill("Lower rack");
+  await locationsRegion.getByRole("button", { exact: true, name: "Save" }).click();
+  await expect(
+    locationsRegion.getByRole("heading", { exact: true, name: "Lower rack" }),
+  ).toBeVisible();
+  await expect(page.getByText("Location updated.", { exact: true })).toBeVisible();
+
+  const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });
+  await sitesRegion.getByRole("button", { name: "Edit" }).click();
+  const siteName = sitesRegion.getByRole("textbox", { name: "Site display name" });
+  await siteName.fill("Home collection");
+  await sitesRegion.getByRole("button", { exact: true, name: "Save" }).click();
+  await expect(sitesRegion.getByRole("heading", { name: "Home collection" })).toBeVisible();
+  await expect(page.getByText("Site updated.", { exact: true })).toBeVisible();
 });
 
 test("keeps every destructive failure inside its active nested dialog", async ({ page }) => {
