@@ -6,24 +6,63 @@ import { bottles, captures, locations, sites } from "./catalogue-fixtures.ts";
 
 const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
-async function mockCatalogue(page: Page, bottleData = bottles): Promise<void> {
+type CatalogueFixtures = {
+  readonly bottleData?: readonly (typeof bottles)[number][];
+  readonly captureData?: readonly (typeof captures)[number][];
+  readonly locationData?: readonly (typeof locations)[number][];
+  readonly siteData?: readonly (typeof sites)[number][];
+  readonly successfulDeletes?: boolean;
+};
+
+async function mockCatalogue(page: Page, fixtures: CatalogueFixtures = {}): Promise<void> {
+  let bottleData = fixtures.bottleData ?? bottles;
+  let captureData = fixtures.captureData ?? captures;
+  let locationData = fixtures.locationData ?? locations;
+  let siteData = fixtures.siteData ?? sites;
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
-    if (request.method() === "DELETE" || request.method() === "PATCH") {
+    const method = request.method();
+    if (method === "DELETE" && fixtures.successfulDeletes === true) {
+      const id = path.split("/").at(-1);
+      if (path.startsWith("/api/bottle-captures/")) {
+        captureData = captureData.filter((capture) => capture.id !== id);
+      } else if (path.startsWith("/api/storage-locations/")) {
+        locationData = locationData.filter((location) => location.id !== id);
+      } else if (path.startsWith("/api/sites/")) {
+        siteData = siteData.filter((site) => site.id !== id);
+      } else if (path.startsWith("/api/bottles/")) {
+        bottleData = bottleData.filter((bottle) => bottle.id !== id);
+      } else {
+        await route.fulfill({ body: `Unexpected DELETE ${path}`, status: 501 });
+        return;
+      }
+      await route.fulfill({ body: "{}", contentType: "application/json", status: 200 });
+      return;
+    }
+    if (
+      (method === "DELETE" || method === "PATCH" || method === "POST") &&
+      /^\/api\/(?:bottles|storage-locations|sites|bottle-captures)(?:\/[^/]+(?:\/(?:import|retry))?)?$/u.test(
+        path,
+      )
+    ) {
       await route.fulfill({ body: "forced browser-test failure", status: 500 });
       return;
     }
-    const data =
-      path === "/api/bottles"
-        ? bottleData
-        : path === "/api/storage-locations"
-          ? locations
-          : path === "/api/sites"
-            ? sites
-            : path === "/api/bottle-captures"
-              ? captures
-              : [];
+    const responseByPath = new Map<string, readonly unknown[]>([
+      ["/api/bottles", bottleData],
+      ["/api/storage-locations", locationData],
+      ["/api/sites", siteData],
+      ["/api/bottle-captures", captureData],
+    ]);
+    const data = method === "GET" ? responseByPath.get(path) : undefined;
+    if (data === undefined) {
+      await route.fulfill({
+        body: `Unexpected browser-test request: ${method} ${path}`,
+        status: 501,
+      });
+      return;
+    }
     await route.fulfill({
       body: JSON.stringify({ data }),
       contentType: "application/json",
@@ -230,6 +269,44 @@ test("keeps every destructive failure inside its active nested dialog", async ({
   );
 });
 
+test("keeps successful destructive lifecycles mounted through reload and restores safe focus", async ({
+  page,
+}) => {
+  await page.unroute("**/api/**");
+  await mockCatalogue(page, { successfulDeletes: true });
+  await page.reload();
+
+  await page.locator(".bottle-card").first().getByRole("button", { name: "Edit" }).click();
+  const bottleDialog = page.getByRole("dialog", { name: "Edit bottle" });
+  await bottleDialog.getByRole("button", { name: "Delete bottle" }).click();
+  const bottleDeleteDialog = page.getByRole("alertdialog", { name: "Delete this bottle?" });
+  await bottleDeleteDialog.getByRole("button", { name: "Delete bottle" }).click();
+  await expect(bottleDialog).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Add bottle" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Capture" }).click();
+  await page.getByRole("button", { name: "Delete capture" }).click();
+  const captureDialog = page.getByRole("alertdialog", { name: "Delete this capture?" });
+  await captureDialog.getByRole("button", { name: "Delete capture" }).click();
+  await expect(captureDialog).not.toBeVisible();
+  await expect(page.getByRole("heading", { name: "Action needed" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Storage" }).click();
+  const locationsRegion = page.getByRole("region", { exact: true, name: "Locations" });
+  await locationsRegion.getByRole("button", { name: "Delete" }).first().click();
+  const locationDialog = page.getByRole("alertdialog", { name: "Delete Left rack?" });
+  await locationDialog.getByRole("button", { name: "Delete location" }).click();
+  await expect(locationDialog).not.toBeVisible();
+  await expect(page.getByRole("heading", { exact: true, name: "Locations" })).toBeFocused();
+
+  const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });
+  await sitesRegion.getByRole("button", { name: "Delete" }).click();
+  const siteDialog = page.getByRole("alertdialog", { name: "Delete Home cellar?" });
+  await siteDialog.getByRole("button", { name: "Delete site" }).click();
+  await expect(siteDialog).not.toBeVisible();
+  await expect(page.getByRole("heading", { exact: true, name: "Sites" })).toBeFocused();
+});
+
 test("keeps a representative large catalogue scrollable and focusable", async ({ page }) => {
   await page.unroute("**/api/**");
   const largeCatalogue = Array.from({ length: 160 }, (_, index) => ({
@@ -238,7 +315,7 @@ test("keeps a representative large catalogue scrollable and focusable", async ({
     id: `scale-bottle-${index}`,
     wineVintageId: `scale-vintage-${index}`,
   }));
-  await mockCatalogue(page, largeCatalogue);
+  await mockCatalogue(page, { bottleData: largeCatalogue });
   await page.reload();
 
   const cards = page.locator(".bottle-card");
@@ -246,6 +323,9 @@ test("keeps a representative large catalogue scrollable and focusable", async ({
   await expect(page.getByText("Showing 100 of 160 bottles")).toBeVisible();
   await page.getByRole("button", { name: "Show 60 more" }).click();
   await expect(cards).toHaveCount(160);
+  const inventoryStatus = page.locator(".inventory-pagination [role='status']");
+  await expect(inventoryStatus).toHaveText("Showing all 160 bottles");
+  await expect(inventoryStatus).toBeFocused();
   const lastEdit = cards.last().getByRole("button", { name: "Edit" });
   await lastEdit.scrollIntoViewIfNeeded();
   await expect(lastEdit).toBeVisible();
@@ -253,5 +333,53 @@ test("keeps a representative large catalogue scrollable and focusable", async ({
   await expect(lastEdit).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
+  );
+});
+
+test("bounds capture, site, and location work before progressively revealing it", async ({
+  page,
+}) => {
+  const captureData = Array.from({ length: 80 }, (_, index) => ({
+    ...captures[0],
+    id: `scale-capture-${index}`,
+  }));
+  const siteData = Array.from({ length: 80 }, (_, index) => ({
+    ...sites[0],
+    id: `scale-site-${index}`,
+    name: `Scale site ${index}`,
+  }));
+  const locationData = Array.from({ length: 80 }, (_, index) => ({
+    ...locations[0],
+    id: `scale-location-${index}`,
+    name: `Scale location ${index}`,
+    parentId: null,
+  }));
+  await page.unroute("**/api/**");
+  await mockCatalogue(page, { captureData, locationData, siteData });
+  await page.reload();
+
+  await page.getByRole("button", { name: "Capture" }).click();
+  await expect(page.locator(".capture-card")).toHaveCount(50);
+  await page.getByRole("button", { name: "Show 30 more" }).click();
+  await expect(page.locator(".capture-card")).toHaveCount(80);
+  const captureStatus = page.locator(".inventory-pagination [role='status']");
+  await expect(captureStatus).toHaveText("Showing all 80 captures");
+  await expect(captureStatus).toBeFocused();
+
+  await page.getByRole("button", { name: "Storage" }).click();
+  const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });
+  await expect(sitesRegion.locator(".location-card")).toHaveCount(50);
+  await sitesRegion.getByRole("button", { name: "Show 30 more" }).click();
+  await expect(sitesRegion.locator(".location-card")).toHaveCount(80);
+  await expect(sitesRegion.locator(".inventory-pagination [role='status']")).toHaveText(
+    "Showing all 80 sites",
+  );
+
+  const locationsRegion = page.getByRole("region", { exact: true, name: "Locations" });
+  await expect(locationsRegion.locator(".location-card")).toHaveCount(50);
+  await locationsRegion.getByRole("button", { name: "Show 30 more" }).click();
+  await expect(locationsRegion.locator(".location-card")).toHaveCount(80);
+  await expect(locationsRegion.locator(".inventory-pagination [role='status']")).toHaveText(
+    "Showing all 80 locations",
   );
 });

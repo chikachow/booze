@@ -20,6 +20,7 @@ import {
   type InventoryItem,
   type LocationItem,
 } from "./inventory-model.ts";
+import { ProgressiveListStatus } from "./ProgressiveListStatus.tsx";
 
 type InventoryAreaProps = {
   readonly drinkStatusFilter: string;
@@ -181,21 +182,13 @@ export function InventoryArea({
           onEditBottle={onEditBottle}
         />
       )}
-      {visibleItems.length === items.length ? null : (
-        <div className="inventory-pagination">
-          <p>
-            Showing {visibleItems.length} of {items.length} bottles
-          </p>
-          <Button
-            label={`Show ${Math.min(INVENTORY_PAGE_SIZE, items.length - visibleItems.length)} more`}
-            onClick={() => {
-              setVisibleItemCount((current) =>
-                Math.min(current + INVENTORY_PAGE_SIZE, items.length),
-              );
-            }}
-          />
-        </div>
-      )}
+      <ProgressiveListStatus
+        itemLabel="bottles"
+        pageSize={INVENTORY_PAGE_SIZE}
+        totalCount={items.length}
+        visibleCount={visibleItems.length}
+        onReveal={setVisibleItemCount}
+      />
     </section>
   );
 }
