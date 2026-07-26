@@ -1,44 +1,61 @@
 /* oxlint-disable typescript/no-unsafe-assignment, typescript/no-unsafe-call, typescript/no-unsafe-member-access, typescript/no-unsafe-return, typescript/strict-boolean-expressions -- Node executes this small build-integrity script directly. */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "booze-theme-"));
-const generatedPath = path.join(temporaryDirectory, "booze.css");
+export const themeArtifacts = ["booze.css", "booze.js", "booze.d.ts", "booze.variants.d.ts"];
 
-function normaliseGeneratedHeader(value) {
+export function normaliseGeneratedHeader(value) {
   return value
     .split("\n")
     .filter((line) => !line.includes(" * Command:") && !line.includes(" * Generated:"))
     .join("\n");
 }
 
-try {
-  execFileSync(
-    process.execPath,
-    [
-      "node_modules/@astryxdesign/cli/bin/astryx.mjs",
-      "theme",
-      "build",
-      "src/booze-theme.ts",
-      "--out",
-      generatedPath,
-    ],
-    { stdio: "pipe" },
-  );
+export function compareThemeArtifacts(committedDirectory, regeneratedDirectory) {
+  return themeArtifacts.filter((artifact) => {
+    const committedPath = path.join(committedDirectory, artifact);
+    const regeneratedPath = path.join(regeneratedDirectory, artifact);
+    if (!existsSync(committedPath) || !existsSync(regeneratedPath)) {
+      return true;
+    }
+    return (
+      normaliseGeneratedHeader(readFileSync(committedPath, "utf8")) !==
+      normaliseGeneratedHeader(readFileSync(regeneratedPath, "utf8"))
+    );
+  });
+}
 
-  const committed = normaliseGeneratedHeader(
-    readFileSync(new URL("../src/generated/booze.css", import.meta.url), "utf8"),
-  );
-  const regenerated = normaliseGeneratedHeader(readFileSync(generatedPath, "utf8"));
+export function checkTheme() {
+  const webDirectory = path.resolve(import.meta.dirname, "..");
+  const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "booze-theme-"));
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        "node_modules/@astryxdesign/cli/bin/astryx.mjs",
+        "theme",
+        "build",
+        "src/booze-theme.ts",
+        "--out",
+        path.join(temporaryDirectory, "booze.css"),
+      ],
+      { cwd: webDirectory, stdio: "pipe" },
+    );
 
-  if (committed !== regenerated) {
+    return compareThemeArtifacts(path.join(webDirectory, "src/generated"), temporaryDirectory);
+  } finally {
+    rmSync(temporaryDirectory, { force: true, recursive: true });
+  }
+}
+
+if (import.meta.main) {
+  const staleArtifacts = checkTheme();
+  if (staleArtifacts.length > 0) {
     process.stderr.write(
-      "Generated ASTRYX theme is stale. Run `pnpm --filter @chikachow/booze-web theme:build`.\n",
+      `Generated ASTRYX theme artifacts are stale: ${staleArtifacts.join(", ")}. Run \`pnpm --filter @chikachow/booze-web theme:build\`.\n`,
     );
     process.exitCode = 1;
   }
-} finally {
-  rmSync(temporaryDirectory, { force: true, recursive: true });
 }

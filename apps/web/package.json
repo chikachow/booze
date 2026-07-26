@@ -9,7 +9,7 @@
     "deploy": "pnpm run build && WRANGLER_WRITE_LOGS=false wrangler deploy",
     "dev": "WRANGLER_WRITE_LOGS=false vite dev",
     "preview": "vite preview",
-    "test": "node --test --enable-source-maps worker/*.test.ts && vitest run && pnpm run theme:check",
+    "test": "node --test --enable-source-maps worker/*.test.ts scripts/*.test.mjs && vitest run && pnpm run theme:check",
     "theme:build": "pnpm astryx theme build src/booze-theme.ts --out src/generated/booze.css",
     "theme:check": "node scripts/check-theme.mjs",
     "typecheck": "tsc --noEmit",
