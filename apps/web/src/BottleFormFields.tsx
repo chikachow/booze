@@ -18,7 +18,10 @@ export type BottleFormFieldProps = {
 function rulesFor({
   label,
   required,
-}: Pick<BottleFormFieldProps, "label" | "required">): RegisterOptions<FormState> {
+}: {
+  readonly label: string;
+  readonly required: boolean | undefined;
+}): RegisterOptions<FormState> {
   return required === true
     ? {
         validate: (value) =>
@@ -34,11 +37,7 @@ export function BottleTextInput({
   placeholder,
   required = false,
 }: BottleFormFieldProps): ReactElement {
-  const { field, fieldState } = useController({
-    control,
-    name,
-    rules: rulesFor({ label, required }),
-  });
+  const { field, status } = useBottleField({ control, label, name, required });
 
   return (
     <TextInput
@@ -48,11 +47,7 @@ export function BottleTextInput({
       isRequired={required}
       label={label}
       placeholder={placeholder}
-      status={
-        fieldState.error === undefined
-          ? undefined
-          : { message: fieldState.error.message, type: "error" }
-      }
+      status={status}
       value={field.value}
       onBlur={field.onBlur}
       onChange={field.onChange}
@@ -67,11 +62,7 @@ export function BottleTextArea({
   placeholder,
   required = false,
 }: BottleFormFieldProps): ReactElement {
-  const { field, fieldState } = useController({
-    control,
-    name,
-    rules: rulesFor({ label, required }),
-  });
+  const { field, status } = useBottleField({ control, label, name, required });
 
   return (
     <TextArea
@@ -80,16 +71,27 @@ export function BottleTextArea({
       isRequired={required}
       label={label}
       placeholder={placeholder}
-      status={
-        fieldState.error === undefined
-          ? undefined
-          : { message: fieldState.error.message, type: "error" }
-      }
+      status={status}
       value={field.value}
       onBlur={field.onBlur}
       onChange={field.onChange}
     />
   );
+}
+
+function useBottleField({ control, label, name, required }: BottleFormFieldProps) {
+  const { field, fieldState } = useController({
+    control,
+    name,
+    rules: rulesFor({ label, required }),
+  });
+  return {
+    field,
+    status:
+      fieldState.error === undefined
+        ? undefined
+        : { message: fieldState.error.message, type: "error" as const },
+  };
 }
 
 export function BottleQuantityInput({

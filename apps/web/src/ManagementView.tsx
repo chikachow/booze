@@ -15,6 +15,7 @@ import {
   type SiteItem,
 } from "./inventory-model.ts";
 import type { LocationController, SiteController } from "./useCatalogueControllers.ts";
+import { useKeyedAsyncOperation } from "./useKeyedAsyncOperation.ts";
 
 export function ManagementArea({
   locationController,
@@ -107,29 +108,10 @@ function LocationArea({
   readonly onSaveLocationName: (locationId: string) => Promise<boolean>;
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
-  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null);
-  const [renameError, setRenameError] = useState<{
-    readonly id: string;
-    readonly message: string;
-  } | null>(null);
-
-  async function saveLocationName(locationId: string): Promise<void> {
-    setPendingRenameId(locationId);
-    setRenameError(null);
-    try {
-      const saved = await onSaveLocationName(locationId);
-      if (!saved) {
-        setRenameError({ id: locationId, message: "Location was not updated. Try again." });
-      }
-    } catch {
-      setRenameError({
-        id: locationId,
-        message: "Location was not updated. Check your connection and try again.",
-      });
-    } finally {
-      setPendingRenameId(null);
-    }
-  }
+  const rename = useKeyedAsyncOperation<string>({
+    exceptionMessage: "Location was not updated. Check your connection and try again.",
+    failureMessage: "Location was not updated. Try again.",
+  });
 
   return (
     <section className="management-section" aria-labelledby="locations-title">
@@ -159,16 +141,15 @@ function LocationArea({
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (editingLocationName.trim() === "") {
-                      setRenameError({
-                        id: location.locationId,
-                        message: "Location name is required.",
-                      });
+                      rename.reportError(location.locationId, "Location name is required.");
                       return;
                     }
-                    if (pendingRenameId !== null) {
+                    if (rename.pendingKey !== null) {
                       return;
                     }
-                    void saveLocationName(location.locationId);
+                    void rename.run(location.locationId, async () =>
+                      onSaveLocationName(location.locationId),
+                    );
                   }}
                 >
                   <TextInput
@@ -177,19 +158,19 @@ function LocationArea({
                     isRequired
                     label="Location display name"
                     status={
-                      renameError?.id === location.locationId
-                        ? { message: renameError.message, type: "error" }
+                      rename.error?.key === location.locationId
+                        ? { message: rename.error.message, type: "error" }
                         : undefined
                     }
                     value={editingLocationName}
                     onChange={(value: string) => {
                       setEditingLocationName(value);
-                      setRenameError(null);
+                      rename.clearError();
                     }}
                   />
                   <div className="card-actions">
                     <Button
-                      isLoading={pendingRenameId === location.locationId}
+                      isLoading={rename.pendingKey === location.locationId}
                       label="Save"
                       type="submit"
                       variant="primary"
@@ -291,11 +272,10 @@ function SiteArea({
 }): ReactElement {
   const [isSaving, setIsSaving] = useState(false);
   const [siteError, setSiteError] = useState<string | null>(null);
-  const [pendingRenameId, setPendingRenameId] = useState<string | null>(null);
-  const [renameError, setRenameError] = useState<{
-    readonly id: string;
-    readonly message: string;
-  } | null>(null);
+  const rename = useKeyedAsyncOperation<string>({
+    exceptionMessage: "Site was not updated. Check your connection and try again.",
+    failureMessage: "Site was not updated. Try again.",
+  });
 
   async function saveSite(): Promise<void> {
     setIsSaving(true);
@@ -309,24 +289,6 @@ function SiteArea({
       setSiteError("Site was not saved. Check your connection and try again.");
     } finally {
       setIsSaving(false);
-    }
-  }
-
-  async function saveSiteName(siteId: string): Promise<void> {
-    setPendingRenameId(siteId);
-    setRenameError(null);
-    try {
-      const saved = await onSaveSiteName(siteId);
-      if (!saved) {
-        setRenameError({ id: siteId, message: "Site was not updated. Try again." });
-      }
-    } catch {
-      setRenameError({
-        id: siteId,
-        message: "Site was not updated. Check your connection and try again.",
-      });
-    } finally {
-      setPendingRenameId(null);
     }
   }
 
@@ -380,13 +342,13 @@ function SiteArea({
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (editingSiteName.trim() === "") {
-                      setRenameError({ id: site.siteId, message: "Site name is required." });
+                      rename.reportError(site.siteId, "Site name is required.");
                       return;
                     }
-                    if (pendingRenameId !== null) {
+                    if (rename.pendingKey !== null) {
                       return;
                     }
-                    void saveSiteName(site.siteId);
+                    void rename.run(site.siteId, async () => onSaveSiteName(site.siteId));
                   }}
                 >
                   <TextInput
@@ -395,19 +357,19 @@ function SiteArea({
                     isRequired
                     label="Site display name"
                     status={
-                      renameError?.id === site.siteId
-                        ? { message: renameError.message, type: "error" }
+                      rename.error?.key === site.siteId
+                        ? { message: rename.error.message, type: "error" }
                         : undefined
                     }
                     value={editingSiteName}
                     onChange={(value: string) => {
                       setEditingSiteName(value);
-                      setRenameError(null);
+                      rename.clearError();
                     }}
                   />
                   <div className="card-actions">
                     <Button
-                      isLoading={pendingRenameId === site.siteId}
+                      isLoading={rename.pendingKey === site.siteId}
                       label="Save"
                       type="submit"
                       variant="primary"
