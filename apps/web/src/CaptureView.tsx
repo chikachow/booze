@@ -1,5 +1,4 @@
 /* oxlint-disable import/max-dependencies -- Capture composes the ASTRYX upload, status, disclosure, and confirmation surfaces. */
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
@@ -20,6 +19,7 @@ import type {
 } from "./inventory-model.ts";
 import { storageLocationLabel } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
+import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
 
 type CaptureAreaProps = {
@@ -489,25 +489,14 @@ function CaptureCard({
       {actionError === null ? null : (
         <Banner aria-live="assertive" status="error" title={actionError} />
       )}
-      <AlertDialog
+      <DestructiveActionDialog
         actionLabel="Delete capture"
         description="This permanently removes the capture, its images, and processing history. This action cannot be undone."
-        isActionLoading={pendingAction === "Delete"}
+        failureMessage="Delete failed. Try again."
         isOpen={confirmingDelete}
         title="Delete this capture?"
-        onAction={() => {
-          void (async () => {
-            const deleted = await runAction("Delete", async () => onDelete(capture.id));
-            if (deleted) {
-              setConfirmingDelete(false);
-            }
-          })();
-        }}
-        onOpenChange={(isOpen: boolean) => {
-          if (pendingAction === null) {
-            setConfirmingDelete(isOpen);
-          }
-        }}
+        onAction={async () => onDelete(capture.id)}
+        onOpenChange={setConfirmingDelete}
       />
     </article>
   );

@@ -13,7 +13,6 @@ import {
   parseOptionalDecimal,
   parseOptionalVolumeMl,
   parseOptionalYear,
-  type Area,
   type BottlePatch,
   type CaptureFormState,
   type FormState,
@@ -34,12 +33,10 @@ function useBottleControllerImpl({
   getAuthHeaders,
   loadCatalogue,
   locations,
-  setArea,
   setStatus,
   writableSites,
 }: SharedControllerContext & {
   readonly locations: readonly LocationItem[];
-  readonly setArea: (area: Area) => void;
   readonly writableSites: readonly SiteItem[];
 }) {
   const [addFormDefaults, setAddFormDefaults] = useState<FormState>(initialFormState);
@@ -164,7 +161,6 @@ function useBottleControllerImpl({
       location: locationPath(location, locations),
       position: "",
     }));
-    setArea("inventory");
     setIsAddOpen(true);
   }
 
