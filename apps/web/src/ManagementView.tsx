@@ -139,7 +139,12 @@ function LocationArea({
       ) : (
         <div className="location-grid">
           {visibleLocations.map((location) => (
-            <article className="location-card" key={location.locationId}>
+            <article
+              className="location-card"
+              data-location-id={location.locationId}
+              key={location.locationId}
+              tabIndex={-1}
+            >
               {editingLocationId === location.locationId ? (
                 <form
                   className="inline-edit"
@@ -235,6 +240,10 @@ function LocationArea({
         </div>
       )}
       <ProgressiveListStatus
+        getRevealFocusTarget={(firstRevealedIndex) => {
+          const location = sortedLocations[firstRevealedIndex];
+          return location === undefined ? null : locationCard(location.locationId);
+        }}
         itemLabel="locations"
         totalCount={sortedLocations.length}
         visibleCount={visibleLocations.length}
@@ -362,7 +371,12 @@ function SiteArea({
       ) : (
         <div className="location-grid">
           {visibleSites.map((site) => (
-            <article className="location-card" key={site.siteId}>
+            <article
+              className="location-card"
+              data-site-id={site.siteId}
+              key={site.siteId}
+              tabIndex={-1}
+            >
               {editingSiteId === site.siteId ? (
                 <form
                   className="inline-edit"
@@ -455,6 +469,10 @@ function SiteArea({
         </div>
       )}
       <ProgressiveListStatus
+        getRevealFocusTarget={(firstRevealedIndex) => {
+          const site = sites[firstRevealedIndex];
+          return site === undefined ? null : siteCard(site.siteId);
+        }}
         itemLabel="sites"
         totalCount={sites.length}
         visibleCount={visibleSites.length}
@@ -478,5 +496,21 @@ function SiteArea({
         />
       )}
     </section>
+  );
+}
+
+function locationCard(locationId: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>("[data-location-id]")].find(
+      (element) => element.dataset["locationId"] === locationId,
+    ) ?? null
+  );
+}
+
+function siteCard(siteId: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>("[data-site-id]")].find(
+      (element) => element.dataset["siteId"] === siteId,
+    ) ?? null
   );
 }

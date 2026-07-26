@@ -1,6 +1,8 @@
 /* oxlint-disable import/max-dependencies -- The application composition root wires each area. */
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
@@ -9,6 +11,7 @@ import { lazy, Suspense, useEffect, useMemo, type ReactElement } from "react";
 // oxlint-disable-next-line import/no-unassigned-import -- Vite loads the application stylesheet for its side effect.
 import "./App.css";
 import { InventoryArea } from "./InventoryView.tsx";
+import { LazyLoadErrorBoundary } from "./LazyLoadErrorBoundary.tsx";
 import { useCatalogue } from "./useCatalogue.ts";
 import { useCatalogueUrlState } from "./useCatalogueUrlState.ts";
 import { useReturnFocus } from "./useReturnFocus.ts";
@@ -108,8 +111,17 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
 }
 
 export function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): ReactElement {
-  const { captures, items, loadCaptures, loadCatalogue, locations, sites, status, setStatus } =
-    useCatalogue(getAuthHeaders);
+  const {
+    captures,
+    completeMutation,
+    items,
+    locations,
+    refreshIssue,
+    retryRefresh,
+    sites,
+    status,
+    setStatus,
+  } = useCatalogue(getAuthHeaders);
   const writableSites = useMemo(
     () => sites.filter((site) => site.role === "owner" || site.role === "editor"),
     [sites],
@@ -137,28 +149,27 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
     setVarietalFilter,
   } = useCatalogueUrlState();
   const bottleController = useBottleController({
+    completeMutation,
     getAuthHeaders,
-    loadCatalogue,
     locations,
     setStatus,
     writableSites,
   });
   const captureController = useCaptureController({
+    completeMutation,
     getAuthHeaders,
-    loadCaptures,
-    loadCatalogue,
     setStatus,
     writableSites,
   });
   const locationController = useLocationController({
+    completeMutation,
     getAuthHeaders,
-    loadCatalogue,
     setStatus,
     writableSites,
   });
   const siteController = useSiteController({
+    completeMutation,
     getAuthHeaders,
-    loadCatalogue,
     setStatus,
   });
   const drinkItems = useMemo(() => items.filter((item) => isDrinkQueueItem(item)), [items]);
@@ -275,6 +286,15 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
           </section>
         </Card>
 
+        {refreshIssue === null ? null : (
+          <Banner
+            aria-label={refreshIssue.message}
+            endContent={<Button clickAction={retryRefresh} label="Retry refresh" variant="ghost" />}
+            status="warning"
+            title={refreshIssue.message}
+          />
+        )}
+
         <TabList
           hasDivider
           layout="fill"
@@ -290,108 +310,114 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
           <Tab label="Storage" value="management" />
         </TabList>
 
-        <Suspense fallback={<p role="status">Loading cellar workspace…</p>}>
-          {area === "inventory" ? (
-            <InventoryArea
-              drinkStatusFilter={drinkStatusFilter}
-              drinkStatusOptions={drinkStatusOptions}
-              filter={filter}
-              grouping={grouping}
-              items={listedItems}
-              editableSiteIds={writableSiteIds}
-              locationFilter={locationFilter}
-              locationOptions={locationOptions}
-              locations={locations}
-              varietalFilter={varietalFilter}
-              varietalOptions={varietalOptions}
-              setDrinkStatusFilter={setDrinkStatusFilter}
-              setFilter={setFilter}
-              setGrouping={setGrouping}
-              setLocationFilter={setLocationFilter}
-              setVarietalFilter={setVarietalFilter}
-              onAddBottle={() => {
-                captureBottleDialogTrigger();
-                bottleController.setIsAddOpen(true);
-              }}
-              onEditBottle={(item) => {
-                captureBottleDialogTrigger();
-                bottleController.openBottleEditor(item);
-              }}
-            />
-          ) : area === "captures" ? (
-            <CaptureArea
-              captures={captures}
-              form={captureController.captureForm}
-              isSaving={captureController.isSaving}
-              locations={writableLocations}
-              sites={writableSites}
-              writableSiteIds={writableSiteIds}
-              setForm={captureController.setCaptureForm}
-              onDelete={captureController.deleteCapture}
-              onImport={captureController.importCapture}
-              onRetry={captureController.retryCapture}
-              onSubmit={captureController.submitCapture}
-            />
-          ) : (
-            <ManagementArea
-              locationController={locationController}
-              locations={locations}
-              siteController={siteController}
-              sites={sites}
-              writableSiteIds={writableSiteIds}
-              onUseLocation={(location) => {
-                captureBottleDialogTrigger();
-                bottleController.useLocation(location);
-              }}
-            />
-          )}
+        <LazyLoadErrorBoundary
+          description="Reload the latest application files and try this workspace again."
+          key={area}
+          title="Cellar workspace could not be loaded"
+        >
+          <Suspense fallback={<p role="status">Loading cellar workspace…</p>}>
+            {area === "inventory" ? (
+              <InventoryArea
+                drinkStatusFilter={drinkStatusFilter}
+                drinkStatusOptions={drinkStatusOptions}
+                filter={filter}
+                grouping={grouping}
+                items={listedItems}
+                editableSiteIds={writableSiteIds}
+                locationFilter={locationFilter}
+                locationOptions={locationOptions}
+                locations={locations}
+                varietalFilter={varietalFilter}
+                varietalOptions={varietalOptions}
+                setDrinkStatusFilter={setDrinkStatusFilter}
+                setFilter={setFilter}
+                setGrouping={setGrouping}
+                setLocationFilter={setLocationFilter}
+                setVarietalFilter={setVarietalFilter}
+                onAddBottle={() => {
+                  captureBottleDialogTrigger();
+                  bottleController.setIsAddOpen(true);
+                }}
+                onEditBottle={(item) => {
+                  captureBottleDialogTrigger();
+                  bottleController.openBottleEditor(item);
+                }}
+              />
+            ) : area === "captures" ? (
+              <CaptureArea
+                captures={captures}
+                form={captureController.captureForm}
+                isSaving={captureController.isSaving}
+                locations={writableLocations}
+                sites={writableSites}
+                writableSiteIds={writableSiteIds}
+                setForm={captureController.setCaptureForm}
+                onDelete={captureController.deleteCapture}
+                onImport={captureController.importCapture}
+                onRetry={captureController.retryCapture}
+                onSubmit={captureController.submitCapture}
+              />
+            ) : (
+              <ManagementArea
+                locationController={locationController}
+                locations={locations}
+                siteController={siteController}
+                sites={sites}
+                writableSiteIds={writableSiteIds}
+                onUseLocation={(location) => {
+                  captureBottleDialogTrigger();
+                  bottleController.useLocation(location);
+                }}
+              />
+            )}
 
-          {bottleController.isAddOpen ? (
-            <BottleModal
-              form={bottleController.addFormDefaults}
-              isSaving={bottleController.isSaving}
-              locations={writableLocations}
-              sites={writableSites}
-              title="Add bottle"
-              onClose={() => {
-                bottleController.setIsAddOpen(false);
-              }}
-              onSubmit={bottleController.saveBottle}
-            />
-          ) : null}
+            {bottleController.isAddOpen ? (
+              <BottleModal
+                form={bottleController.addFormDefaults}
+                isSaving={bottleController.isSaving}
+                locations={writableLocations}
+                sites={writableSites}
+                title="Add bottle"
+                onClose={() => {
+                  bottleController.setIsAddOpen(false);
+                }}
+                onSubmit={bottleController.saveBottle}
+              />
+            ) : null}
 
-          {bottleController.editingBottle === null ||
-          bottleController.editingForm === null ? null : (
-            <BottleModal
-              key={bottleController.editingBottle.bottleId}
-              form={bottleController.editingForm}
-              isSaving={bottleController.isSaving}
-              item={bottleController.editingBottle}
-              locations={writableLocations}
-              sites={writableSites}
-              title="Edit bottle"
-              onClose={() => {
-                bottleController.setEditingBottle(null);
-              }}
-              onDelete={async () => {
-                return bottleController.deleteBottle(
-                  bottleController.editingBottle?.bottleId ?? "",
-                );
-              }}
-              onMarkConsumed={async () => {
-                const updated = await bottleController.updateBottle({
-                  bottleId: bottleController.editingBottle?.bottleId ?? "",
-                  payload: { status: "consumed" },
-                });
-                if (updated) {
+            {bottleController.editingBottle === null ||
+            bottleController.editingForm === null ? null : (
+              <BottleModal
+                key={bottleController.editingBottle.bottleId}
+                form={bottleController.editingForm}
+                isSaving={bottleController.isSaving}
+                item={bottleController.editingBottle}
+                locations={writableLocations}
+                sites={writableSites}
+                title="Edit bottle"
+                onClose={() => {
                   bottleController.setEditingBottle(null);
-                }
-                return updated;
-              }}
-              onSubmit={bottleController.saveBottleEdit}
-            />
-          )}
-        </Suspense>
+                }}
+                onDelete={async () => {
+                  return bottleController.deleteBottle(
+                    bottleController.editingBottle?.bottleId ?? "",
+                  );
+                }}
+                onMarkConsumed={async () => {
+                  const updated = await bottleController.updateBottle({
+                    bottleId: bottleController.editingBottle?.bottleId ?? "",
+                    payload: { status: "consumed" },
+                  });
+                  if (updated) {
+                    bottleController.setEditingBottle(null);
+                  }
+                  return updated;
+                }}
+                onSubmit={bottleController.saveBottleEdit}
+              />
+            )}
+          </Suspense>
+        </LazyLoadErrorBoundary>
       </div>
     </AppShell>
   );

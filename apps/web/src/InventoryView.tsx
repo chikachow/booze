@@ -183,6 +183,10 @@ export function InventoryArea({
         />
       )}
       <ProgressiveListStatus
+        getRevealFocusTarget={(firstRevealedIndex) => {
+          const item = items[firstRevealedIndex];
+          return item === undefined ? null : inventoryCardForBottle(item.bottleId);
+        }}
         itemLabel="bottles"
         pageSize={INVENTORY_PAGE_SIZE}
         totalCount={items.length}
@@ -348,7 +352,11 @@ function WineCard({
 }): ReactElement {
   const item = row.item;
   return (
-    <article className={`bottle-card drink-${item.drinkStatus}`}>
+    <article
+      className={`bottle-card drink-${item.drinkStatus}`}
+      data-inventory-bottle-ids={row.bottles.map((bottle) => bottle.bottleId).join("\n")}
+      tabIndex={-1}
+    >
       <div className="bottle-row-main">
         <div className="bottle-row-title">
           <h3>{bottleTitle(item)}</h3>
@@ -382,6 +390,14 @@ function WineCard({
         )}
       </div>
     </article>
+  );
+}
+
+function inventoryCardForBottle(bottleId: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>("[data-inventory-bottle-ids]")].find(
+      (element) => element.dataset["inventoryBottleIds"]?.split("\n").includes(bottleId) === true,
+    ) ?? null
   );
 }
 

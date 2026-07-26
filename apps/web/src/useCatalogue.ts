@@ -17,12 +17,25 @@ import {
 
 type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
+export type MutationCompletion = {
+  readonly refresh: "captures" | "catalogue";
+  readonly successMessage: string;
+};
+
+export type RefreshIssue = {
+  readonly message: string;
+  readonly refresh: MutationCompletion["refresh"];
+};
+
 type CatalogueController = {
   readonly captures: readonly CaptureResource[];
+  readonly completeMutation: (completion: MutationCompletion) => Promise<void>;
   readonly items: readonly InventoryItem[];
   readonly loadCaptures: () => Promise<void>;
   readonly loadCatalogue: () => Promise<void>;
   readonly locations: readonly LocationItem[];
+  readonly refreshIssue: RefreshIssue | null;
+  readonly retryRefresh: () => Promise<void>;
   readonly sites: readonly SiteItem[];
   readonly status: string;
   readonly setStatus: Dispatch<SetStateAction<string>>;
@@ -34,6 +47,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
   const [locations, setLocations] = useState<readonly LocationItem[]>([]);
   const [sites, setSites] = useState<readonly SiteItem[]>([]);
   const [status, setStatus] = useState("Loading inventory...");
+  const [refreshIssue, setRefreshIssue] = useState<RefreshIssue | null>(null);
 
   const loadInventory = useCallback(async (): Promise<void> => {
     const data = await loadCollection({
@@ -86,10 +100,51 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     await Promise.all([loadInventory(), loadLocations(), loadSites(), loadCaptures()]);
   }, [loadCaptures, loadInventory, loadLocations, loadSites]);
 
+  const refresh = useCallback(
+    async (scope: MutationCompletion["refresh"]): Promise<void> => {
+      if (scope === "captures") {
+        await loadCaptures();
+      } else {
+        await loadCatalogue();
+      }
+    },
+    [loadCaptures, loadCatalogue],
+  );
+
+  const completeMutation = useCallback(
+    async ({ refresh: scope, successMessage }: MutationCompletion): Promise<void> => {
+      try {
+        await refresh(scope);
+        setRefreshIssue(null);
+        setStatus(successMessage);
+      } catch {
+        const message = `${successMessage} Latest data could not be refreshed.`;
+        setRefreshIssue({ message, refresh: scope });
+        setStatus(message);
+      }
+    },
+    [refresh],
+  );
+
+  const retryRefresh = useCallback(async (): Promise<void> => {
+    if (refreshIssue === null) {
+      return;
+    }
+    setStatus("Refreshing latest data...");
+    try {
+      await refresh(refreshIssue.refresh);
+      setRefreshIssue(null);
+      setStatus("Latest data refreshed.");
+    } catch {
+      setStatus("Latest data is still unavailable. Try refreshing again.");
+    }
+  }, [refresh, refreshIssue]);
+
   useEffect(() => {
     async function load(): Promise<void> {
       try {
         await loadCatalogue();
+        setRefreshIssue(null);
       } catch {
         setStatus("Could not load inventory.");
       }
@@ -100,10 +155,13 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
 
   return {
     captures,
+    completeMutation,
     items,
     loadCaptures,
     loadCatalogue,
     locations,
+    refreshIssue,
+    retryRefresh,
     sites,
     status,
     setStatus,

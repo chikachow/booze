@@ -307,12 +307,14 @@ function SelectedPhoto({
 
   return (
     <li>
-      <Thumbnail
-        alt={`Preview of ${file.name}`}
-        label={file.name}
-        src={previewUrl}
-        onRemove={onRemove}
-      />
+      {previewUrl === "" ? null : (
+        <Thumbnail
+          alt={`Preview of ${file.name}`}
+          label={file.name}
+          src={previewUrl}
+          onRemove={onRemove}
+        />
+      )}
       <span>{file.name}</span>
     </li>
   );
@@ -397,6 +399,10 @@ function CaptureDashboard({
         </div>
       )}
       <ProgressiveListStatus
+        getRevealFocusTarget={(firstRevealedIndex) => {
+          const capture = displayedCaptures[firstRevealedIndex];
+          return capture === undefined ? null : captureCard(capture.id);
+        }}
         itemLabel="captures"
         totalCount={displayedCaptures.length}
         visibleCount={visibleCaptures.length}
@@ -468,7 +474,11 @@ function CaptureCard({
   }
 
   return (
-    <article className={`capture-card capture-${capture.status}`}>
+    <article
+      className={`capture-card capture-${capture.status}`}
+      data-capture-id={capture.id}
+      tabIndex={-1}
+    >
       <div className="card-title">
         <div>
           <h3>{captureTitle(capture)}</h3>
@@ -567,6 +577,14 @@ type CaptureCardAction =
   | { readonly kind: "create" }
   | { readonly kind: "import"; readonly wineVintageId: string }
   | { readonly kind: "retry" };
+
+function captureCard(captureId: string): HTMLElement | null {
+  return (
+    [...document.querySelectorAll<HTMLElement>("[data-capture-id]")].find(
+      (element) => element.dataset["captureId"] === captureId,
+    ) ?? null
+  );
+}
 
 function captureActionLabel(action: CaptureCardAction): string {
   return action.kind === "create" ? "Create new" : action.kind === "retry" ? "Retry" : "Import";

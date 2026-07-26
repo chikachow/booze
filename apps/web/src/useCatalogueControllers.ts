@@ -3,6 +3,7 @@ import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { validateBottleQuantity } from "../shared/quantity.ts";
 import type { BottleModalSubmit, BottleModalSubmitResult } from "./BottleModal.tsx";
 import type { CaptureSubmitResult } from "./CaptureView.tsx";
+import type { MutationCompletion } from "./useCatalogue.ts";
 import {
   formStateForItem,
   initialCaptureFormState,
@@ -24,14 +25,14 @@ import {
 } from "./inventory-model.ts";
 
 type SharedControllerContext = {
+  readonly completeMutation: (completion: MutationCompletion) => Promise<void>;
   readonly getAuthHeaders: () => Promise<Record<string, string>>;
-  readonly loadCatalogue: () => Promise<void>;
   readonly setStatus: (status: string) => void;
 };
 
 function useBottleControllerImpl({
+  completeMutation,
   getAuthHeaders,
-  loadCatalogue,
   locations,
   setStatus,
   writableSites,
@@ -93,7 +94,7 @@ function useBottleControllerImpl({
         position: form.position,
       });
       setIsAddOpen(false);
-      await loadCatalogue();
+      await completeMutation({ refresh: "catalogue", successMessage: "Bottle saved." });
       return { ok: true };
     } catch {
       const message = "Bottle was not saved. Check your connection and try again.";
@@ -121,8 +122,7 @@ function useBottleControllerImpl({
       setStatus("Bottle was not updated.");
       return false;
     }
-    await loadCatalogue();
-    setStatus("Inventory updated.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Inventory updated." });
     return true;
   }
 
@@ -136,8 +136,7 @@ function useBottleControllerImpl({
       setStatus("Bottle was not deleted.");
       return false;
     }
-    await loadCatalogue();
-    setStatus("Bottle deleted.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Bottle deleted." });
     return true;
   }
 
@@ -195,13 +194,11 @@ function useBottleControllerImpl({
 }
 
 function useCaptureControllerImpl({
+  completeMutation,
   getAuthHeaders,
-  loadCaptures,
-  loadCatalogue,
   setStatus,
   writableSites,
 }: SharedControllerContext & {
-  readonly loadCaptures: () => Promise<void>;
   readonly writableSites: readonly SiteItem[];
 }) {
   const [captureForm, setCaptureForm] = useState<CaptureFormState>(initialCaptureFormState);
@@ -255,15 +252,22 @@ function useCaptureControllerImpl({
         position: form.position,
         quantity: "1",
       });
-      await loadCatalogue();
-      const message = captureSubmitErrorMessage(await response.json());
+      let responsePayload: unknown;
+      try {
+        responsePayload = await response.json();
+      } catch {
+        const statusMessage = "Capture saved, but its processing state could not be read.";
+        await completeMutation({ refresh: "catalogue", successMessage: statusMessage });
+        return { kind: "saved_with_error", message: statusMessage };
+      }
+      const message = captureSubmitErrorMessage(responsePayload);
       if (message !== null) {
         const statusMessage = `Capture saved but not submitted: ${message}`;
-        setStatus(statusMessage);
+        await completeMutation({ refresh: "catalogue", successMessage: statusMessage });
         return { kind: "saved_with_error", message: statusMessage };
       }
       const statusMessage = "Capture submitted. Extraction will run in the background.";
-      setStatus(statusMessage);
+      await completeMutation({ refresh: "catalogue", successMessage: statusMessage });
       return { kind: "submitted", message: statusMessage };
     } catch {
       const message = "Capture was not submitted. Check your connection and try again.";
@@ -284,8 +288,7 @@ function useCaptureControllerImpl({
       setStatus("Capture was not retried.");
       return false;
     }
-    await loadCaptures();
-    setStatus("Capture retry started.");
+    await completeMutation({ refresh: "captures", successMessage: "Capture retry started." });
     return true;
   }
 
@@ -301,8 +304,7 @@ function useCaptureControllerImpl({
       setStatus(message === null ? "Capture was not imported." : `Import failed: ${message}`);
       return false;
     }
-    await loadCatalogue();
-    setStatus("Capture imported.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Capture imported." });
     return true;
   }
 
@@ -317,8 +319,7 @@ function useCaptureControllerImpl({
       setStatus(message === null ? "Capture was not deleted." : `Delete failed: ${message}`);
       return false;
     }
-    await loadCaptures();
-    setStatus("Capture deleted.");
+    await completeMutation({ refresh: "captures", successMessage: "Capture deleted." });
     return true;
   }
 
@@ -334,8 +335,8 @@ function useCaptureControllerImpl({
 }
 
 function useLocationControllerImpl({
+  completeMutation,
   getAuthHeaders,
-  loadCatalogue,
   setStatus,
   writableSites,
 }: SharedControllerContext & {
@@ -374,8 +375,7 @@ function useLocationControllerImpl({
       return false;
     }
     setForm((current) => ({ ...current, location: "" }));
-    await loadCatalogue();
-    setStatus("Location saved.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Location saved." });
     return true;
   }
 
@@ -396,8 +396,7 @@ function useLocationControllerImpl({
     }
     setEditingId(null);
     setEditingName("");
-    await loadCatalogue();
-    setStatus("Location updated.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Location updated." });
     return true;
   }
 
@@ -411,8 +410,10 @@ function useLocationControllerImpl({
       setStatus("Location was not deleted.");
       return false;
     }
-    await loadCatalogue();
-    setStatus("Location deleted. Bottles stayed in the site without a location.");
+    await completeMutation({
+      refresh: "catalogue",
+      successMessage: "Location deleted. Bottles stayed in the site without a location.",
+    });
     return true;
   }
 
@@ -430,8 +431,8 @@ function useLocationControllerImpl({
 }
 
 function useSiteControllerImpl({
+  completeMutation,
   getAuthHeaders,
-  loadCatalogue,
   setStatus,
 }: SharedControllerContext) {
   const [form, setForm] = useState<SiteFormState>(initialSiteFormState);
@@ -458,8 +459,7 @@ function useSiteControllerImpl({
       return false;
     }
     setForm(initialSiteFormState);
-    await loadCatalogue();
-    setStatus("Site saved.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Site saved." });
     return true;
   }
 
@@ -480,8 +480,7 @@ function useSiteControllerImpl({
     }
     setEditingId(null);
     setEditingName("");
-    await loadCatalogue();
-    setStatus("Site updated.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Site updated." });
     return true;
   }
 
@@ -495,8 +494,7 @@ function useSiteControllerImpl({
       setStatus("Site was not deleted.");
       return false;
     }
-    await loadCatalogue();
-    setStatus("Site deleted.");
+    await completeMutation({ refresh: "catalogue", successMessage: "Site deleted." });
     return true;
   }
 
