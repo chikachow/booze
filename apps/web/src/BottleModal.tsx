@@ -1,29 +1,36 @@
 /* oxlint-disable import/max-dependencies -- Bottle editing composes ASTRYX fields, dialogs, and domain adapters. */
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Button } from "@astryxdesign/core/Button";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useState, type ReactElement, type ReactNode } from "react";
 import { useForm, type Control, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
+import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import {
   BottleQuantityInput,
   BottleTextArea,
   BottleTextInput,
   type BottleFormFieldProps,
 } from "./BottleFormFields.tsx";
+import {
+  awardInputsForItem,
+  criticReviewInputsForItem,
+  validateAwards,
+  validateCriticReviews,
+  type AwardDraft,
+  type AwardErrors,
+  type ReviewErrors,
+} from "./bottle-metadata.ts";
 import type {
   CriticReviewInput,
-  CriticReviewResource,
   FormState,
   InventoryItem,
   LocationItem,
   SiteItem,
   WineAwardInput,
-  WineAwardResource,
 } from "./inventory-model.ts";
 
 type BottleModalProps = {
@@ -46,23 +53,6 @@ export type BottleModalSubmit = {
 };
 
 type FormFieldConfig = Omit<BottleFormFieldProps, "control">;
-
-export type AwardDraft = Omit<WineAwardInput, "awardYear" | "points"> & {
-  readonly awardYear: string;
-  readonly points: string;
-};
-
-type ReviewErrors = {
-  readonly ratingText?: string;
-  readonly reviewSourceName?: string;
-};
-
-type AwardErrors = {
-  readonly awardLevel?: string;
-  readonly awardName?: string;
-  readonly awardYear?: string;
-  readonly points?: string;
-};
 
 const identityFields = [
   { label: "Label / brand", name: "brandName", placeholder: "Rowlee" },
@@ -134,24 +124,15 @@ export function BottleModal({
   const [reviewErrors, setReviewErrors] = useState<readonly ReviewErrors[]>([]);
   const [awardErrors, setAwardErrors] = useState<readonly AwardErrors[]>([]);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const {
     control,
     handleSubmit,
-    reset,
     setValue,
     watch,
     formState: { isSubmitting },
   } = useForm<FormState>({ defaultValues: form });
-
-  useEffect(() => {
-    reset(form);
-    setCriticReviews(criticReviewInputsForItem(item));
-    setAwards(awardInputsForItem(item));
-  }, [form, item, reset]);
 
   const submitForm = handleSubmit(async (values) => {
     const reviewsResult = validateCriticReviews(criticReviews);
@@ -170,25 +151,6 @@ export function BottleModal({
       form: values,
     });
   });
-
-  async function deleteBottle(): Promise<void> {
-    if (onDelete === undefined || isDeleting) {
-      return;
-    }
-    setIsDeleting(true);
-    try {
-      const deleted = await onDelete();
-      if (deleted) {
-        setIsDeleteOpen(false);
-      } else {
-        setDeleteError("Bottle was not deleted. Try again.");
-      }
-    } catch {
-      setDeleteError("Bottle was not deleted. Try again.");
-    } finally {
-      setIsDeleting(false);
-    }
-  }
 
   async function markConsumed(): Promise<void> {
     if (onMarkConsumed === undefined || isMarkingConsumed) {
@@ -283,31 +245,23 @@ export function BottleModal({
                 label="Delete bottle"
                 variant="destructive"
                 onClick={() => {
-                  setDeleteError(null);
                   setIsDeleteOpen(true);
                 }}
               />
             )}
-            {deleteError === null ? null : <Banner status="error" title={deleteError} />}
             {consumeError === null ? null : <Banner status="error" title={consumeError} />}
           </div>
         </form>
       </Dialog>
       {onDelete === undefined ? null : (
-        <AlertDialog
+        <DestructiveActionDialog
           actionLabel="Delete bottle"
           description="This permanently removes this bottle and its inventory record. This action cannot be undone."
-          isActionLoading={isDeleting}
+          failureMessage="Bottle was not deleted. Try again."
           isOpen={isDeleteOpen}
           title="Delete this bottle?"
-          onAction={() => {
-            void deleteBottle();
-          }}
-          onOpenChange={(isOpen: boolean) => {
-            if (!isDeleting) {
-              setIsDeleteOpen(isOpen);
-            }
-          }}
+          onAction={onDelete}
+          onOpenChange={setIsDeleteOpen}
         />
       )}
     </>
@@ -721,114 +675,4 @@ function AwardTextInput({
       onChange={onChange}
     />
   );
-}
-
-function criticReviewInputsForItem(item: InventoryItem | undefined): readonly CriticReviewInput[] {
-  return (item?.criticReviews ?? []).map((review) => criticReviewInputForResource(review));
-}
-
-function criticReviewInputForResource(review: CriticReviewResource): CriticReviewInput {
-  return {
-    id: review.id,
-    notes: review.notes ?? undefined,
-    provenance: review.provenance ?? undefined,
-    ratingScale: review.ratingScale ?? undefined,
-    ratingText: review.ratingText,
-    ratingValue: review.ratingValue ?? undefined,
-    reviewedAt: review.reviewedAt ?? undefined,
-    reviewSourceId: review.reviewSourceId,
-    reviewSourceName: review.reviewSourceName,
-    sourceUrl: review.sourceUrl ?? undefined,
-  };
-}
-
-function awardInputsForItem(item: InventoryItem | undefined): readonly AwardDraft[] {
-  return (item?.awards ?? []).map((award) => awardInputForResource(award));
-}
-
-function awardInputForResource(award: WineAwardResource): AwardDraft {
-  return {
-    awardBody: award.awardBody ?? undefined,
-    awardLevel: award.awardLevel,
-    awardName: award.awardName,
-    awardYear: award.awardYear?.toString() ?? "",
-    category: award.category ?? undefined,
-    id: award.id,
-    notes: award.notes ?? undefined,
-    points: award.points?.toString() ?? "",
-    provenance: award.provenance ?? undefined,
-    sourceUrl: award.sourceUrl ?? undefined,
-  };
-}
-
-export function validateCriticReviews(reviews: readonly CriticReviewInput[]):
-  | {
-      readonly ok: true;
-      readonly errors: readonly ReviewErrors[];
-      readonly values: readonly CriticReviewInput[];
-    }
-  | { readonly ok: false; readonly errors: readonly ReviewErrors[] } {
-  const values = reviews.map((review) => ({
-    ...review,
-    notes: review.notes?.trim(),
-    provenance: review.provenance?.trim(),
-    ratingText: review.ratingText.trim(),
-    reviewSourceName: review.reviewSourceName?.trim(),
-    sourceUrl: review.sourceUrl?.trim(),
-  }));
-  const errors = values.map((review) => ({
-    ...(review.ratingText === "" ? { ratingText: "Rating is required." } : {}),
-    ...(review.reviewSourceId === undefined &&
-    (review.reviewSourceName === undefined || review.reviewSourceName === "")
-      ? { reviewSourceName: "Source is required." }
-      : {}),
-  }));
-  return errors.some((error) => Object.keys(error).length > 0)
-    ? { ok: false, errors }
-    : { ok: true, errors, values };
-}
-
-export function validateAwards(awards: readonly AwardDraft[]):
-  | {
-      readonly ok: true;
-      readonly errors: readonly AwardErrors[];
-      readonly values: readonly WineAwardInput[];
-    }
-  | { readonly ok: false; readonly errors: readonly AwardErrors[] } {
-  const normalised = awards.map((award) => ({
-    ...award,
-    awardBody: award.awardBody?.trim(),
-    awardLevel: award.awardLevel.trim(),
-    awardName: award.awardName.trim(),
-    category: award.category?.trim(),
-    notes: award.notes?.trim(),
-    provenance: award.provenance?.trim(),
-    sourceUrl: award.sourceUrl?.trim(),
-  }));
-  const errors = normalised.map((award) => ({
-    ...(award.awardLevel === "" ? { awardLevel: "Award is required." } : {}),
-    ...(award.awardName === "" ? { awardName: "Competition or source is required." } : {}),
-    ...(isOptionalInteger(award.awardYear) ? {} : { awardYear: "Year must be a whole number." }),
-    ...(isOptionalNumber(award.points) ? {} : { points: "Points must be a number." }),
-  }));
-  if (errors.some((error) => Object.keys(error).length > 0)) {
-    return { ok: false, errors };
-  }
-  return {
-    ok: true,
-    errors,
-    values: normalised.map(({ awardYear, points, ...award }) => ({
-      ...award,
-      awardYear: awardYear === "" ? undefined : Number(awardYear),
-      points: points === "" ? undefined : Number(points),
-    })),
-  };
-}
-
-function isOptionalInteger(value: string): boolean {
-  return value === "" || /^-?\d+$/u.test(value);
-}
-
-function isOptionalNumber(value: string): boolean {
-  return value === "" || Number.isFinite(Number(value));
 }

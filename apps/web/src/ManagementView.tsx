@@ -1,12 +1,11 @@
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Badge } from "@astryxdesign/core/Badge";
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useState, type ReactElement } from "react";
 
 import { LocationCreateForm } from "./LocationCreateForm.tsx";
+import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import {
   compareLocationPath,
   locationPath,
@@ -108,8 +107,6 @@ function LocationArea({
   readonly onSaveLocationName: (locationId: string) => Promise<boolean>;
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<{
     readonly id: string;
@@ -131,21 +128,6 @@ function LocationArea({
       });
     } finally {
       setPendingRenameId(null);
-    }
-  }
-
-  async function removeLocation(locationId: string): Promise<void> {
-    setPendingDeleteId(locationId);
-    setDeleteErrorId(null);
-    try {
-      const deleted = await deleteLocation(locationId);
-      if (!deleted) {
-        setDeleteErrorId(locationId);
-      }
-    } catch {
-      setDeleteErrorId(locationId);
-    } finally {
-      setPendingDeleteId(null);
     }
   }
 
@@ -261,29 +243,15 @@ function LocationArea({
                   ) : null}
                 </>
               )}
-              {deleteErrorId === location.locationId ? (
-                <Banner
-                  aria-live="assertive"
-                  status="error"
-                  title="Location was not deleted. Try again."
-                />
-              ) : null}
-              <AlertDialog
+              <DestructiveActionDialog
                 actionLabel="Delete location"
                 description={`Bottles in ${locationPath(location, locations)} will remain in ${location.site} without a storage location. This action cannot be undone.`}
-                isActionLoading={pendingDeleteId === location.locationId}
+                failureMessage="Location was not deleted. Try again."
                 isOpen={deletingLocationId === location.locationId}
                 title={`Delete ${location.location}?`}
-                onAction={() => {
-                  if (pendingDeleteId !== null) {
-                    return;
-                  }
-                  void removeLocation(location.locationId);
-                }}
+                onAction={async () => deleteLocation(location.locationId)}
                 onOpenChange={(isOpen: boolean) => {
-                  if (pendingDeleteId === null) {
-                    setDeletingLocationId(isOpen ? location.locationId : null);
-                  }
+                  setDeletingLocationId(isOpen ? location.locationId : null);
                 }}
               />
             </article>
@@ -321,8 +289,6 @@ function SiteArea({
   readonly onSaveSite: () => Promise<boolean>;
   readonly onSaveSiteName: (siteId: string) => Promise<boolean>;
 }): ReactElement {
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [deleteErrorId, setDeleteErrorId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [siteError, setSiteError] = useState<string | null>(null);
   const [pendingRenameId, setPendingRenameId] = useState<string | null>(null);
@@ -361,21 +327,6 @@ function SiteArea({
       });
     } finally {
       setPendingRenameId(null);
-    }
-  }
-
-  async function removeSite(siteId: string): Promise<void> {
-    setPendingDeleteId(siteId);
-    setDeleteErrorId(null);
-    try {
-      const deleted = await deleteSite(siteId);
-      if (!deleted) {
-        setDeleteErrorId(siteId);
-      }
-    } catch {
-      setDeleteErrorId(siteId);
-    } finally {
-      setPendingDeleteId(null);
     }
   }
 
@@ -509,29 +460,15 @@ function SiteArea({
                   ) : null}
                 </>
               )}
-              {deleteErrorId === site.siteId ? (
-                <Banner
-                  aria-live="assertive"
-                  status="error"
-                  title="Site was not deleted. Try again."
-                />
-              ) : null}
-              <AlertDialog
+              <DestructiveActionDialog
                 actionLabel="Delete site"
                 description="This permanently removes the site, its bottles, wine vintages, locations, and membership records. This action cannot be undone."
-                isActionLoading={pendingDeleteId === site.siteId}
+                failureMessage="Site was not deleted. Try again."
                 isOpen={deletingSiteId === site.siteId}
                 title={`Delete ${site.site}?`}
-                onAction={() => {
-                  if (pendingDeleteId !== null) {
-                    return;
-                  }
-                  void removeSite(site.siteId);
-                }}
+                onAction={async () => deleteSite(site.siteId)}
                 onOpenChange={(isOpen: boolean) => {
-                  if (pendingDeleteId === null) {
-                    setDeletingSiteId(isOpen ? site.siteId : null);
-                  }
+                  setDeletingSiteId(isOpen ? site.siteId : null);
                 }}
               />
             </article>

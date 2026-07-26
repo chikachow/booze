@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateAwards, validateCriticReviews, type AwardDraft } from "./BottleModal.tsx";
+import { validateAwards, validateCriticReviews, type AwardDraft } from "./bottle-metadata.ts";
 import type { CriticReviewInput } from "./inventory-model.ts";
 
 describe("repeatable bottle metadata validation", () => {
@@ -42,8 +42,48 @@ describe("repeatable bottle metadata validation", () => {
         awardLevel: "Award is required.",
         awardName: "Competition or source is required.",
         awardYear: "Year must be a whole number.",
-        points: "Points must be a number.",
+        points: "Points must be a decimal number.",
       },
     ]);
+  });
+
+  it.each([" ", "0x10", "1e2", "Infinity", "NaN", "95 points"])(
+    "rejects non-decimal points %j",
+    (points) => {
+      const awards = [
+        { awardLevel: "Gold", awardName: "Wine Show", awardYear: "2025", points },
+      ] satisfies AwardDraft[];
+
+      const result = validateAwards(awards);
+
+      expect(result.ok).toBe(false);
+      expect(result.errors).toEqual([{ points: "Points must be a decimal number." }]);
+    },
+  );
+
+  it.each([
+    ["0", 0],
+    [" 95.5 ", 95.5],
+    ["+12", 12],
+    ["-.5", -0.5],
+  ])("normalises decimal points %j", (points, expected) => {
+    const awards = [
+      { awardLevel: "Gold", awardName: "Wine Show", awardYear: " 2025 ", points },
+    ] satisfies AwardDraft[];
+
+    const result = validateAwards(awards);
+
+    expect(result).toEqual({
+      errors: [{}],
+      ok: true,
+      values: [
+        {
+          awardLevel: "Gold",
+          awardName: "Wine Show",
+          awardYear: 2025,
+          points: expected,
+        },
+      ],
+    });
   });
 });

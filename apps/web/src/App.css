@@ -273,6 +273,12 @@
     background: var(--color-background-card);
   }
 
+  .destructive-dialog-content {
+    display: grid;
+    gap: var(--spacing-4);
+    padding: var(--spacing-5);
+  }
+
   .capture-thumbnails,
   .photo-list {
     display: flex;

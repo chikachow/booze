@@ -5,7 +5,7 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Card } from "@astryxdesign/core/Card";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 
 // oxlint-disable-next-line import/no-unassigned-import -- Vite loads the application stylesheet for its side effect.
 import "./App.css";
@@ -14,6 +14,7 @@ import { CaptureArea } from "./CaptureView.tsx";
 import { InventoryArea } from "./InventoryView.tsx";
 import { ManagementArea } from "./ManagementView.tsx";
 import { useCatalogue } from "./useCatalogue.ts";
+import { useReturnFocus } from "./useReturnFocus.ts";
 import {
   useBottleController,
   useCaptureController,
@@ -49,10 +50,6 @@ const drinkStatusOrder = [
   "past-window",
   "unknown",
 ] satisfies readonly InventoryItem["drinkStatus"][];
-
-function focusedHTMLElement(): HTMLElement | null {
-  return document.activeElement instanceof HTMLElement ? document.activeElement : null;
-}
 
 async function getDevelopmentAuthHeaders(): Promise<Record<string, string>> {
   return { "x-dev-user": "local-browser" };
@@ -154,12 +151,10 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
   const [drinkStatusFilter, setDrinkStatusFilter] = useState("");
   const [area, setArea] = useState<Area>("inventory");
   const [grouping, setGrouping] = useState<InventoryGrouping>("winery");
-  const bottleDialogTriggerRef = useRef<HTMLElement | null>(null);
   const bottleController = useBottleController({
     getAuthHeaders,
     loadCatalogue,
     locations,
-    setArea,
     setStatus,
     writableSites,
   });
@@ -185,18 +180,7 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
   const isBottleDialogOpen =
     bottleController.isAddOpen ||
     (bottleController.editingBottle !== null && bottleController.editingForm !== null);
-
-  useEffect(() => {
-    if (!isBottleDialogOpen && bottleDialogTriggerRef.current !== null) {
-      const trigger = bottleDialogTriggerRef.current;
-      if (trigger.isConnected) {
-        trigger.focus();
-      } else {
-        document.querySelector<HTMLElement>("#add-bottle-trigger")?.focus();
-      }
-      bottleDialogTriggerRef.current = null;
-    }
-  }, [isBottleDialogOpen]);
+  const captureBottleDialogTrigger = useReturnFocus(isBottleDialogOpen, "#add-bottle-trigger");
 
   const listedItems = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -340,11 +324,11 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
             setLocationFilter={setLocationFilter}
             setVarietalFilter={setVarietalFilter}
             onAddBottle={() => {
-              bottleDialogTriggerRef.current = focusedHTMLElement();
+              captureBottleDialogTrigger();
               bottleController.setIsAddOpen(true);
             }}
             onEditBottle={(item) => {
-              bottleDialogTriggerRef.current = focusedHTMLElement();
+              captureBottleDialogTrigger();
               bottleController.openBottleEditor(item);
             }}
           />
@@ -369,7 +353,10 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
             siteController={siteController}
             sites={sites}
             writableSiteIds={writableSiteIds}
-            onUseLocation={bottleController.useLocation}
+            onUseLocation={(location) => {
+              captureBottleDialogTrigger();
+              bottleController.useLocation(location);
+            }}
           />
         )}
 
