@@ -14,6 +14,13 @@ type CatalogueFixtures = {
   readonly successfulDeletes?: boolean;
 };
 
+type StaleRefreshScenario = {
+  mutationCount: number;
+  readonly mutationMethod: "DELETE" | "POST";
+  readonly mutationPath: string;
+  readonly refreshFailurePath: string;
+};
+
 async function mockCatalogue(page: Page, fixtures: CatalogueFixtures = {}): Promise<void> {
   let bottleData = fixtures.bottleData ?? bottles;
   let captureData = fixtures.captureData ?? captures;
@@ -104,6 +111,58 @@ async function expectNoAxeViolations(page: Page): Promise<void> {
     }));
   });
   expect(violations).toEqual([]);
+}
+
+async function mockCommittedMutationWithStaleRefresh(
+  page: Page,
+  scenario: StaleRefreshScenario,
+): Promise<void> {
+  let bottleData = bottles;
+  let failRefresh = false;
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const method = request.method();
+    if (method === scenario.mutationMethod && path === scenario.mutationPath) {
+      scenario.mutationCount += 1;
+      failRefresh = true;
+      if (method === "DELETE" && path.startsWith("/api/bottles/")) {
+        const bottleId = path.split("/").at(-1);
+        bottleData = bottleData.filter((bottle) => bottle.id !== bottleId);
+      }
+      await route.fulfill({
+        body:
+          method === "POST" ? JSON.stringify({ data: { errorMessage: null } }) : JSON.stringify({}),
+        contentType: "application/json",
+        status: 200,
+      });
+      return;
+    }
+    if (method === "GET" && failRefresh && path === scenario.refreshFailurePath) {
+      failRefresh = false;
+      await route.fulfill({ body: "forced stale refresh", status: 503 });
+      return;
+    }
+    const responseByPath = new Map<string, readonly unknown[]>([
+      ["/api/bottles", bottleData],
+      ["/api/storage-locations", locations],
+      ["/api/sites", sites],
+      ["/api/bottle-captures", captures],
+    ]);
+    const data = method === "GET" ? responseByPath.get(path) : undefined;
+    if (data === undefined) {
+      await route.fulfill({
+        body: `Unexpected browser-test request: ${method} ${path}`,
+        status: 501,
+      });
+      return;
+    }
+    await route.fulfill({
+      body: JSON.stringify({ data }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
 }
 
 async function failDestructiveAction(
@@ -307,6 +366,94 @@ test("keeps successful destructive lifecycles mounted through reload and restore
   await expect(page.getByRole("heading", { exact: true, name: "Sites" })).toBeFocused();
 });
 
+test("treats a committed delete as successful when catalogue refresh fails", async ({ page }) => {
+  await page.unroute("**/api/**");
+  const scenario: StaleRefreshScenario = {
+    mutationCount: 0,
+    mutationMethod: "DELETE",
+    mutationPath: "/api/bottles/bottle-1",
+    refreshFailurePath: "/api/bottles",
+  };
+  await mockCommittedMutationWithStaleRefresh(page, scenario);
+  await page.reload();
+
+  await page.locator(".bottle-card").first().getByRole("button", { name: "Edit" }).click();
+  const bottleDialog = page.getByRole("dialog", { name: "Edit bottle" });
+  await bottleDialog.getByRole("button", { name: "Delete bottle" }).click();
+  const deleteDialog = page.getByRole("alertdialog", { name: "Delete this bottle?" });
+  await deleteDialog.getByRole("button", { name: "Delete bottle" }).click();
+
+  await expect(deleteDialog).not.toBeVisible();
+  await expect(bottleDialog).not.toBeVisible();
+  await expect(
+    page.getByRole("alert", {
+      name: "Bottle deleted. Latest data could not be refreshed.",
+    }),
+  ).toBeVisible();
+  expect(scenario.mutationCount).toBe(1);
+
+  await page.getByRole("button", { name: "Retry refresh" }).click();
+  await expect(page.getByText("Latest data refreshed.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry refresh" })).not.toBeVisible();
+  await expect(page.locator(".bottle-card")).toHaveCount(0);
+  expect(scenario.mutationCount).toBe(1);
+});
+
+test("clears submitted capture files without duplicating a committed capture", async ({ page }) => {
+  await page.unroute("**/api/**");
+  const scenario: StaleRefreshScenario = {
+    mutationCount: 0,
+    mutationMethod: "POST",
+    mutationPath: "/api/bottle-captures",
+    refreshFailurePath: "/api/bottles",
+  };
+  await mockCommittedMutationWithStaleRefresh(page, scenario);
+  await page.reload();
+  await page.getByRole("button", { name: "Capture" }).click();
+
+  await page.locator("#capture-bottle-photos").setInputFiles({
+    buffer: Buffer.from("browser capture"),
+    mimeType: "image/jpeg",
+    name: "bottle.jpg",
+  });
+  await expect(page.getByText("1 of 4 selected.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Submit capture" }).click();
+
+  await expect(
+    page.getByText("Capture submitted. Extraction will run in the background.", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("0 of 4 selected.", { exact: false })).toBeVisible();
+  await expect(
+    page.getByRole("alert", {
+      name: "Capture submitted. Extraction will run in the background. Latest data could not be refreshed.",
+    }),
+  ).toBeVisible();
+  expect(scenario.mutationCount).toBe(1);
+
+  await page.getByRole("button", { name: "Retry refresh" }).click();
+  await expect(page.getByText("Latest data refreshed.", { exact: true })).toBeVisible();
+  expect(scenario.mutationCount).toBe(1);
+});
+
+test("recovers from a rejected cold workspace chunk", async ({ page }) => {
+  const captureChunk = "**/src/CaptureView.tsx*";
+  await page.route(captureChunk, async (route) => {
+    await route.abort();
+  });
+
+  await page.getByRole("button", { name: "Capture" }).click();
+  const recovery = page.getByRole("alert", {
+    name: "Cellar workspace could not be loaded",
+  });
+  await expect(recovery).toBeVisible();
+  await expect(recovery.getByRole("button", { name: "Retry" })).toBeFocused();
+  await expectNoAxeViolations(page);
+
+  await page.unroute(captureChunk);
+  await recovery.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("heading", { name: "Photograph bottles" })).toBeVisible();
+});
+
 test("keeps a representative large catalogue scrollable and focusable", async ({ page }) => {
   await page.unroute("**/api/**");
   const largeCatalogue = Array.from({ length: 160 }, (_, index) => ({
@@ -325,7 +472,10 @@ test("keeps a representative large catalogue scrollable and focusable", async ({
   await expect(cards).toHaveCount(160);
   const inventoryStatus = page.locator(".inventory-pagination [role='status']");
   await expect(inventoryStatus).toHaveText("Showing all 160 bottles");
-  await expect(inventoryStatus).toBeFocused();
+  const firstRevealedCard = cards.nth(100);
+  await expect(firstRevealedCard).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(firstRevealedCard.getByRole("button", { name: "Edit" })).toBeFocused();
   const lastEdit = cards.last().getByRole("button", { name: "Edit" });
   await lastEdit.scrollIntoViewIfNeeded();
   await expect(lastEdit).toBeVisible();
@@ -342,6 +492,8 @@ test("bounds capture, site, and location work before progressively revealing it"
   const captureData = Array.from({ length: 80 }, (_, index) => ({
     ...captures[0],
     id: `scale-capture-${index}`,
+    siteId: "scale-site-0",
+    siteName: "Scale site 0",
   }));
   const siteData = Array.from({ length: 80 }, (_, index) => ({
     ...sites[0],
@@ -353,6 +505,8 @@ test("bounds capture, site, and location work before progressively revealing it"
     id: `scale-location-${index}`,
     name: `Scale location ${index}`,
     parentId: null,
+    siteId: "scale-site-0",
+    siteName: "Scale site 0",
   }));
   await page.unroute("**/api/**");
   await mockCatalogue(page, { captureData, locationData, siteData });
@@ -364,7 +518,10 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(page.locator(".capture-card")).toHaveCount(80);
   const captureStatus = page.locator(".inventory-pagination [role='status']");
   await expect(captureStatus).toHaveText("Showing all 80 captures");
-  await expect(captureStatus).toBeFocused();
+  const firstRevealedCapture = page.locator(".capture-card").nth(50);
+  await expect(firstRevealedCapture).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(firstRevealedCapture.getByRole("button").first()).toBeFocused();
 
   await page.getByRole("button", { name: "Storage" }).click();
   const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });
@@ -374,6 +531,10 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(sitesRegion.locator(".inventory-pagination [role='status']")).toHaveText(
     "Showing all 80 sites",
   );
+  const firstRevealedSite = sitesRegion.locator(".location-card").nth(50);
+  await expect(firstRevealedSite).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(firstRevealedSite.getByRole("button", { name: "Edit" })).toBeFocused();
 
   const locationsRegion = page.getByRole("region", { exact: true, name: "Locations" });
   await expect(locationsRegion.locator(".location-card")).toHaveCount(50);
@@ -382,4 +543,8 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(locationsRegion.locator(".inventory-pagination [role='status']")).toHaveText(
     "Showing all 80 locations",
   );
+  const firstRevealedLocation = locationsRegion.locator(".location-card").nth(50);
+  await expect(firstRevealedLocation).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(firstRevealedLocation.getByRole("button", { name: "Use for bottle" })).toBeFocused();
 });
