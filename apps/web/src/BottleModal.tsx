@@ -172,6 +172,7 @@ export function BottleModal({
   return (
     <>
       <Dialog
+        aria-label={title}
         isOpen
         maxHeight="calc(100dvh - 32px)"
         purpose="form"

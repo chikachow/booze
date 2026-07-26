@@ -61,6 +61,10 @@ export function DestructiveActionDialog({
     }
   }
 
+  if (!isOpen) {
+    return <></>;
+  }
+
   return (
     <Dialog
       aria-describedby={descriptionId}

@@ -5,6 +5,25 @@ import { describe, expect, it, vi } from "vitest";
 import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 
 describe("DestructiveActionDialog", () => {
+  it("does not expose a closed destructive dialog to the accessibility tree", () => {
+    render(
+      <DestructiveActionDialog
+        actionLabel="Delete location"
+        description="This cannot be undone."
+        failureMessage="Location was not deleted."
+        isOpen={false}
+        title="Delete this location?"
+        onAction={async () => true}
+        onOpenChange={(isOpen) => {
+          void isOpen;
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete location" })).not.toBeInTheDocument();
+  });
+
   it("keeps accessible failure feedback inside the active alert dialog", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
