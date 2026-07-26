@@ -146,6 +146,8 @@ export function CaptureArea({
             />
             <div className="field-row">
               <TextInput
+                autoComplete="off"
+                htmlName="capturePosition"
                 label="Position note"
                 placeholder="Row 3, slot 2"
                 value={form.position}
