@@ -1,6 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
+import { parseGrapeVarieties } from "./bottle-metadata.ts";
 import type { BottleModalSubmit, BottleModalSubmitResult } from "./BottleModal.tsx";
 import type { CaptureSubmitResult } from "./CaptureView.tsx";
 import type { MutationCompletion } from "./useCatalogue.ts";
@@ -23,6 +24,7 @@ import {
   type SiteFormState,
   type SiteItem,
 } from "./inventory-model.ts";
+import { useNamedResourceActions, type NamedResourceActions } from "./useNamedResourceActions.ts";
 
 type SharedControllerContext = {
   readonly completeMutation: (completion: MutationCompletion) => Promise<void>;
@@ -30,7 +32,53 @@ type SharedControllerContext = {
   readonly setStatus: (status: string) => void;
 };
 
-function useBottleControllerImpl({
+export type BottleController = {
+  readonly addFormDefaults: FormState;
+  readonly deleteBottle: (bottleId: string) => Promise<boolean>;
+  readonly editingBottle: InventoryItem | null;
+  readonly editingForm: FormState | null;
+  readonly isAddOpen: boolean;
+  readonly isSaving: boolean;
+  readonly openBottleEditor: Dispatch<SetStateAction<InventoryItem | null>>;
+  readonly saveBottle: (submission: BottleModalSubmit) => Promise<BottleModalSubmitResult>;
+  readonly saveBottleEdit: (submission: BottleModalSubmit) => Promise<BottleModalSubmitResult>;
+  readonly setEditingBottle: Dispatch<SetStateAction<InventoryItem | null>>;
+  readonly setIsAddOpen: Dispatch<SetStateAction<boolean>>;
+  readonly updateBottle: (request: {
+    readonly bottleId: string;
+    readonly payload: BottlePatch;
+  }) => Promise<boolean>;
+  readonly useLocation: (location: LocationItem) => void;
+};
+
+export type CaptureController = {
+  readonly captureForm: CaptureFormState;
+  readonly deleteCapture: (captureId: string) => Promise<boolean>;
+  readonly importCapture: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly isSaving: boolean;
+  readonly retryCapture: (captureId: string) => Promise<boolean>;
+  readonly setCaptureForm: Dispatch<SetStateAction<CaptureFormState>>;
+  readonly submitCapture: (
+    form: CaptureFormState,
+    files: readonly File[],
+  ) => Promise<CaptureSubmitResult>;
+};
+
+export type LocationController = {
+  readonly form: LocationFormState;
+  readonly resourceActions: NamedResourceActions;
+  readonly save: () => Promise<boolean>;
+  readonly updateField: (field: keyof LocationFormState, value: string) => void;
+};
+
+export type SiteController = {
+  readonly form: SiteFormState;
+  readonly resourceActions: NamedResourceActions;
+  readonly save: () => Promise<boolean>;
+  readonly updateField: (field: keyof SiteFormState, value: string) => void;
+};
+
+export function useBottleController({
   completeMutation,
   getAuthHeaders,
   locations,
@@ -39,7 +87,7 @@ function useBottleControllerImpl({
 }: SharedControllerContext & {
   readonly locations: readonly LocationItem[];
   readonly writableSites: readonly SiteItem[];
-}) {
+}): BottleController {
   const [addFormDefaults, setAddFormDefaults] = useState<FormState>(initialFormState);
   const [editingBottle, setEditingBottle] = useState<InventoryItem | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -193,14 +241,14 @@ function useBottleControllerImpl({
   };
 }
 
-function useCaptureControllerImpl({
+export function useCaptureController({
   completeMutation,
   getAuthHeaders,
   setStatus,
   writableSites,
 }: SharedControllerContext & {
   readonly writableSites: readonly SiteItem[];
-}) {
+}): CaptureController {
   const [captureForm, setCaptureForm] = useState<CaptureFormState>(initialCaptureFormState);
   const [isSaving, setIsSaving] = useState(false);
   useDefaultSite(writableSites, setCaptureForm);
@@ -334,17 +382,21 @@ function useCaptureControllerImpl({
   };
 }
 
-function useLocationControllerImpl({
+export function useLocationController({
   completeMutation,
   getAuthHeaders,
   setStatus,
   writableSites,
 }: SharedControllerContext & {
   readonly writableSites: readonly SiteItem[];
-}) {
+}): LocationController {
   const [form, setForm] = useState<LocationFormState>(initialLocationFormState);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const resourceActions = useNamedResourceActions({
+    completeMutation,
+    getAuthHeaders,
+    kind: "location",
+    setStatus,
+  });
   useDefaultSite(writableSites, setForm);
 
   function updateField(field: keyof LocationFormState, value: string): void {
@@ -379,65 +431,26 @@ function useLocationControllerImpl({
     return true;
   }
 
-  async function saveName(locationId: string): Promise<boolean> {
-    if (editingName.trim() === "") {
-      setStatus("Enter a location name before saving.");
-      return false;
-    }
-    setStatus("Updating location...");
-    const response = await fetch(`/api/storage-locations/${locationId}`, {
-      method: "PATCH",
-      headers: jsonHeaders(await getAuthHeaders()),
-      body: JSON.stringify({ name: editingName }),
-    });
-    if (!response.ok) {
-      setStatus("Location was not updated.");
-      return false;
-    }
-    setEditingId(null);
-    setEditingName("");
-    await completeMutation({ refresh: "catalogue", successMessage: "Location updated." });
-    return true;
-  }
-
-  async function remove(locationId: string): Promise<boolean> {
-    setStatus("Deleting location...");
-    const response = await fetch(`/api/storage-locations/${locationId}`, {
-      method: "DELETE",
-      headers: await getAuthHeaders(),
-    });
-    if (!response.ok) {
-      setStatus("Location was not deleted.");
-      return false;
-    }
-    await completeMutation({
-      refresh: "catalogue",
-      successMessage: "Location deleted. Bottles stayed in the site without a location.",
-    });
-    return true;
-  }
-
   return {
-    editingId,
-    editingName,
     form,
-    remove,
+    resourceActions,
     save,
-    saveName,
-    setEditingId,
-    setEditingName,
     updateField,
   };
 }
 
-function useSiteControllerImpl({
+export function useSiteController({
   completeMutation,
   getAuthHeaders,
   setStatus,
-}: SharedControllerContext) {
+}: SharedControllerContext): SiteController {
   const [form, setForm] = useState<SiteFormState>(initialSiteFormState);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const resourceActions = useNamedResourceActions({
+    completeMutation,
+    getAuthHeaders,
+    kind: "site",
+    setStatus,
+  });
 
   function updateField(field: keyof SiteFormState, value: string): void {
     setForm((current) => ({ ...current, [field]: value }));
@@ -463,63 +476,13 @@ function useSiteControllerImpl({
     return true;
   }
 
-  async function saveName(siteId: string): Promise<boolean> {
-    if (editingName.trim() === "") {
-      setStatus("Enter a site name before saving.");
-      return false;
-    }
-    setStatus("Updating site...");
-    const response = await fetch(`/api/sites/${siteId}`, {
-      method: "PATCH",
-      headers: jsonHeaders(await getAuthHeaders()),
-      body: JSON.stringify({ name: editingName }),
-    });
-    if (!response.ok) {
-      setStatus("Site was not updated.");
-      return false;
-    }
-    setEditingId(null);
-    setEditingName("");
-    await completeMutation({ refresh: "catalogue", successMessage: "Site updated." });
-    return true;
-  }
-
-  async function remove(siteId: string): Promise<boolean> {
-    setStatus("Deleting site...");
-    const response = await fetch(`/api/sites/${siteId}`, {
-      method: "DELETE",
-      headers: await getAuthHeaders(),
-    });
-    if (!response.ok) {
-      setStatus("Site was not deleted.");
-      return false;
-    }
-    await completeMutation({ refresh: "catalogue", successMessage: "Site deleted." });
-    return true;
-  }
-
   return {
-    editingId,
-    editingName,
     form,
-    remove,
+    resourceActions,
     save,
-    saveName,
-    setEditingId,
-    setEditingName,
     updateField,
   };
 }
-
-export const useBottleController: typeof useBottleControllerImpl = useBottleControllerImpl;
-export const useCaptureController: typeof useCaptureControllerImpl = useCaptureControllerImpl;
-export const useLocationController: typeof useLocationControllerImpl = useLocationControllerImpl;
-export const useSiteController: typeof useSiteControllerImpl = useSiteControllerImpl;
-
-export type BottleController = ReturnType<typeof useBottleController>;
-export type CaptureController = ReturnType<typeof useCaptureController>;
-export type LocationController = ReturnType<typeof useLocationController>;
-export type SiteController = ReturnType<typeof useSiteController>;
 
 function useDefaultSite<T extends FormState | CaptureFormState | LocationFormState>(
   writableSites: readonly SiteItem[],
@@ -554,7 +517,7 @@ function bottlePayload({ awards, criticReviews, form }: BottleModalSubmit): Bott
       designation: form.displayName,
       displayName: form.displayName,
       vintageYear: parseOptionalYear(form.vintageYear),
-      grapeVarieties: grapeVarietiesFromForm(form.grapeVarieties),
+      grapeVarieties: parseGrapeVarieties(form.grapeVarieties),
       country: form.country,
       region: form.region,
       appellation: form.appellation,
@@ -583,13 +546,6 @@ function bottlePayload({ awards, criticReviews, form }: BottleModalSubmit): Bott
     criticReviews,
     awards,
   };
-}
-
-function grapeVarietiesFromForm(value: string): readonly string[] {
-  return value
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
 }
 
 function jsonHeaders(authHeaders: Record<string, string>): Record<string, string> {
