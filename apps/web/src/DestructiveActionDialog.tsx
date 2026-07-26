@@ -6,23 +6,27 @@ import { useEffect, useId, useRef, useState, type ReactElement, type RefObject }
 export type DestructiveActionDialogProps = {
   readonly actionLabel: string;
   readonly description: string;
+  readonly fallbackFocus?: () => HTMLElement | null;
   readonly failureMessage: string;
   readonly isOpen: boolean;
   readonly returnFocusRef?: RefObject<HTMLElement | null>;
   readonly title: string;
   readonly onAction: () => Promise<boolean>;
   readonly onOpenChange: (isOpen: boolean) => void;
+  readonly onSuccess?: () => void;
 };
 
 export function DestructiveActionDialog({
   actionLabel,
   description,
+  fallbackFocus,
   failureMessage,
   isOpen,
   returnFocusRef,
   title,
   onAction,
   onOpenChange,
+  onSuccess,
 }: DestructiveActionDialogProps): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -88,16 +92,15 @@ export function DestructiveActionDialog({
     setError(null);
     try {
       if (await onAction()) {
-        closeAndRestoreFocus();
-      } else {
-        showFailure();
+        finishPending();
+        closeAndRestoreFocus(onSuccess);
+        return;
       }
+      showFailure();
     } catch {
       showFailure();
-    } finally {
-      isPendingRef.current = false;
-      setIsPending(false);
     }
+    finishPending();
   }
 
   function showFailure(): void {
@@ -117,14 +120,22 @@ export function DestructiveActionDialog({
     }
   }
 
-  function closeAndRestoreFocus(): void {
+  function finishPending(): void {
+    isPendingRef.current = false;
+    setIsPending(false);
+  }
+
+  function closeAndRestoreFocus(afterFocus?: () => void): void {
     onOpenChange(false);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const returnTarget = returnFocusRef?.current ?? fallbackReturnFocusRef.current;
         if (returnTarget?.isConnected === true) {
           returnTarget.focus();
+        } else {
+          fallbackFocus?.()?.focus();
         }
+        afterFocus?.();
       });
     });
   }

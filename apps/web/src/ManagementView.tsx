@@ -1,8 +1,9 @@
+/* oxlint-disable import/max-dependencies -- Management composes ASTRYX CRUD, progressive lists, and shared workflow controllers. */
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useRef, useState, type MouseEvent, type ReactElement } from "react";
+import { useMemo, useRef, useState, type MouseEvent, type ReactElement } from "react";
 
 import { LocationCreateForm } from "./LocationCreateForm.tsx";
 import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
@@ -16,6 +17,7 @@ import {
 } from "./inventory-model.ts";
 import type { LocationController, SiteController } from "./useCatalogueControllers.ts";
 import { useKeyedAsyncOperation } from "./useKeyedAsyncOperation.ts";
+import { ProgressiveListStatus, PROGRESSIVE_PAGE_SIZE } from "./ProgressiveListStatus.tsx";
 
 export function ManagementArea({
   locationController,
@@ -41,12 +43,10 @@ export function ManagementArea({
         </div>
       </div>
       <SiteArea
-        deletingSiteId={siteController.deletingId}
         editingSiteId={siteController.editingId}
         editingSiteName={siteController.editingName}
         form={siteController.form}
         sites={sites}
-        setDeletingSiteId={siteController.setDeletingId}
         setEditingSiteId={siteController.setEditingId}
         setEditingSiteName={siteController.setEditingName}
         deleteSite={siteController.remove}
@@ -55,14 +55,12 @@ export function ManagementArea({
         onSaveSiteName={siteController.saveName}
       />
       <LocationArea
-        deletingLocationId={locationController.deletingId}
         editingLocationId={locationController.editingId}
         editingLocationName={locationController.editingName}
         form={locationController.form}
         locations={locations}
         sites={sites}
         writableSiteIds={writableSiteIds}
-        setDeletingLocationId={locationController.setDeletingId}
         setEditingLocationId={locationController.setEditingId}
         setEditingLocationName={locationController.setEditingName}
         deleteLocation={locationController.remove}
@@ -76,7 +74,6 @@ export function ManagementArea({
 }
 
 function LocationArea({
-  deletingLocationId,
   editingLocationId,
   editingLocationName,
   form,
@@ -85,7 +82,6 @@ function LocationArea({
   writableSiteIds,
   setEditingLocationId,
   setEditingLocationName,
-  setDeletingLocationId,
   deleteLocation,
   updateLocationField,
   onSaveLocation,
@@ -93,7 +89,6 @@ function LocationArea({
   onUseLocation,
 }: {
   readonly editingLocationId: string | null;
-  readonly deletingLocationId: string | null;
   readonly editingLocationName: string;
   readonly form: LocationFormState;
   readonly locations: readonly LocationItem[];
@@ -101,7 +96,6 @@ function LocationArea({
   readonly writableSiteIds: ReadonlySet<string>;
   readonly setEditingLocationId: (value: string | null) => void;
   readonly setEditingLocationName: (value: string) => void;
-  readonly setDeletingLocationId: (value: string | null) => void;
   readonly deleteLocation: (locationId: string) => Promise<boolean>;
   readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
   readonly onSaveLocation: () => Promise<boolean>;
@@ -109,6 +103,14 @@ function LocationArea({
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [deletingLocation, setDeletingLocation] = useState<LocationItem | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PROGRESSIVE_PAGE_SIZE);
+  const sortedLocations = useMemo(
+    () => locations.toSorted(compareLocationPath(locations)),
+    [locations],
+  );
+  const visibleLocations = sortedLocations.slice(0, visibleCount);
   const rename = useKeyedAsyncOperation<string>({
     exceptionMessage: "Location was not updated. Check your connection and try again.",
     failureMessage: "Location was not updated. Try again.",
@@ -117,7 +119,9 @@ function LocationArea({
   return (
     <section className="management-section" aria-labelledby="locations-title">
       <div className="section-heading">
-        <h3 id="locations-title">Locations</h3>
+        <h3 id="locations-title" ref={sectionHeadingRef} tabIndex={-1}>
+          Locations
+        </h3>
       </div>
       <LocationCreateForm
         form={form}
@@ -134,7 +138,7 @@ function LocationArea({
         />
       ) : (
         <div className="location-grid">
-          {locations.toSorted(compareLocationPath(locations)).map((location) => (
+          {visibleLocations.map((location) => (
             <article className="location-card" key={location.locationId}>
               {editingLocationId === location.locationId ? (
                 <form
@@ -219,62 +223,74 @@ function LocationArea({
                         variant="destructive"
                         onClick={(event: MouseEvent<HTMLButtonElement>) => {
                           deleteTriggerRef.current = event.currentTarget;
-                          setDeletingLocationId(location.locationId);
+                          setDeletingLocation(location);
                         }}
                       />
                     </div>
                   ) : null}
                 </>
               )}
-              <DestructiveActionDialog
-                actionLabel="Delete location"
-                description={`Bottles in ${locationPath(location, locations)} will remain in ${location.site} without a storage location. This action cannot be undone.`}
-                failureMessage="Location was not deleted. Try again."
-                isOpen={deletingLocationId === location.locationId}
-                returnFocusRef={deleteTriggerRef}
-                title={`Delete ${location.location}?`}
-                onAction={async () => deleteLocation(location.locationId)}
-                onOpenChange={(isOpen: boolean) => {
-                  setDeletingLocationId(isOpen ? location.locationId : null);
-                }}
-              />
             </article>
           ))}
         </div>
+      )}
+      <ProgressiveListStatus
+        itemLabel="locations"
+        totalCount={sortedLocations.length}
+        visibleCount={visibleLocations.length}
+        onReveal={setVisibleCount}
+      />
+      {deletingLocation === null ? null : (
+        <DestructiveActionDialog
+          actionLabel="Delete location"
+          description={`Bottles in ${locationPath(deletingLocation, locations)} will remain in ${deletingLocation.site} without a storage location. This action cannot be undone.`}
+          fallbackFocus={() => sectionHeadingRef.current}
+          failureMessage="Location was not deleted. Try again."
+          isOpen
+          returnFocusRef={deleteTriggerRef}
+          title={`Delete ${deletingLocation.location}?`}
+          onAction={async () => deleteLocation(deletingLocation.locationId)}
+          onOpenChange={(isOpen: boolean) => {
+            if (!isOpen) {
+              setDeletingLocation(null);
+            }
+          }}
+        />
       )}
     </section>
   );
 }
 
 function SiteArea({
-  deletingSiteId,
   editingSiteId,
   editingSiteName,
   form,
   sites,
   setEditingSiteId,
   setEditingSiteName,
-  setDeletingSiteId,
   deleteSite,
   updateSiteField,
   onSaveSite,
   onSaveSiteName,
 }: {
   readonly editingSiteId: string | null;
-  readonly deletingSiteId: string | null;
   readonly editingSiteName: string;
   readonly form: SiteFormState;
   readonly sites: readonly SiteItem[];
   readonly setEditingSiteId: (value: string | null) => void;
   readonly setEditingSiteName: (value: string) => void;
-  readonly setDeletingSiteId: (value: string | null) => void;
   readonly deleteSite: (siteId: string) => Promise<boolean>;
   readonly updateSiteField: (field: keyof SiteFormState, value: string) => void;
   readonly onSaveSite: () => Promise<boolean>;
   readonly onSaveSiteName: (siteId: string) => Promise<boolean>;
 }): ReactElement {
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [deletingSite, setDeletingSite] = useState<SiteItem | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PROGRESSIVE_PAGE_SIZE);
+  const visibleSites = sites.slice(0, visibleCount);
   const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
   const [siteError, setSiteError] = useState<string | null>(null);
   const rename = useKeyedAsyncOperation<string>({
     exceptionMessage: "Site was not updated. Check your connection and try again.",
@@ -282,6 +298,10 @@ function SiteArea({
   });
 
   async function saveSite(): Promise<void> {
+    if (isSavingRef.current) {
+      return;
+    }
+    isSavingRef.current = true;
     setIsSaving(true);
     setSiteError(null);
     try {
@@ -292,6 +312,7 @@ function SiteArea({
     } catch {
       setSiteError("Site was not saved. Check your connection and try again.");
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -299,7 +320,9 @@ function SiteArea({
   return (
     <section className="management-section" aria-labelledby="sites-title">
       <div className="section-heading">
-        <h3 id="sites-title">Sites</h3>
+        <h3 id="sites-title" ref={sectionHeadingRef} tabIndex={-1}>
+          Sites
+        </h3>
       </div>
       <form
         className="form-stack"
@@ -309,7 +332,7 @@ function SiteArea({
             setSiteError("Site name is required.");
             return;
           }
-          if (isSaving) {
+          if (isSavingRef.current) {
             return;
           }
           void saveSite();
@@ -338,7 +361,7 @@ function SiteArea({
         />
       ) : (
         <div className="location-grid">
-          {sites.map((site) => (
+          {visibleSites.map((site) => (
             <article className="location-card" key={site.siteId}>
               {editingSiteId === site.siteId ? (
                 <form
@@ -420,28 +443,39 @@ function SiteArea({
                         variant="destructive"
                         onClick={(event: MouseEvent<HTMLButtonElement>) => {
                           deleteTriggerRef.current = event.currentTarget;
-                          setDeletingSiteId(site.siteId);
+                          setDeletingSite(site);
                         }}
                       />
                     </div>
                   ) : null}
                 </>
               )}
-              <DestructiveActionDialog
-                actionLabel="Delete site"
-                description="This permanently removes the site, its bottles, wine vintages, locations, and membership records. This action cannot be undone."
-                failureMessage="Site was not deleted. Try again."
-                isOpen={deletingSiteId === site.siteId}
-                returnFocusRef={deleteTriggerRef}
-                title={`Delete ${site.site}?`}
-                onAction={async () => deleteSite(site.siteId)}
-                onOpenChange={(isOpen: boolean) => {
-                  setDeletingSiteId(isOpen ? site.siteId : null);
-                }}
-              />
             </article>
           ))}
         </div>
+      )}
+      <ProgressiveListStatus
+        itemLabel="sites"
+        totalCount={sites.length}
+        visibleCount={visibleSites.length}
+        onReveal={setVisibleCount}
+      />
+      {deletingSite === null ? null : (
+        <DestructiveActionDialog
+          actionLabel="Delete site"
+          description="This permanently removes the site, its bottles, wine vintages, locations, and membership records. This action cannot be undone."
+          fallbackFocus={() => sectionHeadingRef.current}
+          failureMessage="Site was not deleted. Try again."
+          isOpen
+          returnFocusRef={deleteTriggerRef}
+          title={`Delete ${deletingSite.site}?`}
+          onAction={async () => deleteSite(deletingSite.siteId)}
+          onOpenChange={(isOpen: boolean) => {
+            if (!isOpen) {
+              setDeletingSite(null);
+            }
+          }}
+        />
       )}
     </section>
   );

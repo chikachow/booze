@@ -344,7 +344,6 @@ function useLocationControllerImpl({
   const [form, setForm] = useState<LocationFormState>(initialLocationFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
   useDefaultSite(writableSites, setForm);
 
   function updateField(field: keyof LocationFormState, value: string): void {
@@ -412,21 +411,18 @@ function useLocationControllerImpl({
       setStatus("Location was not deleted.");
       return false;
     }
-    setDeletingId(null);
     await loadCatalogue();
     setStatus("Location deleted. Bottles stayed in the site without a location.");
     return true;
   }
 
   return {
-    deletingId,
     editingId,
     editingName,
     form,
     remove,
     save,
     saveName,
-    setDeletingId,
     setEditingId,
     setEditingName,
     updateField,
@@ -441,7 +437,6 @@ function useSiteControllerImpl({
   const [form, setForm] = useState<SiteFormState>(initialSiteFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   function updateField(field: keyof SiteFormState, value: string): void {
     setForm((current) => ({ ...current, [field]: value }));
@@ -500,21 +495,18 @@ function useSiteControllerImpl({
       setStatus("Site was not deleted.");
       return false;
     }
-    setDeletingId(null);
     await loadCatalogue();
     setStatus("Site deleted.");
     return true;
   }
 
   return {
-    deletingId,
     editingId,
     editingName,
     form,
     remove,
     save,
     saveName,
-    setDeletingId,
     setEditingId,
     setEditingName,
     updateField,

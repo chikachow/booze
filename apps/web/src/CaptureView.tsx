@@ -7,7 +7,14 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { NumberInput } from "@astryxdesign/core/NumberInput";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
-import { useEffect, useRef, useState, type FocusEvent, type ReactElement } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent,
+  type ReactElement,
+} from "react";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
 import type {
@@ -20,6 +27,7 @@ import type {
 import { storageLocationLabel } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
 import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
+import { ProgressiveListStatus, PROGRESSIVE_PAGE_SIZE } from "./ProgressiveListStatus.tsx";
 import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
 import { captureStatus } from "./capture-status.ts";
 
@@ -326,25 +334,23 @@ function CaptureDashboard({
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
-
-  if (captures.length === 0) {
-    return (
-      <EmptyState
-        description="Submit bottle photos here and imported bottles will appear in inventory."
-        title="No captures yet"
-      />
-    );
-  }
+  const [deletingCapture, setDeletingCapture] = useState<CaptureResource | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PROGRESSIVE_PAGE_SIZE);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const actionableCaptures = captures.filter((capture) => isActionableCapture(capture));
   const displayedCaptures = showAll ? captures : actionableCaptures;
+  const visibleCaptures = displayedCaptures.slice(0, visibleCount);
   const hiddenCaptureCount = captures.length - actionableCaptures.length;
 
   return (
     <>
       <div className="capture-list-header">
         <div>
-          <h3>{showAll ? "All captures" : "Action needed"}</h3>
+          <h3 ref={sectionHeadingRef} tabIndex={-1}>
+            {showAll ? "All captures" : "Action needed"}
+          </h3>
           <p>
             {actionableCaptures.length === 0
               ? "No captures need action."
@@ -357,29 +363,61 @@ function CaptureDashboard({
             variant="secondary"
             onClick={() => {
               setShowAll(!showAll);
+              setVisibleCount(PROGRESSIVE_PAGE_SIZE);
             }}
           />
         )}
       </div>
-      {displayedCaptures.length === 0 ? (
+      {captures.length === 0 ? (
+        <EmptyState
+          description="Submit bottle photos here and imported bottles will appear in inventory."
+          title="No captures yet"
+        />
+      ) : displayedCaptures.length === 0 ? (
         <EmptyState
           description={`${hiddenCaptureCount} successful capture imported without review.`}
           title="Nothing to action"
         />
       ) : (
         <div className="capture-list">
-          {displayedCaptures.map((capture) => (
+          {visibleCaptures.map((capture) => (
             <CaptureCard
               capture={capture}
               canWrite={writableSiteIds.has(capture.siteId)}
               key={capture.id}
               locations={locations}
-              onDelete={onDelete}
               onImport={onImport}
+              onRequestDelete={(target, trigger) => {
+                deleteTriggerRef.current = trigger;
+                setDeletingCapture(target);
+              }}
               onRetry={onRetry}
             />
           ))}
         </div>
+      )}
+      <ProgressiveListStatus
+        itemLabel="captures"
+        totalCount={displayedCaptures.length}
+        visibleCount={visibleCaptures.length}
+        onReveal={setVisibleCount}
+      />
+      {deletingCapture === null ? null : (
+        <DestructiveActionDialog
+          actionLabel="Delete capture"
+          description="This permanently removes the capture, its images, and processing history. This action cannot be undone."
+          fallbackFocus={() => sectionHeadingRef.current}
+          failureMessage="Delete failed. Try again."
+          isOpen
+          returnFocusRef={deleteTriggerRef}
+          title="Delete this capture?"
+          onAction={async () => onDelete(deletingCapture.id)}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) {
+              setDeletingCapture(null);
+            }
+          }}
+        />
       )}
     </>
   );
@@ -389,19 +427,17 @@ function CaptureCard({
   canWrite,
   capture,
   locations,
-  onDelete,
   onImport,
+  onRequestDelete,
   onRetry,
 }: {
   readonly canWrite: boolean;
   readonly capture: CaptureResource;
   readonly locations: readonly LocationItem[];
-  readonly onDelete: (captureId: string) => Promise<boolean>;
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onRequestDelete: (capture: CaptureResource, trigger: HTMLButtonElement) => void;
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
-  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pendingAction, setPendingAction] = useState<CaptureCardAction | null>(null);
   const pendingActionRef = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -510,13 +546,12 @@ function CaptureCard({
         ) : null}
         {canWrite && isCaptureDeletable(capture) ? (
           <Button
-            ref={deleteTriggerRef}
             isDisabled={pendingAction !== null}
             label="Delete capture"
             size="sm"
             variant="destructive"
-            onClick={() => {
-              setConfirmingDelete(true);
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              onRequestDelete(capture, event.currentTarget);
             }}
           />
         ) : null}
@@ -524,16 +559,6 @@ function CaptureCard({
       {actionError === null ? null : (
         <Banner aria-live="assertive" status="error" title={actionError} />
       )}
-      <DestructiveActionDialog
-        actionLabel="Delete capture"
-        description="This permanently removes the capture, its images, and processing history. This action cannot be undone."
-        failureMessage="Delete failed. Try again."
-        isOpen={confirmingDelete}
-        returnFocusRef={deleteTriggerRef}
-        title="Delete this capture?"
-        onAction={async () => onDelete(capture.id)}
-        onOpenChange={setConfirmingDelete}
-      />
     </article>
   );
 }

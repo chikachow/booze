@@ -374,13 +374,9 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
                 bottleController.setEditingBottle(null);
               }}
               onDelete={async () => {
-                const deleted = await bottleController.deleteBottle(
+                return bottleController.deleteBottle(
                   bottleController.editingBottle?.bottleId ?? "",
                 );
-                if (deleted) {
-                  bottleController.setEditingBottle(null);
-                }
-                return deleted;
               }}
               onMarkConsumed={async () => {
                 const updated = await bottleController.updateBottle({

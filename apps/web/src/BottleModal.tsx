@@ -278,6 +278,7 @@ export function BottleModal({
           title="Delete this bottle?"
           onAction={onDelete}
           onOpenChange={setIsDeleteOpen}
+          onSuccess={onClose}
         />
       )}
     </>

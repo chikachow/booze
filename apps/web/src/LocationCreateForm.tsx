@@ -1,7 +1,7 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Selector } from "@astryxdesign/core/Selector";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import {
   compareLocationPath,
@@ -27,6 +27,7 @@ export function LocationCreateForm({
   onSaveLocation,
 }: LocationCreateFormProps): ReactElement {
   const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
   const [siteError, setSiteError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const siteLocations = useMemo(
@@ -49,6 +50,10 @@ export function LocationCreateForm({
   }, [form.parentLocationId, parentLocationId, updateLocationField]);
 
   async function saveLocation(): Promise<void> {
+    if (isSavingRef.current) {
+      return;
+    }
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
       const saved = await onSaveLocation();
@@ -58,6 +63,7 @@ export function LocationCreateForm({
     } catch {
       setNameError("Location was not saved. Check your connection and try again.");
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -71,7 +77,7 @@ export function LocationCreateForm({
         const nextNameError = form.location.trim() === "" ? "Location name is required." : null;
         setSiteError(nextSiteError);
         setNameError(nextNameError);
-        if (nextSiteError !== null || nextNameError !== null || isSaving) {
+        if (nextSiteError !== null || nextNameError !== null || isSavingRef.current) {
           return;
         }
         void saveLocation();
