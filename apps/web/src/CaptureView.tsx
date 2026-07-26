@@ -400,17 +400,20 @@ function CaptureCard({
   readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [pendingAction, setPendingAction] = useState<CaptureCardAction | null>(null);
+  const pendingActionRef = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function runAction(
     pending: CaptureCardAction,
     action: () => Promise<boolean>,
   ): Promise<boolean> {
-    if (pendingAction !== null) {
+    if (pendingActionRef.current) {
       return false;
     }
+    pendingActionRef.current = true;
     setPendingAction(pending);
     setActionError(null);
     try {
@@ -423,6 +426,7 @@ function CaptureCard({
       setActionError(`${captureActionLabel(pending)} failed. Try again.`);
       return false;
     } finally {
+      pendingActionRef.current = false;
       setPendingAction(null);
     }
   }
@@ -506,6 +510,7 @@ function CaptureCard({
         ) : null}
         {canWrite && isCaptureDeletable(capture) ? (
           <Button
+            ref={deleteTriggerRef}
             isDisabled={pendingAction !== null}
             label="Delete capture"
             size="sm"
@@ -524,6 +529,7 @@ function CaptureCard({
         description="This permanently removes the capture, its images, and processing history. This action cannot be undone."
         failureMessage="Delete failed. Try again."
         isOpen={confirmingDelete}
+        returnFocusRef={deleteTriggerRef}
         title="Delete this capture?"
         onAction={async () => onDelete(capture.id)}
         onOpenChange={setConfirmingDelete}

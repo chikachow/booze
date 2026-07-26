@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
-import type { BottleModalSubmit } from "./BottleModal.tsx";
+import type { BottleModalSubmit, BottleModalSubmitResult } from "./BottleModal.tsx";
 import type { CaptureSubmitResult } from "./CaptureView.tsx";
 import {
   formStateForItem,
@@ -47,15 +47,20 @@ function useBottleControllerImpl({
 
   useDefaultSite(writableSites, setAddFormDefaults);
 
-  async function saveBottle({ awards, criticReviews, form }: BottleModalSubmit): Promise<void> {
+  async function saveBottle({
+    awards,
+    criticReviews,
+    form,
+  }: BottleModalSubmit): Promise<BottleModalSubmitResult> {
     if (form.siteId === "") {
-      setStatus("Choose a site before saving the bottle.");
-      return;
+      const message = "Choose a site before saving the bottle.";
+      setStatus(message);
+      return { message, ok: false };
     }
     const quantity = validateBottleQuantity(form.quantity);
     if (!quantity.ok) {
       setStatus(quantity.message);
-      return;
+      return { message: quantity.message, ok: false };
     }
     setIsSaving(true);
     setStatus("Saving bottle...");
@@ -75,8 +80,9 @@ function useBottleControllerImpl({
         }),
       });
       if (!response.ok) {
-        setStatus("Bottle was not saved. Check required fields.");
-        return;
+        const message = "Bottle was not saved. Check required fields.";
+        setStatus(message);
+        return { message, ok: false };
       }
       setAddFormDefaults({
         ...initialFormState,
@@ -88,8 +94,11 @@ function useBottleControllerImpl({
       });
       setIsAddOpen(false);
       await loadCatalogue();
+      return { ok: true };
     } catch {
-      setStatus("Bottle was not saved. Check your connection and try again.");
+      const message = "Bottle was not saved. Check your connection and try again.";
+      setStatus(message);
+      return { message, ok: false };
     } finally {
       setIsSaving(false);
     }
@@ -132,9 +141,9 @@ function useBottleControllerImpl({
     return true;
   }
 
-  async function saveBottleEdit(submission: BottleModalSubmit): Promise<void> {
+  async function saveBottleEdit(submission: BottleModalSubmit): Promise<BottleModalSubmitResult> {
     if (editingBottle === null) {
-      return;
+      return { message: "Bottle is no longer available to edit.", ok: false };
     }
     setIsSaving(true);
     try {
@@ -144,9 +153,13 @@ function useBottleControllerImpl({
       });
       if (updated) {
         setEditingBottle(null);
+        return { ok: true };
       }
+      return { message: "Bottle was not updated.", ok: false };
     } catch {
-      setStatus("Bottle was not updated. Check your connection and try again.");
+      const message = "Bottle was not updated. Check your connection and try again.";
+      setStatus(message);
+      return { message, ok: false };
     } finally {
       setIsSaving(false);
     }

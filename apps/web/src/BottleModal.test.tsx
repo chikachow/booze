@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { BottleModal } from "./BottleModal.tsx";
+import { BottleModal, type BottleModalSubmitResult } from "./BottleModal.tsx";
 import { formStateForItem } from "./inventory-model.ts";
 import { inventoryItemFixture, locationsFixture, sitesFixture } from "./test/catalogue-fixtures.ts";
 
@@ -18,8 +18,8 @@ function requiredInput(container: HTMLElement, name: string): HTMLInputElement {
   return input;
 }
 
-async function submitBottle(): Promise<void> {
-  await Promise.resolve();
+async function submitBottle(): Promise<BottleModalSubmitResult> {
+  return { ok: true };
 }
 
 describe("BottleModal destructive actions", () => {

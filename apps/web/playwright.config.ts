@@ -5,13 +5,16 @@ export default defineConfig({
   expect: { timeout: 5_000 },
   fullyParallel: false,
   outputDir: "/tmp/booze-playwright-results",
+  projects: [
+    { name: "chrome-light", use: { colorScheme: "light" } },
+    { name: "chrome-dark", use: { colorScheme: "dark" } },
+  ],
   reporter: "line",
   testDir: "./e2e",
   timeout: 30_000,
   use: {
     baseURL: "http://127.0.0.1:4173",
     channel: "chrome",
-    colorScheme: "light",
     reducedMotion: "reduce",
     trace: "retain-on-failure",
   },

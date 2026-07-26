@@ -1,13 +1,14 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type ReactElement, type RefObject } from "react";
 
 export type DestructiveActionDialogProps = {
   readonly actionLabel: string;
   readonly description: string;
   readonly failureMessage: string;
   readonly isOpen: boolean;
+  readonly returnFocusRef?: RefObject<HTMLElement | null>;
   readonly title: string;
   readonly onAction: () => Promise<boolean>;
   readonly onOpenChange: (isOpen: boolean) => void;
@@ -18,17 +19,31 @@ export function DestructiveActionDialog({
   description,
   failureMessage,
   isOpen,
+  returnFocusRef,
   title,
   onAction,
   onOpenChange,
 }: DestructiveActionDialogProps): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const isPendingRef = useRef(false);
+  const actionRef = useRef<HTMLButtonElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const fallbackReturnFocusRef = useRef<HTMLElement | null>(null);
   const descriptionId = useId();
 
   useEffect(() => {
     if (isOpen) {
+      const activeElement = document.activeElement;
+      if (
+        returnFocusRef === undefined &&
+        fallbackReturnFocusRef.current === null &&
+        activeElement instanceof HTMLElement &&
+        activeElement !== actionRef.current &&
+        activeElement !== cancelRef.current
+      ) {
+        fallbackReturnFocusRef.current = activeElement;
+      }
       setError(null);
       requestAnimationFrame(() => {
         cancelRef.current?.focus();
@@ -36,29 +51,82 @@ export function DestructiveActionDialog({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    const trapFocus = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Tab") {
+        return;
+      }
+      if (event.shiftKey && document.activeElement === cancelRef.current) {
+        event.preventDefault();
+        actionRef.current?.focus();
+      } else if (!event.shiftKey && document.activeElement === actionRef.current) {
+        event.preventDefault();
+        cancelRef.current?.focus();
+      }
+    };
+    const containFocus = (event: FocusEvent): void => {
+      if (event.target !== cancelRef.current && event.target !== actionRef.current) {
+        cancelRef.current?.focus();
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("keydown", trapFocus);
+      document.addEventListener("focusin", containFocus);
+    }
+    return () => {
+      document.removeEventListener("keydown", trapFocus);
+      document.removeEventListener("focusin", containFocus);
+    };
+  }, [isOpen]);
+
   async function runAction(): Promise<void> {
-    if (isPending) {
+    if (isPendingRef.current) {
       return;
     }
+    isPendingRef.current = true;
     setIsPending(true);
     setError(null);
     try {
       if (await onAction()) {
-        onOpenChange(false);
+        closeAndRestoreFocus();
       } else {
-        setError(failureMessage);
+        showFailure();
       }
     } catch {
-      setError(failureMessage);
+      showFailure();
     } finally {
+      isPendingRef.current = false;
       setIsPending(false);
     }
   }
 
+  function showFailure(): void {
+    setError(failureMessage);
+    requestAnimationFrame(() => {
+      cancelRef.current?.focus();
+    });
+  }
+
   function changeOpen(nextIsOpen: boolean): void {
-    if (!isPending) {
-      onOpenChange(nextIsOpen);
+    if (!isPendingRef.current) {
+      if (nextIsOpen) {
+        onOpenChange(true);
+      } else {
+        closeAndRestoreFocus();
+      }
     }
+  }
+
+  function closeAndRestoreFocus(): void {
+    onOpenChange(false);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const returnTarget = returnFocusRef?.current ?? fallbackReturnFocusRef.current;
+        if (returnTarget?.isConnected === true) {
+          returnTarget.focus();
+        }
+      });
+    });
   }
 
   if (!isOpen) {
@@ -92,6 +160,7 @@ export function DestructiveActionDialog({
             }}
           />
           <Button
+            ref={actionRef}
             isLoading={isPending}
             label={actionLabel}
             variant="destructive"
