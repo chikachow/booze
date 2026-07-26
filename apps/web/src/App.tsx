@@ -5,7 +5,7 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Card } from "@astryxdesign/core/Card";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, type ReactElement } from "react";
 
 // oxlint-disable-next-line import/no-unassigned-import -- Vite loads the application stylesheet for its side effect.
 import "./App.css";
@@ -14,6 +14,7 @@ import { CaptureArea } from "./CaptureView.tsx";
 import { InventoryArea } from "./InventoryView.tsx";
 import { ManagementArea } from "./ManagementView.tsx";
 import { useCatalogue } from "./useCatalogue.ts";
+import { useCatalogueUrlState } from "./useCatalogueUrlState.ts";
 import { useReturnFocus } from "./useReturnFocus.ts";
 import {
   useBottleController,
@@ -27,9 +28,7 @@ import {
   drinkLabel,
   isDrinkQueueItem,
   storageLocationPath,
-  type Area,
   type AuthMode,
-  type InventoryGrouping,
   type InventoryItem,
 } from "./inventory-model.ts";
 
@@ -145,12 +144,20 @@ function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): R
     () => locations.filter((location) => writableSiteIds.has(location.siteId)),
     [locations, writableSiteIds],
   );
-  const [filter, setFilter] = useState("");
-  const [varietalFilter, setVarietalFilter] = useState("");
-  const [locationFilter, setLocationFilter] = useState("");
-  const [drinkStatusFilter, setDrinkStatusFilter] = useState("");
-  const [area, setArea] = useState<Area>("inventory");
-  const [grouping, setGrouping] = useState<InventoryGrouping>("winery");
+  const {
+    area,
+    drinkStatusFilter,
+    filter,
+    grouping,
+    locationFilter,
+    varietalFilter,
+    setArea,
+    setDrinkStatusFilter,
+    setFilter,
+    setGrouping,
+    setLocationFilter,
+    setVarietalFilter,
+  } = useCatalogueUrlState();
   const bottleController = useBottleController({
     getAuthHeaders,
     loadCatalogue,

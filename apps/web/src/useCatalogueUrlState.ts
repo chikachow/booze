@@ -1,0 +1,116 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import type { Area, InventoryGrouping } from "./inventory-model.ts";
+
+export type CatalogueUrlState = {
+  readonly area: Area;
+  readonly drinkStatusFilter: string;
+  readonly filter: string;
+  readonly grouping: InventoryGrouping;
+  readonly locationFilter: string;
+  readonly varietalFilter: string;
+};
+
+type CatalogueUrlController = CatalogueUrlState & {
+  readonly setArea: (value: Area) => void;
+  readonly setDrinkStatusFilter: (value: string) => void;
+  readonly setFilter: (value: string) => void;
+  readonly setGrouping: (value: InventoryGrouping) => void;
+  readonly setLocationFilter: (value: string) => void;
+  readonly setVarietalFilter: (value: string) => void;
+};
+
+const defaultState: CatalogueUrlState = {
+  area: "inventory",
+  drinkStatusFilter: "",
+  filter: "",
+  grouping: "winery",
+  locationFilter: "",
+  varietalFilter: "",
+};
+
+export function catalogueStateFromUrl(url: URL): CatalogueUrlState {
+  const area = url.searchParams.get("area");
+  const grouping = url.searchParams.get("grouping");
+  return {
+    area: area === "captures" || area === "management" ? area : "inventory",
+    drinkStatusFilter: url.searchParams.get("drink") ?? "",
+    filter: url.searchParams.get("q") ?? "",
+    grouping: grouping === "storage" ? "storage" : "winery",
+    locationFilter: url.searchParams.get("location") ?? "",
+    varietalFilter: url.searchParams.get("varietal") ?? "",
+  };
+}
+
+export function catalogueUrlWithState(url: URL, state: CatalogueUrlState): URL {
+  const next = new URL(url);
+  setOptionalParameter(next, "area", state.area, defaultState.area);
+  setOptionalParameter(next, "grouping", state.grouping, defaultState.grouping);
+  setOptionalParameter(next, "q", state.filter);
+  setOptionalParameter(next, "varietal", state.varietalFilter);
+  setOptionalParameter(next, "location", state.locationFilter);
+  setOptionalParameter(next, "drink", state.drinkStatusFilter);
+  return next;
+}
+
+export function useCatalogueUrlState(): CatalogueUrlController {
+  const [state, setState] = useState(() => catalogueStateFromUrl(new URL(window.location.href)));
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    const readHistory = (): void => {
+      const next = catalogueStateFromUrl(new URL(window.location.href));
+      stateRef.current = next;
+      setState(next);
+    };
+    window.addEventListener("popstate", readHistory);
+    return () => {
+      window.removeEventListener("popstate", readHistory);
+    };
+  }, []);
+
+  const update = useCallback(
+    <Key extends keyof CatalogueUrlState>(
+      key: Key,
+      value: CatalogueUrlState[Key],
+      historyMode: "push" | "replace",
+    ): void => {
+      const next = { ...stateRef.current, [key]: value };
+      stateRef.current = next;
+      setState(next);
+      const nextUrl = catalogueUrlWithState(new URL(window.location.href), next);
+      window.history[historyMode === "push" ? "pushState" : "replaceState"](null, "", nextUrl);
+    },
+    [],
+  );
+
+  return {
+    ...state,
+    setArea: (value: Area): void => {
+      update("area", value, "push");
+    },
+    setDrinkStatusFilter: (value: string): void => {
+      update("drinkStatusFilter", value, "replace");
+    },
+    setFilter: (value: string): void => {
+      update("filter", value, "replace");
+    },
+    setGrouping: (value: InventoryGrouping): void => {
+      update("grouping", value, "push");
+    },
+    setLocationFilter: (value: string): void => {
+      update("locationFilter", value, "replace");
+    },
+    setVarietalFilter: (value: string): void => {
+      update("varietalFilter", value, "replace");
+    },
+  };
+}
+
+function setOptionalParameter(url: URL, key: string, value: string, defaultValue = ""): void {
+  if (value === defaultValue) {
+    url.searchParams.delete(key);
+  } else {
+    url.searchParams.set(key, value);
+  }
+}
