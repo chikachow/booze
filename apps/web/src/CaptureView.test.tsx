@@ -76,9 +76,21 @@ describe("CaptureArea photo picker", () => {
     await user.upload(input, [photo("side.jpg"), photo("detail.jpg"), photo("extra.jpg")]);
     expect(description).toHaveTextContent("4 of 4 selected.");
     expect(
-      screen.getByText("Only 4 photos can be attached. Extra files were not added."),
+      screen.getByText("Only 4 photos can be attached. 1 extra file was not added."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add more bottle photos" })).toBeDisabled();
+  });
+
+  it("silently ignores a duplicate without claiming a cap rejection", async () => {
+    const user = userEvent.setup();
+    renderCapture();
+    const input = screen.getByLabelText(/Bottle photos/u);
+
+    await user.upload(input, photo("front.jpg"));
+    await user.upload(input, photo("front.jpg"));
+
+    expect(screen.getByText(/1 of 4 selected/u)).toBeInTheDocument();
+    expect(screen.queryByText(/extra file/u)).not.toBeInTheDocument();
   });
 
   it("removes a selected photo and releases its preview URL", async () => {
@@ -97,7 +109,22 @@ describe("CaptureArea photo picker", () => {
     expect(screen.queryByText("front.jpg")).not.toBeInTheDocument();
     expect(screen.getAllByText("back.jpg")).not.toHaveLength(0);
     expect(screen.getByText(/1 of 4 selected/u)).toBeInTheDocument();
-    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:test-9");
+    expect(revokeObjectUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases every remaining preview URL when capture unmounts", async () => {
+    const user = userEvent.setup();
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const { unmount } = renderCapture();
+
+    await user.upload(screen.getByLabelText(/Bottle photos/u), [
+      photo("front.jpg"),
+      photo("back.jpg"),
+    ]);
+    revokeObjectUrl.mockClear();
+    unmount();
+
+    expect(revokeObjectUrl).toHaveBeenCalledTimes(2);
   });
 
   it("has no automated accessibility violations", async () => {

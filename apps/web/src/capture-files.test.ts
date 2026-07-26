@@ -11,14 +11,23 @@ describe("mergeCaptureFiles", () => {
     const first = photo("front.jpg");
     const second = photo("back.jpg");
 
-    expect(mergeCaptureFiles(mergeCaptureFiles([], first), second)).toEqual([first, second]);
+    const firstMerge = mergeCaptureFiles([], first);
+    expect(mergeCaptureFiles(firstMerge.files, second)).toEqual({
+      duplicateCount: 0,
+      files: [first, second],
+      rejectedCount: 0,
+    });
   });
 
   it("deduplicates the same file identity", () => {
     const first = photo("front.jpg");
     const duplicate = photo("front.jpg");
 
-    expect(mergeCaptureFiles([first], duplicate)).toEqual([first]);
+    expect(mergeCaptureFiles([first], duplicate)).toEqual({
+      duplicateCount: 1,
+      files: [first],
+      rejectedCount: 0,
+    });
   });
 
   it("caps the accumulated list at four files", () => {
@@ -26,12 +35,30 @@ describe("mergeCaptureFiles", () => {
       photo(`${index}.jpg`),
     );
 
-    expect(mergeCaptureFiles([], files)).toEqual(files.slice(0, MAX_CAPTURE_FILES));
+    expect(mergeCaptureFiles([], files)).toEqual({
+      duplicateCount: 0,
+      files: files.slice(0, MAX_CAPTURE_FILES),
+      rejectedCount: 2,
+    });
   });
 
   it("does not clear existing files when the picker reports null", () => {
     const first = photo("front.jpg");
 
-    expect(mergeCaptureFiles([first], null)).toEqual([first]);
+    expect(mergeCaptureFiles([first], null)).toEqual({
+      duplicateCount: 0,
+      files: [first],
+      rejectedCount: 0,
+    });
+  });
+
+  it("does not report duplicates as cap rejections", () => {
+    const existing = Array.from({ length: MAX_CAPTURE_FILES }, (_, index) => photo(`${index}.jpg`));
+
+    expect(mergeCaptureFiles(existing, [photo("0.jpg"), photo("extra.jpg")])).toEqual({
+      duplicateCount: 1,
+      files: existing,
+      rejectedCount: 1,
+    });
   });
 });

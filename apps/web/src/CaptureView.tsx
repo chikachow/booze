@@ -70,20 +70,9 @@ export function CaptureArea({
   const [fileSelectionMessage, setFileSelectionMessage] = useState<string | null>(null);
   const [isQuantityTouched, setIsQuantityTouched] = useState(false);
   const [submitResult, setSubmitResult] = useState<CaptureSubmitResult | null>(null);
-  const [previewUrls, setPreviewUrls] = useState<readonly string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quantityValidation = validateBottleQuantity(form.quantity);
   const numericQuantity = Number(form.quantity);
-
-  useEffect(() => {
-    const nextPreviewUrls = files.map((file) => URL.createObjectURL(file));
-    setPreviewUrls(nextPreviewUrls);
-    return () => {
-      for (const previewUrl of nextPreviewUrls) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [files]);
 
   useEffect(() => {
     if (form.siteId !== "" || sites.length === 0) {
@@ -224,12 +213,15 @@ export function CaptureArea({
                 type="file"
                 onChange={(event) => {
                   const selected = [...(event.currentTarget.files ?? [])];
+                  const result = mergeCaptureFiles(files, selected);
                   setFileSelectionMessage(
-                    files.length + selected.length > MAX_CAPTURE_FILES
-                      ? `Only ${MAX_CAPTURE_FILES} photos can be attached. Extra files were not added.`
-                      : null,
+                    result.rejectedCount === 0
+                      ? null
+                      : result.rejectedCount === 1
+                        ? `Only ${MAX_CAPTURE_FILES} photos can be attached. 1 extra file was not added.`
+                        : `Only ${MAX_CAPTURE_FILES} photos can be attached. ${result.rejectedCount} extra files were not added.`,
                   );
-                  setFiles(mergeCaptureFiles(files, selected));
+                  setFiles(result.files);
                   event.currentTarget.value = "";
                 }}
               />
@@ -240,17 +232,13 @@ export function CaptureArea({
             {files.length === 0 ? null : (
               <ul className="photo-list" aria-label="Selected bottle photos">
                 {files.map((file, index) => (
-                  <li key={`${file.name}-${file.lastModified}-${index}`}>
-                    <Thumbnail
-                      alt={`Preview of ${file.name}`}
-                      label={file.name}
-                      src={previewUrls[index]}
-                      onRemove={() => {
-                        setFiles(files.filter((_, fileIndex) => fileIndex !== index));
-                      }}
-                    />
-                    <span>{file.name}</span>
-                  </li>
+                  <SelectedPhoto
+                    file={file}
+                    key={`${file.name}-${file.size}-${file.type}-${file.lastModified}`}
+                    onRemove={() => {
+                      setFiles(files.filter((_, fileIndex) => fileIndex !== index));
+                    }}
+                  />
                 ))}
               </ul>
             )}
@@ -286,6 +274,36 @@ export function CaptureArea({
         onRetry={onRetry}
       />
     </section>
+  );
+}
+
+function SelectedPhoto({
+  file,
+  onRemove,
+}: {
+  readonly file: File;
+  readonly onRemove: () => void;
+}): ReactElement {
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [file]);
+
+  return (
+    <li>
+      <Thumbnail
+        alt={`Preview of ${file.name}`}
+        label={file.name}
+        src={previewUrl}
+        onRemove={onRemove}
+      />
+      <span>{file.name}</span>
+    </li>
   );
 }
 
