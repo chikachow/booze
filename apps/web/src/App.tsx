@@ -10,6 +10,7 @@ import { lazy, Suspense, useEffect, useMemo, type ReactElement } from "react";
 
 // oxlint-disable-next-line import/no-unassigned-import -- Vite loads the application stylesheet for its side effect.
 import "./App.css";
+import { parseGrapeVarieties } from "./bottle-metadata.ts";
 import { InventoryArea } from "./InventoryView.tsx";
 import { LazyLoadErrorBoundary } from "./LazyLoadErrorBoundary.tsx";
 import { useCatalogue } from "./useCatalogue.ts";
@@ -93,15 +94,8 @@ export function App({ authMode }: AppProps): ReactElement {
   );
 }
 
-function grapeVarietiesFromForm(value: string): readonly string[] {
-  return value
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-}
-
 function grapeVarieties(item: InventoryItem): readonly string[] {
-  return item.grapeVarieties === null ? [] : grapeVarietiesFromForm(item.grapeVarieties);
+  return item.grapeVarieties === null ? [] : parseGrapeVarieties(item.grapeVarieties);
 }
 
 function uniqueSorted(values: readonly string[]): readonly string[] {

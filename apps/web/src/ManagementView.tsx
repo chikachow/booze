@@ -17,6 +17,7 @@ import {
 } from "./inventory-model.ts";
 import type { LocationController, SiteController } from "./useCatalogueControllers.ts";
 import { useKeyedAsyncOperation } from "./useKeyedAsyncOperation.ts";
+import type { NamedResourceActions } from "./useNamedResourceActions.ts";
 import { ProgressiveListStatus, PROGRESSIVE_PAGE_SIZE } from "./ProgressiveListStatus.tsx";
 
 export function ManagementArea({
@@ -43,30 +44,20 @@ export function ManagementArea({
         </div>
       </div>
       <SiteArea
-        editingSiteId={siteController.editingId}
-        editingSiteName={siteController.editingName}
         form={siteController.form}
+        resourceActions={siteController.resourceActions}
         sites={sites}
-        setEditingSiteId={siteController.setEditingId}
-        setEditingSiteName={siteController.setEditingName}
-        deleteSite={siteController.remove}
         updateSiteField={siteController.updateField}
         onSaveSite={siteController.save}
-        onSaveSiteName={siteController.saveName}
       />
       <LocationArea
-        editingLocationId={locationController.editingId}
-        editingLocationName={locationController.editingName}
         form={locationController.form}
         locations={locations}
+        resourceActions={locationController.resourceActions}
         sites={sites}
         writableSiteIds={writableSiteIds}
-        setEditingLocationId={locationController.setEditingId}
-        setEditingLocationName={locationController.setEditingName}
-        deleteLocation={locationController.remove}
         updateLocationField={locationController.updateField}
         onSaveLocation={locationController.save}
-        onSaveLocationName={locationController.saveName}
         onUseLocation={onUseLocation}
       />
     </section>
@@ -74,34 +65,25 @@ export function ManagementArea({
 }
 
 function LocationArea({
-  editingLocationId,
-  editingLocationName,
   form,
   locations,
+  resourceActions,
   sites,
   writableSiteIds,
-  setEditingLocationId,
-  setEditingLocationName,
-  deleteLocation,
   updateLocationField,
   onSaveLocation,
-  onSaveLocationName,
   onUseLocation,
 }: {
-  readonly editingLocationId: string | null;
-  readonly editingLocationName: string;
   readonly form: LocationFormState;
   readonly locations: readonly LocationItem[];
+  readonly resourceActions: NamedResourceActions;
   readonly sites: readonly SiteItem[];
   readonly writableSiteIds: ReadonlySet<string>;
-  readonly setEditingLocationId: (value: string | null) => void;
-  readonly setEditingLocationName: (value: string) => void;
-  readonly deleteLocation: (locationId: string) => Promise<boolean>;
   readonly updateLocationField: (field: keyof LocationFormState, value: string) => void;
   readonly onSaveLocation: () => Promise<boolean>;
-  readonly onSaveLocationName: (locationId: string) => Promise<boolean>;
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
+  const { beginRename, cancelRename, editor, remove, saveRename, setRename } = resourceActions;
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
   const [deletingLocation, setDeletingLocation] = useState<LocationItem | null>(null);
@@ -145,21 +127,19 @@ function LocationArea({
               key={location.locationId}
               tabIndex={-1}
             >
-              {editingLocationId === location.locationId ? (
+              {editor?.id === location.locationId ? (
                 <form
                   className="inline-edit"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (editingLocationName.trim() === "") {
+                    if (editor.name.trim() === "") {
                       rename.reportError(location.locationId, "Location name is required.");
                       return;
                     }
                     if (rename.pendingKey !== null) {
                       return;
                     }
-                    void rename.run(location.locationId, async () =>
-                      onSaveLocationName(location.locationId),
-                    );
+                    void rename.run(location.locationId, saveRename);
                   }}
                 >
                   <TextInput
@@ -172,9 +152,9 @@ function LocationArea({
                         ? { message: rename.error.message, type: "error" }
                         : undefined
                     }
-                    value={editingLocationName}
+                    value={editor.name}
                     onChange={(value: string) => {
-                      setEditingLocationName(value);
+                      setRename(value);
                       rename.clearError();
                     }}
                   />
@@ -185,14 +165,7 @@ function LocationArea({
                       type="submit"
                       variant="primary"
                     />
-                    <Button
-                      label="Cancel"
-                      variant="ghost"
-                      onClick={() => {
-                        setEditingLocationId(null);
-                        setEditingLocationName("");
-                      }}
-                    />
+                    <Button label="Cancel" variant="ghost" onClick={cancelRename} />
                   </div>
                 </form>
               ) : (
@@ -219,8 +192,7 @@ function LocationArea({
                         label="Edit"
                         variant="ghost"
                         onClick={() => {
-                          setEditingLocationId(location.locationId);
-                          setEditingLocationName(location.location);
+                          beginRename(location.locationId, location.location);
                         }}
                       />
                       <Button
@@ -258,7 +230,7 @@ function LocationArea({
           isOpen
           returnFocusRef={deleteTriggerRef}
           title={`Delete ${deletingLocation.location}?`}
-          onAction={async () => deleteLocation(deletingLocation.locationId)}
+          onAction={async () => remove(deletingLocation.locationId)}
           onOpenChange={(isOpen: boolean) => {
             if (!isOpen) {
               setDeletingLocation(null);
@@ -271,28 +243,19 @@ function LocationArea({
 }
 
 function SiteArea({
-  editingSiteId,
-  editingSiteName,
   form,
+  resourceActions,
   sites,
-  setEditingSiteId,
-  setEditingSiteName,
-  deleteSite,
   updateSiteField,
   onSaveSite,
-  onSaveSiteName,
 }: {
-  readonly editingSiteId: string | null;
-  readonly editingSiteName: string;
   readonly form: SiteFormState;
+  readonly resourceActions: NamedResourceActions;
   readonly sites: readonly SiteItem[];
-  readonly setEditingSiteId: (value: string | null) => void;
-  readonly setEditingSiteName: (value: string) => void;
-  readonly deleteSite: (siteId: string) => Promise<boolean>;
   readonly updateSiteField: (field: keyof SiteFormState, value: string) => void;
   readonly onSaveSite: () => Promise<boolean>;
-  readonly onSaveSiteName: (siteId: string) => Promise<boolean>;
 }): ReactElement {
+  const { beginRename, cancelRename, editor, remove, saveRename, setRename } = resourceActions;
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
   const [deletingSite, setDeletingSite] = useState<SiteItem | null>(null);
@@ -377,19 +340,19 @@ function SiteArea({
               key={site.siteId}
               tabIndex={-1}
             >
-              {editingSiteId === site.siteId ? (
+              {editor?.id === site.siteId ? (
                 <form
                   className="inline-edit"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    if (editingSiteName.trim() === "") {
+                    if (editor.name.trim() === "") {
                       rename.reportError(site.siteId, "Site name is required.");
                       return;
                     }
                     if (rename.pendingKey !== null) {
                       return;
                     }
-                    void rename.run(site.siteId, async () => onSaveSiteName(site.siteId));
+                    void rename.run(site.siteId, saveRename);
                   }}
                 >
                   <TextInput
@@ -402,9 +365,9 @@ function SiteArea({
                         ? { message: rename.error.message, type: "error" }
                         : undefined
                     }
-                    value={editingSiteName}
+                    value={editor.name}
                     onChange={(value: string) => {
-                      setEditingSiteName(value);
+                      setRename(value);
                       rename.clearError();
                     }}
                   />
@@ -415,14 +378,7 @@ function SiteArea({
                       type="submit"
                       variant="primary"
                     />
-                    <Button
-                      label="Cancel"
-                      variant="ghost"
-                      onClick={() => {
-                        setEditingSiteId(null);
-                        setEditingSiteName("");
-                      }}
-                    />
+                    <Button label="Cancel" variant="ghost" onClick={cancelRename} />
                   </div>
                 </form>
               ) : (
@@ -448,8 +404,7 @@ function SiteArea({
                       <Button
                         label="Edit"
                         onClick={() => {
-                          setEditingSiteId(site.siteId);
-                          setEditingSiteName(site.site);
+                          beginRename(site.siteId, site.site);
                         }}
                       />
                       <Button
@@ -487,7 +442,7 @@ function SiteArea({
           isOpen
           returnFocusRef={deleteTriggerRef}
           title={`Delete ${deletingSite.site}?`}
-          onAction={async () => deleteSite(deletingSite.siteId)}
+          onAction={async () => remove(deletingSite.siteId)}
           onOpenChange={(isOpen: boolean) => {
             if (!isOpen) {
               setDeletingSite(null);
