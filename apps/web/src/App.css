@@ -27,6 +27,7 @@
   .capture-list-header,
   .card-actions,
   .dialog-actions,
+  .inventory-pagination,
   .group-heading,
   .nested-heading,
   .bottle-row-main {
@@ -40,8 +41,14 @@
   .section-heading,
   .capture-list-header,
   .group-heading,
+  .inventory-pagination,
   .nested-heading {
     justify-content: space-between;
+  }
+
+  .inventory-pagination p {
+    margin: 0;
+    color: var(--color-text-secondary);
   }
 
   .app-content {
@@ -399,6 +406,17 @@
     box-shadow: var(--shadow-med);
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   @media (max-width: 760px) {
     .app-content {
       gap: var(--spacing-4);
@@ -426,6 +444,7 @@
     .workspace-header,
     .section-heading,
     .capture-list-header,
+    .inventory-pagination,
     .bottle-row-main,
     .capture-file-control {
       align-items: stretch;

@@ -1,4 +1,4 @@
-/* oxlint-disable typescript/no-unsafe-call, typescript/no-unsafe-member-access, typescript/no-unsafe-return, typescript/no-unsafe-type-assertion -- Page evaluation runs in Chrome's DOM context rather than the Worker TypeScript environment. */
+/* oxlint-disable typescript/no-unsafe-assignment, typescript/no-unsafe-call, typescript/no-unsafe-member-access, typescript/no-unsafe-return, typescript/no-unsafe-type-assertion -- Page evaluation runs in Chrome's DOM context rather than the Worker TypeScript environment. */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createRequire } from "node:module";
 
@@ -6,7 +6,7 @@ import { bottles, captures, locations, sites } from "./catalogue-fixtures.ts";
 
 const axePath = createRequire(import.meta.url).resolve("axe-core/axe.min.js");
 
-async function mockCatalogue(page: Page): Promise<void> {
+async function mockCatalogue(page: Page, bottleData = bottles): Promise<void> {
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -16,7 +16,7 @@ async function mockCatalogue(page: Page): Promise<void> {
     }
     const data =
       path === "/api/bottles"
-        ? bottles
+        ? bottleData
         : path === "/api/storage-locations"
           ? locations
           : path === "/api/sites"
@@ -33,14 +33,36 @@ async function mockCatalogue(page: Page): Promise<void> {
 }
 
 async function expectNoAxeViolations(page: Page): Promise<void> {
+  await expect
+    .poll(async () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll("dialog[open]")].every(
+          (dialog) => getComputedStyle(dialog).opacity === "1",
+        ),
+      ),
+    )
+    .toBe(true);
   await page.addScriptTag({ path: axePath });
   const violations = await page.evaluate(async () => {
     const axe = (
       window as unknown as {
-        axe: { run: () => Promise<{ violations: readonly { id: string }[] }> };
+        axe: {
+          run: () => Promise<{
+            violations: readonly {
+              id: string;
+              nodes: readonly { failureSummary: string; target: readonly string[] }[];
+            }[];
+          }>;
+        };
       }
     ).axe;
-    return (await axe.run()).violations.map((violation) => violation.id);
+    return (await axe.run()).violations.map((violation) => ({
+      id: violation.id,
+      nodes: violation.nodes.map((node) => ({
+        failureSummary: node.failureSummary,
+        target: node.target,
+      })),
+    }));
   });
   expect(violations).toEqual([]);
 }
@@ -52,12 +74,21 @@ async function failDestructiveAction(
   actionName: string,
   failureMessage: string,
 ): Promise<void> {
-  await trigger.click();
+  await trigger.focus();
+  await trigger.press("Enter");
   const dialog = page.getByRole("alertdialog", { name: dialogName });
-  await dialog.getByRole("button", { name: actionName }).click();
+  const action = dialog.getByRole("button", { name: actionName });
+  await action.focus();
+  await action.press("Enter");
   await expect(dialog.getByRole("alert")).toContainText(failureMessage);
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expectNoAxeViolations(page);
+  for (let index = 0; index < 4; index += 1) {
+    await page.keyboard.press("Tab");
+    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -67,12 +98,19 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Browse bottles" })).toBeVisible();
 });
 
-test("persists navigation and filters while remaining accessible at reduced motion and zoom", async ({
+test("persists navigation and filters while remaining accessible at reduced motion and reflow", async ({
   page,
 }) => {
   expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(
     true,
   );
+  expect(
+    await page.evaluate(() =>
+      document
+        .getAnimations()
+        .every((animation) => Number(animation.effect?.getTiming().duration ?? 0) <= 1),
+    ),
+  ).toBe(true);
   await expectNoAxeViolations(page);
 
   await page.getByRole("textbox", { name: "Search bottles" }).fill("Shiraz");
@@ -88,16 +126,40 @@ test("persists navigation and filters while remaining accessible at reduced moti
 
   await page.getByRole("button", { name: "Storage" }).click();
   await expect(page.getByRole("heading", { name: "Sites and locations" })).toBeVisible();
+  await expectNoAxeViolations(page);
   const useForBottle = page.getByRole("button", { name: "Use for bottle" }).first();
   await useForBottle.focus();
   await useForBottle.press("Enter");
   await expect(page.getByRole("dialog", { name: "Add bottle" })).toBeVisible();
+  await expectNoAxeViolations(page);
   await page.keyboard.press("Escape");
   await expect(useForBottle).toBeFocused();
 
-  await page.evaluate(() => {
-    document.documentElement.style.zoom = "200%";
-  });
+  await page.getByRole("button", { name: "Inventory" }).click();
+  const addBottle = page.getByRole("button", { name: "Add bottle" });
+  await addBottle.focus();
+  await addBottle.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Add bottle" })).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      document
+        .getAnimations()
+        .every((animation) => Number(animation.effect?.getTiming().duration ?? 0) <= 1),
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(addBottle).toBeFocused();
+
+  const editBottle = page.locator(".bottle-card").first().getByRole("button", { name: "Edit" });
+  await editBottle.focus();
+  await editBottle.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Edit bottle" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editBottle).toBeFocused();
+
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(page.getByRole("textbox", { name: "Search bottles" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add bottle" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -106,6 +168,7 @@ test("persists navigation and filters while remaining accessible at reduced moti
 test("keeps failed editor values and rejects malformed award numbers", async ({ page }) => {
   await page.locator(".bottle-card").first().getByRole("button", { name: "Edit" }).click();
   const dialog = page.getByRole("dialog", { name: "Edit bottle" });
+  await expectNoAxeViolations(page);
   const winery = dialog.getByRole("textbox", { name: /Winery/u });
   await winery.fill("Unsaved Browser Winery");
   await dialog.getByRole("button", { name: "Add review" }).click();
@@ -120,7 +183,7 @@ test("keeps failed editor values and rejects malformed award numbers", async ({ 
 
   await dialog.locator("[name='awards.0.points']").fill("95");
   await dialog.getByRole("button", { name: "Save bottle" }).click();
-  await expect(page.getByText("Bottle was not updated.")).toBeVisible();
+  await expect(dialog.getByRole("alert")).toContainText("Bottle was not updated.");
   await expect(winery).toHaveValue("Unsaved Browser Winery");
   await expect(dialog.locator("[name='criticReviews.0.ratingText']")).toHaveValue("96 points");
   await expect(dialog.locator("[name='awards.0.awardName']")).toHaveValue("Browser show");
@@ -164,5 +227,31 @@ test("keeps every destructive failure inside its active nested dialog", async ({
     "Delete Home cellar?",
     "Delete site",
     "Site was not deleted",
+  );
+});
+
+test("keeps a representative large catalogue scrollable and focusable", async ({ page }) => {
+  await page.unroute("**/api/**");
+  const largeCatalogue = Array.from({ length: 160 }, (_, index) => ({
+    ...bottles[0],
+    displayName: `Scale bottle ${String(index).padStart(3, "0")}`,
+    id: `scale-bottle-${index}`,
+    wineVintageId: `scale-vintage-${index}`,
+  }));
+  await mockCatalogue(page, largeCatalogue);
+  await page.reload();
+
+  const cards = page.locator(".bottle-card");
+  await expect(cards).toHaveCount(100);
+  await expect(page.getByText("Showing 100 of 160 bottles")).toBeVisible();
+  await page.getByRole("button", { name: "Show 60 more" }).click();
+  await expect(cards).toHaveCount(160);
+  const lastEdit = cards.last().getByRole("button", { name: "Edit" });
+  await lastEdit.scrollIntoViewIfNeeded();
+  await expect(lastEdit).toBeVisible();
+  await lastEdit.focus();
+  await expect(lastEdit).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
   );
 });

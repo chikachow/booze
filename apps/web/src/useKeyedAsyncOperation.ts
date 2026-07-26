@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type OperationError<Key> = {
   readonly key: Key;
@@ -22,11 +22,13 @@ export function useKeyedAsyncOperation<Key>({
 }): KeyedAsyncOperation<Key> {
   const [pendingKey, setPendingKey] = useState<Key | null>(null);
   const [error, setError] = useState<OperationError<Key> | null>(null);
+  const isPendingRef = useRef(false);
 
   async function run(key: Key, action: () => Promise<boolean>): Promise<void> {
-    if (pendingKey !== null) {
+    if (isPendingRef.current) {
       return;
     }
+    isPendingRef.current = true;
     setPendingKey(key);
     setError(null);
     try {
@@ -36,6 +38,7 @@ export function useKeyedAsyncOperation<Key>({
     } catch {
       setError({ key, message: exceptionMessage });
     } finally {
+      isPendingRef.current = false;
       setPendingKey(null);
     }
   }

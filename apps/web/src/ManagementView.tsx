@@ -2,7 +2,7 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useState, type ReactElement } from "react";
+import { useRef, useState, type MouseEvent, type ReactElement } from "react";
 
 import { LocationCreateForm } from "./LocationCreateForm.tsx";
 import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
@@ -108,6 +108,7 @@ function LocationArea({
   readonly onSaveLocationName: (locationId: string) => Promise<boolean>;
   readonly onUseLocation: (location: LocationItem) => void;
 }): ReactElement {
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const rename = useKeyedAsyncOperation<string>({
     exceptionMessage: "Location was not updated. Check your connection and try again.",
     failureMessage: "Location was not updated. Try again.",
@@ -216,7 +217,8 @@ function LocationArea({
                       <Button
                         label="Delete"
                         variant="destructive"
-                        onClick={() => {
+                        onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                          deleteTriggerRef.current = event.currentTarget;
                           setDeletingLocationId(location.locationId);
                         }}
                       />
@@ -229,6 +231,7 @@ function LocationArea({
                 description={`Bottles in ${locationPath(location, locations)} will remain in ${location.site} without a storage location. This action cannot be undone.`}
                 failureMessage="Location was not deleted. Try again."
                 isOpen={deletingLocationId === location.locationId}
+                returnFocusRef={deleteTriggerRef}
                 title={`Delete ${location.location}?`}
                 onAction={async () => deleteLocation(location.locationId)}
                 onOpenChange={(isOpen: boolean) => {
@@ -270,6 +273,7 @@ function SiteArea({
   readonly onSaveSite: () => Promise<boolean>;
   readonly onSaveSiteName: (siteId: string) => Promise<boolean>;
 }): ReactElement {
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [siteError, setSiteError] = useState<string | null>(null);
   const rename = useKeyedAsyncOperation<string>({
@@ -414,7 +418,8 @@ function SiteArea({
                       <Button
                         label="Delete"
                         variant="destructive"
-                        onClick={() => {
+                        onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                          deleteTriggerRef.current = event.currentTarget;
                           setDeletingSiteId(site.siteId);
                         }}
                       />
@@ -427,6 +432,7 @@ function SiteArea({
                 description="This permanently removes the site, its bottles, wine vintages, locations, and membership records. This action cannot be undone."
                 failureMessage="Site was not deleted. Try again."
                 isOpen={deletingSiteId === site.siteId}
+                returnFocusRef={deleteTriggerRef}
                 title={`Delete ${site.site}?`}
                 onAction={async () => deleteSite(site.siteId)}
                 onOpenChange={(isOpen: boolean) => {

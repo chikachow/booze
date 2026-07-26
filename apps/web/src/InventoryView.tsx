@@ -5,7 +5,7 @@ import { Link } from "@astryxdesign/core/Link";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { Selector } from "@astryxdesign/core/Selector";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import type { ReactElement } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import {
   bottleTitle,
@@ -53,6 +53,8 @@ type WineRow = {
   readonly item: InventoryItem;
 };
 
+const INVENTORY_PAGE_SIZE = 100;
+
 export function InventoryArea({
   drinkStatusFilter,
   drinkStatusOptions,
@@ -73,6 +75,13 @@ export function InventoryArea({
   onAddBottle,
   onEditBottle,
 }: InventoryAreaProps): ReactElement {
+  const [visibleItemCount, setVisibleItemCount] = useState(INVENTORY_PAGE_SIZE);
+  const visibleItems = useMemo(() => items.slice(0, visibleItemCount), [items, visibleItemCount]);
+
+  useEffect(() => {
+    setVisibleItemCount(INVENTORY_PAGE_SIZE);
+  }, [drinkStatusFilter, filter, grouping, locationFilter, varietalFilter]);
+
   return (
     <section className="workspace" aria-labelledby="inventory-title">
       <div className="workspace-header">
@@ -160,17 +169,32 @@ export function InventoryArea({
       ) : grouping === "winery" ? (
         <WineryInventory
           editableSiteIds={editableSiteIds}
-          items={items}
+          items={visibleItems}
           locations={locations}
           onEditBottle={onEditBottle}
         />
       ) : (
         <StorageInventory
           editableSiteIds={editableSiteIds}
-          items={items}
+          items={visibleItems}
           locations={locations}
           onEditBottle={onEditBottle}
         />
+      )}
+      {visibleItems.length === items.length ? null : (
+        <div className="inventory-pagination">
+          <p>
+            Showing {visibleItems.length} of {items.length} bottles
+          </p>
+          <Button
+            label={`Show ${Math.min(INVENTORY_PAGE_SIZE, items.length - visibleItems.length)} more`}
+            onClick={() => {
+              setVisibleItemCount((current) =>
+                Math.min(current + INVENTORY_PAGE_SIZE, items.length),
+              );
+            }}
+          />
+        </div>
       )}
     </section>
   );
@@ -267,7 +291,12 @@ function groupBy(
   const groups = new Map<string, InventoryItem[]>();
   for (const item of items) {
     const key = keyForItem(item);
-    groups.set(key, [...(groups.get(key) ?? []), item]);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, [item]);
+    } else {
+      group.push(item);
+    }
   }
   return [...groups.entries()]
     .map(([key, groupItems]) => ({ key, items: groupItems }))
@@ -277,7 +306,12 @@ function groupBy(
 function wineRows(items: readonly InventoryItem[]): readonly WineRow[] {
   const groups = new Map<string, InventoryItem[]>();
   for (const item of items) {
-    groups.set(item.wineVintageId, [...(groups.get(item.wineVintageId) ?? []), item]);
+    const group = groups.get(item.wineVintageId);
+    if (group === undefined) {
+      groups.set(item.wineVintageId, [item]);
+    } else {
+      group.push(item);
+    }
   }
   const rows: WineRow[] = [];
   for (const bottles of groups.values()) {

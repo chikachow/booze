@@ -19,6 +19,9 @@ describe("catalogue URL state", () => {
     expect(state.area).toBe("management");
     expect(state.grouping).toBe("winery");
     expect(state.filter).toBe("shiraz");
+    expect(
+      catalogueStateFromUrl(new URL("https://example.test/?drink=unexpected")).drinkStatusFilter,
+    ).toBe("");
   });
 
   it("omits defaults while serialising persistent state", () => {

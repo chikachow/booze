@@ -2,7 +2,7 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useRef, useState, type ReactElement, type ReactNode } from "react";
 import { useForm, type Control, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
@@ -42,7 +42,7 @@ type BottleModalProps = {
   readonly onClose: () => void;
   readonly onDelete?: () => Promise<boolean>;
   readonly onMarkConsumed?: () => Promise<boolean>;
-  readonly onSubmit: (input: BottleModalSubmit) => Promise<void>;
+  readonly onSubmit: (input: BottleModalSubmit) => Promise<BottleModalSubmitResult>;
 };
 
 export type BottleModalSubmit = {
@@ -50,6 +50,10 @@ export type BottleModalSubmit = {
   readonly criticReviews: readonly CriticReviewInput[];
   readonly form: FormState;
 };
+
+export type BottleModalSubmitResult =
+  | { readonly ok: true }
+  | { readonly message: string; readonly ok: false };
 
 type FormFieldConfig = Omit<BottleFormFieldProps, "control">;
 
@@ -122,8 +126,11 @@ export function BottleModal({
   const [awards, setAwards] = useState<readonly AwardDraft[]>(awardInputsForItem(item));
   const [reviewErrors, setReviewErrors] = useState<readonly ReviewErrors[]>([]);
   const [awardErrors, setAwardErrors] = useState<readonly AwardErrors[]>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
+  const isMarkingConsumedRef = useRef(false);
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const {
     control,
@@ -134,6 +141,7 @@ export function BottleModal({
   } = useForm<FormState>({ defaultValues: form });
 
   const submitForm = handleSubmit(async (values) => {
+    setSubmitError(null);
     const reviewsResult = validateCriticReviews(criticReviews);
     const awardsResult = validateAwards(awards);
     setReviewErrors(reviewsResult.errors);
@@ -144,17 +152,21 @@ export function BottleModal({
       });
       return;
     }
-    await onSubmit({
+    const result = await onSubmit({
       awards: awardsResult.values,
       criticReviews: reviewsResult.values,
       form: values,
     });
+    if (!result.ok) {
+      setSubmitError(result.message);
+    }
   });
 
   async function markConsumed(): Promise<void> {
-    if (onMarkConsumed === undefined || isMarkingConsumed) {
+    if (onMarkConsumed === undefined || isMarkingConsumedRef.current) {
       return;
     }
+    isMarkingConsumedRef.current = true;
     setIsMarkingConsumed(true);
     setConsumeError(null);
     try {
@@ -165,7 +177,14 @@ export function BottleModal({
     } catch {
       setConsumeError("Bottle was not marked drunk. Try again.");
     } finally {
+      isMarkingConsumedRef.current = false;
       setIsMarkingConsumed(false);
+    }
+  }
+
+  function changeOpen(isOpen: boolean): void {
+    if (!isOpen) {
+      onClose();
     }
   }
 
@@ -177,20 +196,12 @@ export function BottleModal({
         maxHeight="calc(100dvh - 32px)"
         purpose="form"
         width="min(920px, calc(100vw - 32px))"
-        onOpenChange={(isOpen: boolean) => {
-          if (!isOpen) {
-            onClose();
-          }
-        }}
+        onOpenChange={changeOpen}
       >
         <DialogHeader
           subtitle="Review the cellar record before saving."
           title={title}
-          onOpenChange={(isOpen: boolean) => {
-            if (!isOpen) {
-              onClose();
-            }
-          }}
+          onOpenChange={changeOpen}
         />
         <form
           className="form-stack"
@@ -242,6 +253,7 @@ export function BottleModal({
             )}
             {onDelete === undefined ? null : (
               <Button
+                ref={deleteTriggerRef}
                 label="Delete bottle"
                 variant="destructive"
                 onClick={() => {
@@ -250,6 +262,9 @@ export function BottleModal({
               />
             )}
             {consumeError === null ? null : <Banner status="error" title={consumeError} />}
+            {submitError === null ? null : (
+              <Banner aria-live="assertive" status="error" title={submitError} />
+            )}
           </div>
         </form>
       </Dialog>
@@ -259,6 +274,7 @@ export function BottleModal({
           description="This permanently removes this bottle and its inventory record. This action cannot be undone."
           failureMessage="Bottle was not deleted. Try again."
           isOpen={isDeleteOpen}
+          returnFocusRef={deleteTriggerRef}
           title="Delete this bottle?"
           onAction={onDelete}
           onOpenChange={setIsDeleteOpen}

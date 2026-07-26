@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -83,5 +83,32 @@ describe("DestructiveActionDialog", () => {
     resolveAction?.(true);
     expect(await screen.findByRole("button", { name: "Delete site" })).toBeEnabled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps keyboard focus cycling inside the active dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <DestructiveActionDialog
+        actionLabel="Delete capture"
+        description="This cannot be undone."
+        failureMessage="Capture was not deleted."
+        isOpen
+        title="Delete this capture?"
+        onAction={async () => false}
+        onOpenChange={(isOpen) => {
+          void isOpen;
+        }}
+      />,
+    );
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const action = screen.getByRole("button", { name: "Delete capture" });
+    await waitFor(() => {
+      expect(cancel).toHaveFocus();
+    });
+    await user.tab({ shift: true });
+    expect(action).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
   });
 });

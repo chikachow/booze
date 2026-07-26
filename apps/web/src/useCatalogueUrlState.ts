@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { Area, InventoryGrouping } from "./inventory-model.ts";
+import type { Area, InventoryGrouping, InventoryItem } from "./inventory-model.ts";
+
+type DrinkStatusFilter = "" | InventoryItem["drinkStatus"];
 
 export type CatalogueUrlState = {
   readonly area: Area;
-  readonly drinkStatusFilter: string;
+  readonly drinkStatusFilter: DrinkStatusFilter;
   readonly filter: string;
   readonly grouping: InventoryGrouping;
   readonly locationFilter: string;
@@ -34,7 +36,7 @@ export function catalogueStateFromUrl(url: URL): CatalogueUrlState {
   const grouping = url.searchParams.get("grouping");
   return {
     area: area === "captures" || area === "management" ? area : "inventory",
-    drinkStatusFilter: url.searchParams.get("drink") ?? "",
+    drinkStatusFilter: parseDrinkStatus(url.searchParams.get("drink")),
     filter: url.searchParams.get("q") ?? "",
     grouping: grouping === "storage" ? "storage" : "winery",
     locationFilter: url.searchParams.get("location") ?? "",
@@ -90,7 +92,7 @@ export function useCatalogueUrlState(): CatalogueUrlController {
       update("area", value, "push");
     },
     setDrinkStatusFilter: (value: string): void => {
-      update("drinkStatusFilter", value, "replace");
+      update("drinkStatusFilter", parseDrinkStatus(value), "replace");
     },
     setFilter: (value: string): void => {
       update("filter", value, "replace");
@@ -105,6 +107,21 @@ export function useCatalogueUrlState(): CatalogueUrlController {
       update("varietalFilter", value, "replace");
     },
   };
+}
+
+function parseDrinkStatus(value: string | null): DrinkStatusFilter {
+  switch (value) {
+    case "drink-now":
+    case "drink-soon":
+    case "hold":
+    case "past-window":
+    case "unknown":
+      return value;
+    case null:
+      return "";
+    default:
+      return "";
+  }
 }
 
 function setOptionalParameter(url: URL, key: string, value: string, defaultValue = ""): void {

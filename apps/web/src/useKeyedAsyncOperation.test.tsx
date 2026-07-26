@@ -22,7 +22,9 @@ describe("useKeyedAsyncOperation", () => {
     let operation: Promise<void> | undefined;
     act(() => {
       operation = result.current.run("location-1", action);
+      void result.current.run("location-2", action);
     });
+    expect(action).toHaveBeenCalledTimes(1);
     expect(result.current.pendingKey).toBe("location-1");
 
     await act(async () => {
