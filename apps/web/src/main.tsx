@@ -1,6 +1,5 @@
-import { ClerkProvider } from "@clerk/react";
 import { Theme } from "@astryxdesign/core/theme";
-import { StrictMode } from "react";
+import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 // oxlint-disable-next-line import/no-unassigned-import -- Loads the self-hosted Figtree variable font.
 import "@fontsource-variable/figtree";
@@ -25,12 +24,18 @@ const publishableKey =
   envString("VITE_CLERK_PUBLISHABLE_KEY") ?? envString("CLERK_PUBLISHABLE_KEY");
 const isLocalDevHost =
   window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+const forceDevelopmentAuth = isLocalDevHost && envString("VITE_AUTH_MODE") === "development";
+
+const ClerkApp = lazy(async () => {
+  const module = await import("./ClerkApp.tsx");
+  return { default: module.ClerkApp };
+});
 
 createRoot(rootElement).render(
   <StrictMode>
     {/* oxlint-disable-next-line typescript/no-unsafe-assignment -- The CLI-generated declaration provides the runtime theme type. */}
     <Theme mode="system" theme={boozeTheme}>
-      {publishableKey === undefined && isLocalDevHost ? (
+      {(publishableKey === undefined && isLocalDevHost) || forceDevelopmentAuth ? (
         <App authMode="development" />
       ) : publishableKey === undefined ? (
         <main className="auth-shell">
@@ -40,9 +45,9 @@ createRoot(rootElement).render(
           </section>
         </main>
       ) : (
-        <ClerkProvider publishableKey={publishableKey}>
-          <App authMode="clerk" />
-        </ClerkProvider>
+        <Suspense fallback={<p role="status">Loading authentication…</p>}>
+          <ClerkApp publishableKey={publishableKey} />
+        </Suspense>
       )}
     </Theme>
   </StrictMode>,

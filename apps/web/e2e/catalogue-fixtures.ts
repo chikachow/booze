@@ -1,0 +1,95 @@
+const timestamp = "2026-07-25T00:00:00.000Z";
+
+export const sites = [
+  {
+    bottleCount: 1,
+    id: "site-owner",
+    locationCount: 2,
+    name: "Home cellar",
+    role: "owner",
+  },
+];
+
+export const locations = [
+  {
+    bottleCount: 1,
+    id: "location-rack",
+    locationType: "rack",
+    name: "Left rack",
+    parentId: null,
+    siteId: "site-owner",
+    siteName: "Home cellar",
+  },
+  {
+    bottleCount: 1,
+    id: "location-shelf",
+    locationType: "shelf",
+    name: "Top shelf",
+    parentId: "location-rack",
+    siteId: "site-owner",
+    siteName: "Home cellar",
+  },
+];
+
+export const bottles = [
+  {
+    addressQualification: null,
+    alcoholPercent: 13.5,
+    appellation: "Orange GI",
+    awards: [],
+    barcode: null,
+    baseName: "Pinnacle Series Shiraz",
+    bottleNotes: null,
+    bottleNumber: null,
+    brandName: "Rowlee",
+    classification: null,
+    country: "Australia",
+    createdAt: timestamp,
+    criticReviews: [],
+    description: "Deterministic browser fixture",
+    designation: "Pinnacle Series",
+    displayName: "Pinnacle Series Shiraz",
+    drinkFromYear: 2025,
+    drinkToYear: 2032,
+    drinkingAdvice: null,
+    grapeVarieties: ["Shiraz"],
+    id: "bottle-1",
+    labelText: null,
+    lotCode: null,
+    positionHint: "Row 3",
+    region: "Orange",
+    siteId: "site-owner",
+    siteName: "Home cellar",
+    sourceUrl: null,
+    status: "in_stock",
+    storageLocationId: "location-shelf",
+    storageLocationName: "Top shelf",
+    vintageLabel: "2023",
+    vintageYear: 2023,
+    volumeMl: 750,
+    wineColor: "Red",
+    wineNotes: null,
+    wineType: "Red wine",
+    wineVintageId: "vintage-1",
+    wineryName: "Rowlee Wines",
+  },
+];
+
+export const captures = [
+  {
+    createdAt: timestamp,
+    errorMessage: "Extraction needs review",
+    id: "capture-1",
+    images: [],
+    importedBottleIds: [],
+    latestRun: null,
+    positionHint: null,
+    quantity: 1,
+    siteId: "site-owner",
+    siteName: "Home cellar",
+    status: "needs_review",
+    storageLocationId: "location-rack",
+    storageLocationName: "Left rack",
+    updatedAt: timestamp,
+  },
+];
