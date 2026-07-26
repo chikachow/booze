@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/figtree";
 
 import { App } from "./App.tsx";
+import { LazyLoadErrorBoundary } from "./LazyLoadErrorBoundary.tsx";
 // oxlint-disable-next-line import/no-unassigned-import -- The compiled theme CSS must load once.
 import "./generated/booze.css";
 import { boozeTheme } from "./generated/booze.js";
@@ -45,9 +46,14 @@ createRoot(rootElement).render(
           </section>
         </main>
       ) : (
-        <Suspense fallback={<p role="status">Loading authentication…</p>}>
-          <ClerkApp publishableKey={publishableKey} />
-        </Suspense>
+        <LazyLoadErrorBoundary
+          description="Reload the latest application files and try signing in again."
+          title="Authentication could not be loaded"
+        >
+          <Suspense fallback={<p role="status">Loading authentication…</p>}>
+            <ClerkApp publishableKey={publishableKey} />
+          </Suspense>
+        </LazyLoadErrorBoundary>
       )}
     </Theme>
   </StrictMode>,
