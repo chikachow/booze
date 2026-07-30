@@ -79,8 +79,8 @@ importers:
         version: 4.4.3
     devDependencies:
       '@astryxdesign/cli':
-        specifier: 0.1.8
-        version: 0.1.8(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.1.8(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)
+        specifier: 0.1.9
+        version: 0.1.9(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.1.8(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)
       '@cloudflare/vite-plugin':
         specifier: 1.39.0
         version: 1.39.0(vite@8.0.16(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4))(workerd@1.20260526.1)(wrangler@4.95.0(@cloudflare/workers-types@5.20260723.1))
@@ -163,8 +163,8 @@ packages:
   '@asamuzakjp/nwsapi@2.3.9':
     resolution: {integrity: sha512-n8GuYSrI9bF7FFZ/SjhwevlHc8xaVlb/7HmHelnc/PZXBD2ZR49NnN9sMMuDdEGPeeRQ5d0hqlSlEpgCX3Wl0Q==}
 
-  '@astryxdesign/cli@0.1.8':
-    resolution: {integrity: sha512-8q3o415RGZ+UvZ4HVfXJFHB9ehNk6iw3akyvXOe7QFfu3fkKPjRzZZLJaxiiTPUdbxMaf16jOzSjfFaETqEouQ==}
+  '@astryxdesign/cli@0.1.9':
+    resolution: {integrity: sha512-rVTSV4WozsPE2upxzPl2tdk1+gbWzMZ/mSXPqu7IFOEypddxjdpUm/QRbfcK+xIAVuC7AZu644aO8eh+heILQQ==}
     hasBin: true
     peerDependencies:
       '@astryxdesign/charts': '*'
@@ -2006,8 +2006,8 @@ packages:
     resolution: {integrity: sha512-s7iGf5GaVMxEG0ENN9x+xTr7GFZCb1ZP/1uATUpCEK2X78nDB3RwbtFCo9pGAf9ru+VwoQ464DkaLEeRM08wJA==}
     engines: {node: '>=4'}
 
-  baseline-browser-mapping@2.11.1:
-    resolution: {integrity: sha512-HYXq73DDpCtNzOmrFsm9eSwCvWCql0RzqjpDzXN9EadiLJ4DNat0nsZ/Bzmy+Ud12mb4/zKDY0cQ805ZzN+i0A==}
+  baseline-browser-mapping@2.11.6:
+    resolution: {integrity: sha512-69D/imtToCsIcAl8WBS2YaRwA4jO/j0HhU+hELqMEu9f54MoUtI6+XH5mrKU8rEFNEk/Ui1I2MK4/JkWacclGw==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -2244,8 +2244,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electron-to-chromium@1.5.396:
-    resolution: {integrity: sha512-yHiw2Y3C3H9U6TMbOfoWK/BPreiOPXRfTWPBwQBoZG6/8TB6eOPnsy5oaRYuatR7Fw2SJ4kKforgufeo7fq0EQ==}
+  electron-to-chromium@1.5.398:
+    resolution: {integrity: sha512-AsvhAxopJGh6museTDMIjn6JpDYOfgu4RLlygomt87MUwBUqTfd/1EiPtx10/LZE8xpTvkP2E9Gafq7lkLtodQ==}
 
   encodeurl@2.0.0:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
@@ -2364,12 +2364,12 @@ packages:
     resolution: {integrity: sha512-1yD6RmLI1XBfxugvORwlck6f75tYL+iR0jqwsOrOxMZyGYqUuDhJ0l4AXdO1iX/FTs9cBAMEk1gWSEx1kSbylg==}
     engines: {node: '>=6'}
 
-  flow-estree@0.323.0:
-    resolution: {integrity: sha512-VuCvqb38ueB7u9Xnfuj/uV9xWaqRM1XX8fUbch3Q1perZp1BZHAcGKcSkc57RdVXaDrjsfgNOiSEmlvx8Yhk4Q==}
+  flow-estree@0.324.0:
+    resolution: {integrity: sha512-As9kMmy7BhCHr3LZ48Y2eJXL8aceNCFN8kJFZxnr862e/P0q9zBO6b5rFJEfKdry3ZjPtaXcgG7ug8yeWQX6qw==}
     engines: {node: '>=18'}
 
-  flow-parser@0.323.0:
-    resolution: {integrity: sha512-uTw5ffLYxQDnSe4Ch5mo1Sp7kFOrhOglz3nqgpQRrYpt4ucQTxrQRCLdC0F1hyhcIK7j5GjdxzV1d4DN68eDzA==}
+  flow-parser@0.324.0:
+    resolution: {integrity: sha512-0+8EOQ3qagZGO+0Hw6L4PN23vzL6OSrRODp7BZJwirkJxOZCAgJYUdRIQO/VSklUpOPaR7Zf+SAnlnYD9FI+Mg==}
     engines: {node: '>=0.4.0'}
 
   forwarded@0.2.0:
@@ -2790,6 +2790,10 @@ packages:
 
   picomatch@4.0.4:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
+    engines: {node: '>=12'}
+
+  picomatch@4.0.5:
+    resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
   pify@4.0.1:
@@ -3301,7 +3305,7 @@ snapshots:
 
   '@asamuzakjp/nwsapi@2.3.9': {}
 
-  '@astryxdesign/cli@0.1.8(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.1.8(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)':
+  '@astryxdesign/cli@0.1.9(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.1.8(@astryxdesign/core@0.1.8(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)':
     dependencies:
       commander: 12.1.0
       gpt-tokenizer: 3.4.0
@@ -4592,7 +4596,7 @@ snapshots:
 
   axe-core@4.12.1: {}
 
-  baseline-browser-mapping@2.11.1: {}
+  baseline-browser-mapping@2.11.6: {}
 
   bidi-js@1.0.3:
     dependencies:
@@ -4616,9 +4620,9 @@ snapshots:
 
   browserslist@4.28.7:
     dependencies:
-      baseline-browser-mapping: 2.11.1
+      baseline-browser-mapping: 2.11.6
       caniuse-lite: 1.0.30001806
-      electron-to-chromium: 1.5.396
+      electron-to-chromium: 1.5.398
       node-releases: 2.0.51
       update-browserslist-db: 1.2.3(browserslist@4.28.7)
 
@@ -4728,7 +4732,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electron-to-chromium@1.5.396: {}
+  electron-to-chromium@1.5.398: {}
 
   encodeurl@2.0.0: {}
 
@@ -4950,11 +4954,11 @@ snapshots:
     dependencies:
       locate-path: 3.0.0
 
-  flow-estree@0.323.0: {}
+  flow-estree@0.324.0: {}
 
-  flow-parser@0.323.0:
+  flow-parser@0.324.0:
     dependencies:
-      flow-estree: 0.323.0
+      flow-estree: 0.324.0
 
   forwarded@0.2.0: {}
 
@@ -5077,11 +5081,11 @@ snapshots:
       '@babel/preset-flow': 7.29.7(@babel/core@7.29.7)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.7)
       '@babel/register': 7.29.7(@babel/core@7.29.7)
-      flow-parser: 0.323.0
+      flow-parser: 0.324.0
       graceful-fs: 4.2.11
       neo-async: 2.6.2
       picocolors: 1.1.1
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       recast: 0.23.12
       tmp: 0.2.7
       write-file-atomic: 5.0.1
@@ -5342,6 +5346,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.4: {}
+
+  picomatch@4.0.5: {}
 
   pify@4.0.1: {}
 
