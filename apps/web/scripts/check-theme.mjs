@@ -32,9 +32,10 @@ export function checkTheme() {
   const temporaryDirectory = mkdtempSync(path.join(tmpdir(), "booze-theme-"));
   try {
     execFileSync(
-      process.execPath,
+      "pnpm",
       [
-        "node_modules/@astryxdesign/cli/bin/astryx.mjs",
+        "exec",
+        "astryx",
         "theme",
         "build",
         "src/booze-theme.ts",

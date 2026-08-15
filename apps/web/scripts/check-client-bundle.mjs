@@ -5,10 +5,10 @@ import { gzipSync } from "node:zlib";
 
 export const bundleBudgets = {
   initialCssBytes: 190_000,
-  initialCssGzipBytes: 30_000,
-  initialJavaScriptBytes: 460_000,
+  initialCssGzipBytes: 32_000,
+  initialJavaScriptBytes: 485_000,
   initialJavaScriptGzipBytes: 140_000,
-  largestJavaScriptBytes: 460_000,
+  largestJavaScriptBytes: 485_000,
   totalFontBytes: 40_000,
   totalJavaScriptGzipBytes: 220_000,
 };

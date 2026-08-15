@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "astryx": "node node_modules/@astryxdesign/cli/bin/astryx.mjs",
+    "astryx": "pnpm exec astryx",
     "build": "WRANGLER_WRITE_LOGS=false vite build && pnpm run bundle:check",
     "bundle:check": "node scripts/check-client-bundle.mjs",
     "deploy": "pnpm run build && WRANGLER_WRITE_LOGS=false wrangler deploy",
