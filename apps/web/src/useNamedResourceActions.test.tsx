@@ -202,11 +202,9 @@ function setup(kind: NamedResourceKind) {
   const completeMutation = vi.fn(
     async (_completion: MutationCompletion): Promise<void> => undefined,
   );
-  const getAuthHeaders = vi.fn(
-    async (): Promise<Record<string, string>> => ({
-      authorization: "Bearer test",
-    }),
-  );
+  const getAuthHeaders = vi.fn(async (): Promise<Record<string, string>> => ({
+    authorization: "Bearer test",
+  }));
   const setStatus = vi.fn<(status: string) => void>();
   const hook = renderHook(() =>
     useNamedResourceActions({
