@@ -10,6 +10,7 @@ updates:
       timezone: "Australia/Sydney"
     cooldown:
       default-days: 2
+    open-pull-requests-limit: 10
     commit-message:
       prefix: "chore(github/workflows)"
 
@@ -21,7 +22,45 @@ updates:
       timezone: "Australia/Sydney"
     cooldown:
       default-days: 2
+    open-pull-requests-limit: 10
     versioning-strategy: increase
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    groups:
+      astryx-design:
+        patterns:
+          - "@astryxdesign/*"
+      clerk:
+        patterns:
+          - "@clerk/*"
+      cloudflare-workers-sdk:
+        patterns:
+          - "@cloudflare/vite-plugin"
+          - "@cloudflare/workers-types"
+          - wrangler
+      drizzle:
+        patterns:
+          - drizzle-kit
+          - drizzle-orm
+      oxc-tooling:
+        patterns:
+          - oxfmt
+          - oxlint
+          - oxlint-tsgolint
+      react:
+        patterns:
+          - "@types/react"
+          - "@types/react-dom"
+          - react
+          - react-dom
+      testing-library:
+        patterns:
+          - "@testing-library/*"
+      tsconfig-presets:
+        patterns:
+          - "@tsconfig/*"
+      vite:
+        patterns:
+          - "@vitejs/plugin-react"
+          - vite
