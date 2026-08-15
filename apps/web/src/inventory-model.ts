@@ -400,6 +400,7 @@ export function parseOptionalYear(value: string): number | undefined {
   if (trimmed === "") {
     return undefined;
   }
+  // oxlint-disable-next-line unicorn/prefer-number-coercion -- Preserve acceptance of a leading year in user input.
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isNaN(parsed) ? undefined : parsed;
 }
@@ -409,6 +410,7 @@ export function parseOptionalDecimal(value: string): number | undefined {
   if (normalised === "") {
     return undefined;
   }
+  // oxlint-disable-next-line unicorn/prefer-number-coercion -- Preserve acceptance of a leading decimal in user input.
   const parsed = Number.parseFloat(normalised);
   return Number.isNaN(parsed) ? undefined : parsed;
 }
@@ -418,6 +420,7 @@ export function parseOptionalVolumeMl(value: string): number | undefined {
   if (normalised === "") {
     return undefined;
   }
+  // oxlint-disable-next-line unicorn/prefer-number-coercion -- Preserve acceptance of a leading volume in user input.
   const parsed = Number.parseInt(normalised.replace("ml", ""), 10);
   return Number.isNaN(parsed) ? undefined : parsed;
 }

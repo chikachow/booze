@@ -168,8 +168,6 @@ export function decideCaptureImport({
 
   reasons.push(
     ...combined.field_disagreements.map((disagreement) => `Field disagreement: ${disagreement}`),
-  );
-  reasons.push(
     ...Object.entries(extractors)
       .filter(([, extractor]) => !extractor.bottle_same_across_images)
       .map(([extractorId]) => `${extractorId} found that the images may show different bottles.`),
@@ -294,7 +292,7 @@ function parseYear(value: string | undefined): number | undefined {
   if (matched === undefined || matched === null) {
     return undefined;
   }
-  const year = Number.parseInt(matched[0], 10);
+  const year = Math.trunc(Number(matched[0]));
   return Number.isNaN(year) ? undefined : year;
 }
 
@@ -303,7 +301,7 @@ function parseDecimal(value: string | undefined): number | undefined {
   if (matched === undefined || matched === null) {
     return undefined;
   }
-  const decimal = Number.parseFloat(matched[0]);
+  const decimal = Number(matched[0]);
   return Number.isNaN(decimal) ? undefined : decimal;
 }
 

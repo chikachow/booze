@@ -17,6 +17,24 @@
     "node_modules/**",
     "**/generated/**"
   ],
+  "overrides": [
+    {
+      "files": ["apps/web/worker/**/*.test.ts"],
+      "rules": {
+        "node/no-top-level-await": "off"
+      }
+    },
+    {
+      "files": [
+        "apps/web/src/test/setup.ts",
+        "apps/web/worker/mcp.test.ts",
+        "packages/db/src/client.ts"
+      ],
+      "rules": {
+        "typescript/no-deprecated": "off"
+      }
+    }
+  ],
   "rules": {
     "eslint/max-lines": "off",
     "eslint/max-lines-per-function": "off",

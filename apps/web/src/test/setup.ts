@@ -30,26 +30,24 @@ HTMLDialogElement.prototype.close = function close(): void {
 
 Object.defineProperty(window, "matchMedia", {
   configurable: true,
-  value: vi.fn(
-    (query: string): MediaQueryList => ({
-      addEventListener: () => {
-        // Media queries are static in JSDOM tests.
-      },
-      addListener: () => {
-        // Legacy media-query listeners are static in JSDOM tests.
-      },
-      dispatchEvent: vi.fn(() => false),
-      matches: false,
-      media: query,
-      onchange: null,
-      removeEventListener: () => {
-        // Media queries are static in JSDOM tests.
-      },
-      removeListener: () => {
-        // Legacy media-query listeners are static in JSDOM tests.
-      },
-    }),
-  ),
+  value: vi.fn((query: string): MediaQueryList => ({
+    addEventListener: () => {
+      // Media queries are static in JSDOM tests.
+    },
+    addListener: () => {
+      // Legacy media-query listeners are static in JSDOM tests.
+    },
+    dispatchEvent: vi.fn(() => false),
+    matches: false,
+    media: query,
+    onchange: null,
+    removeEventListener: () => {
+      // Media queries are static in JSDOM tests.
+    },
+    removeListener: () => {
+      // Legacy media-query listeners are static in JSDOM tests.
+    },
+  })),
 });
 
 Object.defineProperty(window, "scrollTo", {
