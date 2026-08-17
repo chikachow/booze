@@ -61,7 +61,7 @@ importers:
         version: 0.19.0
       drizzle-orm:
         specifier: 0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260813.1)
+        version: 0.45.2(@cloudflare/workers-types@5.20260815.1)
       hono:
         specifier: 4.13.2
         version: 4.13.2
@@ -83,10 +83,10 @@ importers:
         version: 0.3.0(@astryxdesign/core@0.3.0(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@astryxdesign/theme-neutral@0.3.0(@astryxdesign/core@0.3.0(@stylexjs/stylex@0.19.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8))(gpt-tokenizer@3.4.0)
       '@cloudflare/vite-plugin':
         specifier: 1.52.1
-        version: 1.52.1(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.4))(wrangler@4.123.0(@cloudflare/workers-types@5.20260813.1))
+        version: 1.52.1(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.4))(wrangler@4.123.0(@cloudflare/workers-types@5.20260815.1))
       '@cloudflare/workers-types':
-        specifier: 5.20260813.1
-        version: 5.20260813.1
+        specifier: 5.20260815.1
+        version: 5.20260815.1
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
@@ -128,17 +128,17 @@ importers:
         version: 4.1.10(@types/node@25.9.5)(jsdom@30.0.1)(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.4))
       wrangler:
         specifier: 4.123.0
-        version: 4.123.0(@cloudflare/workers-types@5.20260813.1)
+        version: 4.123.0(@cloudflare/workers-types@5.20260815.1)
 
   packages/db:
     dependencies:
       drizzle-orm:
         specifier: 0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260813.1)
+        version: 0.45.2(@cloudflare/workers-types@5.20260815.1)
     devDependencies:
       '@cloudflare/workers-types':
-        specifier: 5.20260813.1
-        version: 5.20260813.1
+        specifier: 5.20260815.1
+        version: 5.20260815.1
       drizzle-kit:
         specifier: 0.31.10
         version: 0.31.10
@@ -446,8 +446,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@5.20260813.1':
-    resolution: {integrity: sha512-RQNfm7xD10hNHEQZFxQPmyGMJ9+aDGPcdFZ0x1LtmjRoLFcgZkGvfaqJAbOMQBAUFSESO3bYJS4p9mOLv28Ihg==}
+  '@cloudflare/workers-types@5.20260815.1':
+    resolution: {integrity: sha512-btpW8rEgeJKcxDlBWKxzjLLUHxzUWqXZY8O+DmM6NcSHadUQN5I71z6Q/yAKCTJyGS7adBpXzlsZSFbosLnECQ==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -3576,14 +3576,14 @@ snapshots:
     optionalDependencies:
       workerd: 1.20260811.1
 
-  '@cloudflare/vite-plugin@1.52.1(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.4))(wrangler@4.123.0(@cloudflare/workers-types@5.20260813.1))':
+  '@cloudflare/vite-plugin@1.52.1(vite@8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.4))(wrangler@4.123.0(@cloudflare/workers-types@5.20260815.1))':
     dependencies:
       '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260811.1)
       miniflare: 5.20260811.1-alpha
       unenv: 2.0.0-rc.24
       vite: 8.2.1(@types/node@25.9.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.22.4)
       workerd: 1.20260811.1
-      wrangler: 4.123.0(@cloudflare/workers-types@5.20260813.1)
+      wrangler: 4.123.0(@cloudflare/workers-types@5.20260815.1)
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
@@ -3604,7 +3604,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260811.1':
     optional: true
 
-  '@cloudflare/workers-types@5.20260813.1': {}
+  '@cloudflare/workers-types@5.20260815.1': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -4659,9 +4659,9 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.22.4
 
-  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260813.1):
+  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260815.1):
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260813.1
+      '@cloudflare/workers-types': 5.20260815.1
 
   dunder-proto@1.0.1:
     dependencies:
@@ -5717,7 +5717,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260811.1
       '@cloudflare/workerd-windows-64': 1.20260811.1
 
-  wrangler@4.123.0(@cloudflare/workers-types@5.20260813.1):
+  wrangler@4.123.0(@cloudflare/workers-types@5.20260815.1):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260811.1)
@@ -5728,7 +5728,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20260811.1
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260813.1
+      '@cloudflare/workers-types': 5.20260815.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - bufferutil
