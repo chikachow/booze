@@ -35,8 +35,8 @@
   },
   "devDependencies": {
     "@astryxdesign/cli": "0.3.0",
-    "@cloudflare/vite-plugin": "1.54.0",
-    "@cloudflare/workers-types": "5.20260826.1",
+    "@cloudflare/vite-plugin": "1.54.2",
+    "@cloudflare/workers-types": "5.20260829.1",
     "@playwright/test": "1.62.1",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "7.0.1",
@@ -50,6 +50,6 @@
     "jsdom": "30.0.1",
     "vite": "8.2.2",
     "vitest": "4.1.11",
-    "wrangler": "4.126.0"
+    "wrangler": "4.127.1"
   }
 }
