@@ -45,8 +45,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/db
       '@clerk/backend':
-        specifier: 3.16.13
-        version: 3.16.13(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: 3.17.0
+        version: 3.17.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@clerk/react':
         specifier: 6.14.8
         version: 6.14.8(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -373,8 +373,8 @@ packages:
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
 
-  '@clerk/backend@3.16.13':
-    resolution: {integrity: sha512-L6+48rB8WVoxoiFDKv49KWxc58aGwuYnbuHBxNdqgTZO6PTyEH3KLpnqI/WaCqIxQW56MJE24EJREsU8WlWrWw==}
+  '@clerk/backend@3.17.0':
+    resolution: {integrity: sha512-AHW0ZIUvozeQlVN2Ffa5V/iNn2Crw9ysC4yNzT8Jva7M1ZJs67v2/v2GwHBFmJhNEYAXtKYlEkv395kPyxlkqw==}
     engines: {node: '>=20.9.0'}
 
   '@clerk/react@6.14.8':
@@ -3550,7 +3550,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@clerk/backend@3.16.13(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@clerk/backend@3.17.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@clerk/shared': 4.30.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       standardwebhooks: 1.1.1
