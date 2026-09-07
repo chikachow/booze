@@ -13,7 +13,6 @@ import {
   deleteCriticReview,
   listCriticReviews,
   listReviewSources,
-  reviewSourceIdForInput,
   upsertCriticReview,
   type CriticReviewResource,
   type ReviewSourceResource,
@@ -114,7 +113,10 @@ export function registerCriticReviewTools({
         sourceType: input.sourceType,
         url: input.url ?? undefined,
       };
-      const persistedReviewSourceId = reviewSourceIdForInput(sourceInput);
+      const beforeSource = (
+        await listReviewSources({ database, siteId: input.siteId, userId })
+      ).find((source) => source.siteId === input.siteId && source.name === input.name.trim());
+      const persistedReviewSourceId = beforeSource?.id ?? generatedId("review-source");
       const reviewSourceId = mcpEntityId("review_source", persistedReviewSourceId);
       const site = await database
         .select({ name: sites.name })
@@ -125,9 +127,6 @@ export function registerCriticReviewTools({
       if (siteName === undefined) {
         throw new HTTPException(404, { message: "Site not found" });
       }
-      const beforeSource = (
-        await listReviewSources({ database, siteId: input.siteId, userId })
-      ).find((source) => source.id === persistedReviewSourceId);
       const before = beforeSource === undefined ? {} : reviewSourceSummary(beforeSource);
       const afterAudit = {
         isActive: input.isActive,
@@ -404,17 +403,17 @@ async function resolveUpsertReviewSource({
   if (reviewSourceId === undefined && sourceInput === null) {
     throw new HTTPException(400, { message: "Review source is required" });
   }
-  const persistedReviewSourceId =
-    sourceInput === null
-      ? await resolveReviewSourceId({
-          database,
-          reviewSourceId: reviewSourceId ?? "",
-          userId,
-        })
-      : reviewSourceIdForInput(sourceInput);
-  const source = (await listReviewSources({ database, siteId, userId })).find(
-    (candidate) => candidate.id === persistedReviewSourceId,
-  );
+  const sources = await listReviewSources({ database, siteId, userId });
+  const source =
+    reviewSourceId === undefined
+      ? sources.find(
+          (candidate) => candidate.siteId === siteId && candidate.name === reviewSourceName?.trim(),
+        )
+      : sources.find((candidate) => mcpEntityId("review_source", candidate.id) === reviewSourceId);
+  if ((reviewSourceId !== undefined && source === undefined) || source?.isActive === false) {
+    throw new HTTPException(400, { message: "Review source is not available for this site" });
+  }
+  const persistedReviewSourceId = source?.id ?? generatedId("review-source");
   const resolvedReviewSourceName = source?.name ?? reviewSourceName;
   if (resolvedReviewSourceName === undefined) {
     throw new HTTPException(400, { message: "Review source is required" });
@@ -422,7 +421,7 @@ async function resolveUpsertReviewSource({
   return {
     persistedReviewSourceId,
     reviewSourceName: resolvedReviewSourceName,
-    sourceInput,
+    sourceInput: source === undefined ? sourceInput : null,
   };
 }
 

@@ -5,7 +5,12 @@ import type { FocusEvent, ReactElement } from "react";
 import { useController, type Control, type FieldPath, type RegisterOptions } from "react-hook-form";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
-import type { FormState } from "./inventory-model.ts";
+import {
+  parseOptionalDecimal,
+  parseOptionalVolumeMl,
+  parseOptionalYear,
+  type FormState,
+} from "./inventory-model.ts";
 
 export type BottleFormFieldProps = {
   readonly control: Control<FormState>;
@@ -13,21 +18,45 @@ export type BottleFormFieldProps = {
   readonly name: FieldPath<FormState>;
   readonly placeholder?: string;
   readonly required?: boolean;
+  readonly disabled?: boolean;
+  readonly description?: string | undefined;
 };
 
 function rulesFor({
   label,
+  name,
   required,
 }: {
   readonly label: string;
+  readonly name: FieldPath<FormState>;
   readonly required: boolean | undefined;
 }): RegisterOptions<FormState> {
-  return required === true
-    ? {
-        validate: (value) =>
-          typeof value === "string" && value.trim() !== "" ? true : `${label} is required.`,
+  return {
+    validate: (value) => {
+      if (typeof value !== "string" || value.trim() === "") {
+        return required === true ? `${label} is required.` : true;
       }
-    : {};
+      if (name === "vintageYear" || name === "drinkFromYear" || name === "drinkToYear") {
+        const year = parseOptionalYear(value);
+        return year !== undefined && year >= 1800 && year <= 2200
+          ? true
+          : `${label} must be a whole year from 1800 to 2200.`;
+      }
+      if (name === "alcoholPercent") {
+        const alcohol = parseOptionalDecimal(value);
+        return alcohol !== undefined && alcohol >= 0 && alcohol <= 100
+          ? true
+          : "Alcohol must be a percentage from 0 to 100.";
+      }
+      if (name === "bottleVolumeMl") {
+        const volume = parseOptionalVolumeMl(value);
+        return volume !== undefined && volume >= 1 && volume <= 30_000
+          ? true
+          : "Bottle size must be a whole number from 1 to 30000 ml.";
+      }
+      return true;
+    },
+  };
 }
 
 export function BottleTextInput({
@@ -36,6 +65,8 @@ export function BottleTextInput({
   name,
   placeholder,
   required = false,
+  disabled = false,
+  description,
 }: BottleFormFieldProps): ReactElement {
   const { field, status } = useBottleField({ control, label, name, required });
 
@@ -44,6 +75,8 @@ export function BottleTextInput({
       ref={field.ref}
       autoComplete="off"
       htmlName={field.name}
+      isDisabled={disabled}
+      description={description}
       isRequired={required}
       label={label}
       placeholder={placeholder}
@@ -83,7 +116,7 @@ function useBottleField({ control, label, name, required }: BottleFormFieldProps
   const { field, fieldState } = useController({
     control,
     name,
-    rules: rulesFor({ label, required }),
+    rules: rulesFor({ label, name, required }),
   });
   return {
     field,

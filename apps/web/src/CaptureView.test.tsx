@@ -4,8 +4,13 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureArea, type CaptureSubmitResult } from "./CaptureView.tsx";
-import { capturesFixture, locationsFixture, sitesFixture } from "./test/catalogue-fixtures.ts";
-import type { CaptureFormState } from "./inventory-model.ts";
+import {
+  captureFixture,
+  capturesFixture,
+  locationsFixture,
+  sitesFixture,
+} from "./test/catalogue-fixtures.ts";
+import type { CaptureFormState, CaptureResource } from "./inventory-model.ts";
 
 const captureForm = {
   location: "",
@@ -25,17 +30,19 @@ async function resolvedCapture(): Promise<CaptureSubmitResult> {
 }
 
 function renderCapture({
+  captures = capturesFixture,
   onDelete = resolvedTrue,
   onImport = resolvedTrue,
   onRetry = resolvedTrue,
 }: {
+  readonly captures?: readonly CaptureResource[];
   readonly onDelete?: (captureId: string) => Promise<boolean>;
   readonly onImport?: (captureId: string, wineVintageId?: string) => Promise<boolean>;
   readonly onRetry?: (captureId: string) => Promise<boolean>;
 } = {}) {
   return render(
     <CaptureArea
-      captures={capturesFixture}
+      captures={captures}
       form={captureForm}
       isSaving={false}
       locations={locationsFixture}
@@ -61,6 +68,29 @@ afterEach(() => {
 });
 
 describe("CaptureArea photo picker", () => {
+  it("opens retained original photos for checking label evidence", () => {
+    renderCapture({
+      captures: [
+        captureFixture({
+          images: [
+            {
+              imageAssetId: "image-1",
+              originalFilename: "front.jpg",
+              sortOrder: 0,
+              contentType: "image/jpeg",
+              sizeBytes: 1024,
+              imageUrl: "/api/bottle-captures/capture-1/images/image-1",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByRole("link", { name: "Open original photo front.jpg" })).toHaveAttribute(
+      "href",
+      "/api/bottle-captures/capture-1/images/image-1?original=1",
+    );
+  });
+
   it("accumulates sequential selections and gives explicit cap feedback", async () => {
     const user = userEvent.setup();
     renderCapture();

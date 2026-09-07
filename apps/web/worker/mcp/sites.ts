@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { decodePageCursor, pageFromRows, pageLimit, type Page } from "./pagination.ts";
 import type { listSitesInputSchema, siteSummarySchema } from "./schemas.ts";
-import { andAll, cursorPredicate, optionalContains } from "./sql.ts";
+import { andAll, cursorPredicate, optionalContains, sqliteLower } from "./sql.ts";
 
 export type SiteSummary = z.infer<typeof siteSummarySchema>;
 
@@ -69,7 +69,7 @@ export async function listSites({
   const siteRows = rows.map((row) => siteSummaryFromRow(row));
 
   return pageFromRows({
-    cursorForItem: (site) => ({ site: site.site.toLowerCase(), siteId: site.siteId }),
+    cursorForItem: (site) => ({ site: sqliteLower(site.site), siteId: site.siteId }),
     input,
     items: siteRows,
     toolName: listSitesToolName,

@@ -13,7 +13,7 @@ import { z } from "zod";
 import { mcpEntityId } from "./ids.ts";
 import { decodePageCursor, pageFromRows, pageLimit, type Page } from "./pagination.ts";
 import type { listStorageLocationsInputSchema, storageLocationSummarySchema } from "./schemas.ts";
-import { andAll, containsAnyText, cursorPredicate, optionalEquals } from "./sql.ts";
+import { andAll, containsAnyText, cursorPredicate, optionalEquals, sqliteLower } from "./sql.ts";
 
 const listStorageLocationsToolName = "cellar.list_storage_locations";
 const listStorageLocationsCursorSchema = z.strictObject({
@@ -119,9 +119,9 @@ export async function listStorageLocations({
 
   const rowPage = pageFromRows({
     cursorForItem: (row) => ({
-      location: row.locationName.toLowerCase(),
+      location: sqliteLower(row.locationName),
       locationId: row.id,
-      site: row.siteName.toLowerCase(),
+      site: sqliteLower(row.siteName),
     }),
     input,
     items: rows,

@@ -49,7 +49,7 @@ export async function getInventorySummary({
         wineVintages,
         and(eq(bottles.siteId, wineVintages.siteId), eq(bottles.wineVintageId, wineVintages.id)),
       )
-      .where(eq(siteMemberships.userId, userId))
+      .where(and(eq(siteMemberships.userId, userId), eq(bottles.status, "in_stock")))
       .groupBy(sites.id, sites.name, wineVintages.drinkFromYear, wineVintages.drinkToYear)
       .orderBy(asc(sites.name)),
   ]);

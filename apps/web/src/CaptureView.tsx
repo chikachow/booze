@@ -4,6 +4,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Link } from "@astryxdesign/core/Link";
 import { NumberInput } from "@astryxdesign/core/NumberInput";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
@@ -30,6 +31,7 @@ import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import { ProgressiveListStatus, PROGRESSIVE_PAGE_SIZE } from "./ProgressiveListStatus.tsx";
 import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
 import { captureStatus } from "./capture-status.ts";
+import { CaptureReview, hasCaptureCandidate } from "./CaptureReview.tsx";
 
 type CaptureAreaProps = {
   readonly captures: readonly CaptureResource[];
@@ -149,6 +151,7 @@ export function CaptureArea({
                   site: selection.site,
                   storageLocationId: selection.storageLocationId,
                   location: selection.location,
+                  position: selection.storageLocationId === "" ? "" : form.position,
                 });
               }}
             />
@@ -156,6 +159,12 @@ export function CaptureArea({
               <TextInput
                 autoComplete="off"
                 htmlName="capturePosition"
+                isDisabled={form.storageLocationId === ""}
+                description={
+                  form.storageLocationId === ""
+                    ? "Choose a location to add a position note."
+                    : undefined
+                }
                 label="Position note"
                 placeholder="Row 3, slot 2"
                 value={form.position}
@@ -342,9 +351,12 @@ function CaptureDashboard({
   const sectionHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const actionableCaptures = captures.filter((capture) => isActionableCapture(capture));
-  const displayedCaptures = showAll ? captures : actionableCaptures;
+  const displayedCaptures = showAll
+    ? captures
+    : captures.filter((capture) => capture.status !== "imported");
   const visibleCaptures = displayedCaptures.slice(0, visibleCount);
-  const hiddenCaptureCount = captures.length - actionableCaptures.length;
+  const hiddenCaptureCount = captures.filter((capture) => capture.status === "imported").length;
+  const processingCaptureCount = captures.length - hiddenCaptureCount - actionableCaptures.length;
 
   return (
     <>
@@ -357,6 +369,9 @@ function CaptureDashboard({
             {actionableCaptures.length === 0
               ? "No captures need action."
               : `${actionableCaptures.length} capture${actionableCaptures.length === 1 ? "" : "s"} need action.`}
+            {processingCaptureCount === 0
+              ? null
+              : ` ${processingCaptureCount} processing. Progress updates automatically.`}
           </p>
         </div>
         {hiddenCaptureCount === 0 ? null : (
@@ -377,7 +392,7 @@ function CaptureDashboard({
         />
       ) : displayedCaptures.length === 0 ? (
         <EmptyState
-          description={`${hiddenCaptureCount} successful capture imported without review.`}
+          description={`${hiddenCaptureCount} capture${hiddenCaptureCount === 1 ? " has" : "s have"} been imported.`}
           title="Nothing to action"
         />
       ) : (
@@ -512,11 +527,12 @@ function CaptureCard({
           </dd>
         </div>
       </dl>
+      {capture.status === "needs_review" ? <CaptureReview run={capture.latestRun} /> : null}
       <div className="card-actions">
         {canWrite && capture.status === "needs_review"
           ? wineVintageCandidates(capture.latestRun?.matchResult).map((candidate) => (
               <Button
-                isDisabled={pendingAction !== null}
+                isDisabled={pendingAction !== null || !hasCaptureCandidate(capture.latestRun)}
                 isLoading={isCaptureAction(pendingAction, {
                   kind: "import",
                   wineVintageId: candidate.id,
@@ -534,7 +550,7 @@ function CaptureCard({
           : null}
         {canWrite && capture.status === "needs_review" ? (
           <Button
-            isDisabled={pendingAction !== null}
+            isDisabled={pendingAction !== null || !hasCaptureCandidate(capture.latestRun)}
             isLoading={isCaptureAction(pendingAction, { kind: "create" })}
             label="Create new"
             size="sm"
@@ -631,20 +647,32 @@ function compactIssuePreview(message: string): string {
 }
 
 function captureStoragePath(capture: CaptureResource, locations: readonly LocationItem[]): string {
-  return `${capture.siteName} / ${storageLocationLabel({
-    locationId: capture.storageLocationId,
-    locationName: capture.storageLocationName,
-    locations,
-  })}`;
+  return [
+    capture.siteName,
+    storageLocationLabel({
+      locationId: capture.storageLocationId,
+      locationName: capture.storageLocationName,
+      locations,
+    }),
+    capture.positionHint,
+  ]
+    .filter((value) => value !== null && value !== "")
+    .join(" / ");
 }
 
 function CaptureThumbnail({ image }: { readonly image: CaptureImageResource }): ReactElement {
+  const filename = image.originalFilename ?? "Bottle photo";
   return (
-    <Thumbnail
-      alt={image.originalFilename ?? "Bottle photo"}
-      label={image.originalFilename ?? "Bottle photo"}
-      src={image.imageUrl}
-    />
+    <div className="capture-photo">
+      <Thumbnail alt={filename} label={filename} src={image.imageUrl} />
+      <Link
+        aria-label={`Open original photo ${filename}`}
+        isExternalLink
+        href={`${image.imageUrl}${image.imageUrl.includes("?") ? "&" : "?"}original=1`}
+      >
+        Open original
+      </Link>
+    </div>
   );
 }
 

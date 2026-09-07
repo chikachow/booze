@@ -46,10 +46,10 @@ class SqliteD1Statement {
   }
 
   public async raw(): Promise<readonly (readonly unknown[])[]> {
-    return this.database
-      .prepare(this.query)
-      .all(...this.parameters)
-      .map((row) => Object.values(row));
+    const statement = this.database.prepare(this.query);
+    statement.setReturnArrays(true);
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- node:sqlite types do not reflect setReturnArrays(true).
+    return statement.all(...this.parameters) as unknown as readonly (readonly unknown[])[];
   }
 
   public async run(): Promise<D1Result> {
