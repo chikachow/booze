@@ -462,7 +462,8 @@
 }
 
 @layer product {
-  .bottle-options summary {
+  .bottle-options summary,
+  .capture-disclosure summary {
     cursor: pointer;
     padding-block: var(--spacing-3);
   }

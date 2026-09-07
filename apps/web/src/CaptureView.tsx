@@ -2,7 +2,6 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Link } from "@astryxdesign/core/Link";
 import { NumberInput } from "@astryxdesign/core/NumberInput";
@@ -634,9 +633,10 @@ function CaptureIssue({ message }: { readonly message: string | null }): ReactEl
   }
 
   return (
-    <Collapsible defaultIsOpen={false} trigger={preview}>
+    <details className="capture-disclosure">
+      <summary>{preview}</summary>
       <p>{message}</p>
-    </Collapsible>
+    </details>
   );
 }
 

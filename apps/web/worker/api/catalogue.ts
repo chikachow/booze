@@ -97,7 +97,7 @@ export async function prepareWineVintage({
   });
 
   if (wine.grapeVarieties !== undefined) {
-    await replaceConstituents({
+    replaceConstituents({
       statements,
       database,
       siteId,
@@ -135,14 +135,6 @@ export async function prepareWineVintage({
   const [first, ...rest] = statements;
   if (first === undefined) throw new Error("Wine upsert requires a statement");
   return { wineryId, wineVintageId, statements: [first, ...rest] };
-}
-
-export async function upsertWineVintage(
-  input: Parameters<typeof prepareWineVintage>[0],
-): Promise<UpsertVintageResult> {
-  const { wineryId, wineVintageId, statements } = await prepareWineVintage(input);
-  await input.database.batch(statements);
-  return { wineryId, wineVintageId };
 }
 
 async function upsertWinery({
@@ -352,12 +344,6 @@ export function createBottleStatements({
   return { bottleIds: ids, statements: [first, ...rest] };
 }
 
-export async function createBottles(input: BottleCreationInput): Promise<readonly string[]> {
-  const { bottleIds, statements } = createBottleStatements(input);
-  await input.database.batch(statements);
-  return bottleIds;
-}
-
 export async function upsertStorageLocation({
   database,
   siteId,
@@ -507,7 +493,7 @@ function nullableEq(
   return value === null ? isNull(column) : eq(column, value);
 }
 
-async function replaceConstituents({
+function replaceConstituents({
   statements,
   database,
   siteId,
@@ -521,35 +507,30 @@ async function replaceConstituents({
   readonly wineVintageId: string;
   readonly grapeNames: readonly string[];
   readonly replace: boolean;
-}): Promise<void> {
+}): void {
   const uniqueNames = [
     ...new Set(grapeNames.map((name) => name.trim()).filter((name) => name !== "")),
   ];
-  const varieties = await database
-    .select({ id: grapeVarieties.id, name: grapeVarieties.name })
-    .from(grapeVarieties);
-  const ids = new Map(varieties.map((row) => [row.name, row.id]));
   if (replace) {
     statements.push(
-      database
-        .delete(wineConstituents)
-        .where(
-          and(
-            eq(wineConstituents.siteId, siteId),
-            eq(wineConstituents.wineVintageId, wineVintageId),
-          ),
+      database.delete(wineConstituents).where(
+        and(
+          eq(wineConstituents.siteId, siteId),
+          eq(wineConstituents.wineVintageId, wineVintageId),
+          sql`${wineConstituents.grapeVarietyId} not in (
+              select ${grapeVarieties.id} from ${grapeVarieties}
+              where ${grapeVarieties.name} in (select value from json_each(${JSON.stringify(uniqueNames)}))
+            )`,
         ),
+      ),
     );
   }
   for (const grapeName of uniqueNames) {
-    const grapeVarietyId = ids.get(grapeName) ?? generatedId("grape");
     statements.push(
       database
         .insert(grapeVarieties)
-        .values({ id: grapeVarietyId, name: grapeName })
+        .values({ id: generatedId("grape"), name: grapeName })
         .onConflictDoNothing({ target: grapeVarieties.name }),
-    );
-    statements.push(
       database
         .insert(wineConstituents)
         .values({

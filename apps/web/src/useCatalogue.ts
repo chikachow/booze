@@ -23,6 +23,13 @@ import {
 } from "./inventory-model.ts";
 
 type AuthHeadersProvider = () => Promise<Record<string, string>>;
+type CollectionName = "inventory" | "locations" | "sites" | "captures";
+type RefreshResult = "refreshed" | "superseded";
+type CollectionRequest<Resource> = {
+  readonly isResource: (value: unknown) => value is Resource;
+  readonly path: string;
+  readonly resourceName: string;
+};
 
 export type MutationCompletion = {
   readonly refresh: "captures" | "catalogue";
@@ -39,8 +46,8 @@ type CatalogueController = {
   readonly completeMutation: (completion: MutationCompletion) => Promise<void>;
   readonly items: readonly InventoryItem[];
   readonly isLoading: boolean;
-  readonly loadCaptures: () => Promise<void>;
-  readonly loadCatalogue: () => Promise<void>;
+  readonly loadCaptures: () => Promise<RefreshResult>;
+  readonly loadCatalogue: () => Promise<RefreshResult>;
   readonly locations: readonly LocationItem[];
   readonly refreshIssue: RefreshIssue | null;
   readonly retryRefresh: () => Promise<void>;
@@ -58,21 +65,35 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
   const [status, setStatus] = useState("Loading inventory...");
   const [refreshIssue, setRefreshIssue] = useState<RefreshIssue | null>(null);
   const requestVersions = useRef({ inventory: 0, locations: 0, sites: 0, captures: 0 });
+  const catalogueRequestVersion = useRef(0);
   const previousCaptures = useRef<readonly CaptureResource[]>([]);
   const hasPendingCaptures = captures.some((capture) => isPendingCapture(capture));
 
-  const loadInventory = useCallback(async (): Promise<void> => {
-    requestVersions.current.inventory += 1;
-    const requestVersion = requestVersions.current.inventory;
-    const data = await loadCollection({
-      getAuthHeaders,
+  const loadLatestCollection = useCallback(
+    async <Resource>(
+      collection: CollectionName,
+      request: CollectionRequest<Resource>,
+    ): Promise<readonly Resource[] | null> => {
+      requestVersions.current[collection] += 1;
+      const requestVersion = requestVersions.current[collection];
+      try {
+        const data = await loadCollection({ ...request, getAuthHeaders });
+        return requestVersion === requestVersions.current[collection] ? data : null;
+      } catch (error) {
+        if (requestVersion !== requestVersions.current[collection]) return null;
+        throw error;
+      }
+    },
+    [getAuthHeaders],
+  );
+
+  const loadInventory = useCallback(async (): Promise<RefreshResult> => {
+    const data = await loadLatestCollection("inventory", {
       isResource: isBottleResource,
       path: "/api/bottles",
       resourceName: "Inventory",
     });
-    if (requestVersion !== requestVersions.current.inventory) {
-      return;
-    }
+    if (data === null) return "superseded";
     const nextItems = data.map((item) => apiBottleToInventoryItem(item));
     setItems(nextItems);
     setStatus(
@@ -80,81 +101,72 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
         ? "No bottles catalogued yet."
         : `${nextItems.length} bottles available.`,
     );
-  }, [getAuthHeaders]);
+    return "refreshed";
+  }, [loadLatestCollection]);
 
-  const loadLocations = useCallback(async (): Promise<void> => {
-    requestVersions.current.locations += 1;
-    const requestVersion = requestVersions.current.locations;
-    const data = await loadCollection({
-      getAuthHeaders,
+  const loadLocations = useCallback(async (): Promise<RefreshResult> => {
+    const data = await loadLatestCollection("locations", {
       isResource: isStorageLocationResource,
       path: "/api/storage-locations",
       resourceName: "Locations",
     });
-    if (requestVersion !== requestVersions.current.locations) {
-      return;
-    }
+    if (data === null) return "superseded";
     setLocations(data.map((location) => apiLocationToLocationItem(location)));
-  }, [getAuthHeaders]);
+    return "refreshed";
+  }, [loadLatestCollection]);
 
-  const loadSites = useCallback(async (): Promise<void> => {
-    requestVersions.current.sites += 1;
-    const requestVersion = requestVersions.current.sites;
-    const data = await loadCollection({
-      getAuthHeaders,
+  const loadSites = useCallback(async (): Promise<RefreshResult> => {
+    const data = await loadLatestCollection("sites", {
       isResource: isSiteResource,
       path: "/api/sites",
       resourceName: "Sites",
     });
-    if (requestVersion !== requestVersions.current.sites) {
-      return;
-    }
+    if (data === null) return "superseded";
     setSites(data.map((site) => apiSiteToSiteItem(site)));
-  }, [getAuthHeaders]);
+    return "refreshed";
+  }, [loadLatestCollection]);
 
-  const loadCaptures = useCallback(async (): Promise<void> => {
-    requestVersions.current.captures += 1;
-    const requestVersion = requestVersions.current.captures;
-    const data = await loadCollection({
-      getAuthHeaders,
+  const loadCaptures = useCallback(async (): Promise<RefreshResult> => {
+    const data = await loadLatestCollection("captures", {
       isResource: isCaptureResource,
       path: "/api/bottle-captures",
       resourceName: "Captures",
     });
-    if (requestVersion === requestVersions.current.captures) {
-      setCaptures(data);
-      setRefreshIssue((current) => (current?.refresh === "captures" ? null : current));
-    }
-  }, [getAuthHeaders]);
+    if (data === null) return "superseded";
+    setCaptures(data);
+    setRefreshIssue((current) => (current?.refresh === "captures" ? null : current));
+    return "refreshed";
+  }, [loadLatestCollection]);
 
-  const loadCatalogue = useCallback(async (): Promise<void> => {
+  const loadCatalogue = useCallback(async (): Promise<RefreshResult> => {
+    catalogueRequestVersion.current += 1;
+    const requestVersion = catalogueRequestVersion.current;
     const results = await Promise.allSettled([
       loadInventory(),
       loadLocations(),
       loadSites(),
       loadCaptures(),
     ]);
+    if (requestVersion !== catalogueRequestVersion.current) return "superseded";
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") {
       throw failed.reason;
     }
+    return results.some((result) => result.status === "fulfilled" && result.value === "superseded")
+      ? "superseded"
+      : "refreshed";
   }, [loadCaptures, loadInventory, loadLocations, loadSites]);
 
   const refresh = useCallback(
-    async (scope: MutationCompletion["refresh"]): Promise<void> => {
-      if (scope === "captures") {
-        await loadCaptures();
-      } else {
-        await loadCatalogue();
-      }
-    },
+    async (scope: MutationCompletion["refresh"]): Promise<RefreshResult> =>
+      scope === "captures" ? loadCaptures() : loadCatalogue(),
     [loadCaptures, loadCatalogue],
   );
 
   const completeMutation = useCallback(
     async ({ refresh: scope, successMessage }: MutationCompletion): Promise<void> => {
       try {
-        await refresh(scope);
+        if ((await refresh(scope)) === "superseded") return;
         setRefreshIssue(null);
         setStatus(successMessage);
       } catch {
@@ -172,7 +184,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     }
     setStatus("Refreshing latest data...");
     try {
-      await refresh(refreshIssue.refresh);
+      if ((await refresh(refreshIssue.refresh)) === "superseded") return;
       setRefreshIssue(null);
       setStatus("Latest data refreshed.");
     } catch {
@@ -183,8 +195,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
   useEffect(() => {
     async function load(): Promise<void> {
       try {
-        await loadCatalogue();
-        setRefreshIssue(null);
+        if ((await loadCatalogue()) === "refreshed") setRefreshIssue(null);
       } catch {
         const message = "Could not load cellar data. Try refreshing.";
         setRefreshIssue({ message, refresh: "catalogue" });
@@ -287,11 +298,8 @@ async function loadCollection<Resource>({
   isResource,
   path,
   resourceName,
-}: {
+}: CollectionRequest<Resource> & {
   readonly getAuthHeaders: AuthHeadersProvider;
-  readonly isResource: (value: unknown) => value is Resource;
-  readonly path: string;
-  readonly resourceName: string;
 }): Promise<readonly Resource[]> {
   const response = await fetch(path, { headers: await getAuthHeaders() });
   if (!response.ok) {

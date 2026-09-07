@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { upsertStorageLocation } from "../api/catalogue.ts";
+import { CatalogueConflictError } from "../api/catalogue-transaction.ts";
 import { created, noContent } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
 import type { Bindings } from "../api/types.ts";
@@ -289,6 +290,17 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       });
       return context.json({ data: imported });
     } catch (error) {
+      if (error instanceof CatalogueConflictError) {
+        // Both batches rolled back; retain the reviewed extraction for another
+        // import attempt instead of requiring the user to rerun OCR.
+        await updateCaptureStatus({
+          captureId: capture.id,
+          database,
+          status: "needs_review",
+          errorMessage: error.message,
+        });
+        throw error;
+      }
       const message = shortErrorMessage(error);
       const details = errorDetails(error);
       const errorDetailArtifact = await tryPutErrorArtifact({

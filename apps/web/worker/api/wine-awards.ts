@@ -191,7 +191,7 @@ export async function prepareWineAwardStatements({
             awardYear: input.awardYear,
             awardBody: optionalText(input.awardBody),
             category: optionalText(input.category),
-            points: input.points,
+            points: input.points ?? null,
             sourceUrl: optionalText(input.sourceUrl),
             provenance: optionalText(input.provenance),
             notes: optionalText(input.notes),

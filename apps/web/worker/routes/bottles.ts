@@ -21,6 +21,7 @@ import {
   upsertStorageLocation,
 } from "../api/catalogue.ts";
 import { prepareCriticReviewStatements } from "../api/critic-reviews.ts";
+import { retryCatalogueTransaction } from "../api/catalogue-transaction.ts";
 import { created, locationHeader, noContent } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
 import { listBottles } from "../api/inventory.ts";
@@ -183,69 +184,71 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
     }
 
     assertDrinkWindow(payload.wine);
-    const vintage = await prepareWineVintage({ database, siteId, wine: payload.wine });
-    const creation = createBottleStatements({
-      database,
-      siteId,
-      wineVintageId: vintage.wineVintageId,
-      storageLocationId,
-      positionHint: optionalText(payload.positionHint),
-      bottle: payload.bottle,
-      quantity: payload.quantity,
-    });
-
-    const bottleIds = creation.bottleIds;
-    const statements = [...vintage.statements, ...creation.statements];
-    if (payload.labelExtraction !== undefined) {
-      statements.push(
-        ...createLabelExtractionStatements({
-          database,
-          bottleIds,
-          wineVintageId: vintage.wineVintageId,
-          labelExtraction: payload.labelExtraction,
-        }),
-      );
-    }
-
-    if (payload.criticReviews !== undefined) {
-      statements.push(
-        ...(await prepareCriticReviewStatements({
-          database,
-          reviews: payload.criticReviews,
-          overwriteExisting: false,
-          removeMissing: false,
-          siteId,
-          userId: authenticatedUser.userId,
-          wineVintageId: vintage.wineVintageId,
-        })),
-      );
-    }
-
-    if (payload.awards !== undefined) {
-      statements.push(
-        ...(await prepareWineAwardStatements({
-          awards: payload.awards,
-          overwriteExisting: false,
-          removeMissing: false,
-          database,
-          siteId,
-          userId: authenticatedUser.userId,
-          wineVintageId: vintage.wineVintageId,
-        })),
-      );
-    }
-
-    await database.batch([vintage.statements[0], ...statements.slice(1)]);
-    return created(
-      {
-        bottleIds,
+    return retryCatalogueTransaction(async () => {
+      const vintage = await prepareWineVintage({ database, siteId, wine: payload.wine });
+      const creation = createBottleStatements({
+        database,
         siteId,
-        storageLocationId,
-        wineryId: vintage.wineryId,
         wineVintageId: vintage.wineVintageId,
-      },
-      locationHeader(`/api/bottles/${bottleIds[0]}`),
-    );
+        storageLocationId,
+        positionHint: optionalText(payload.positionHint),
+        bottle: payload.bottle,
+        quantity: payload.quantity,
+      });
+
+      const bottleIds = creation.bottleIds;
+      const statements = [...vintage.statements, ...creation.statements];
+      if (payload.labelExtraction !== undefined) {
+        statements.push(
+          ...createLabelExtractionStatements({
+            database,
+            bottleIds,
+            wineVintageId: vintage.wineVintageId,
+            labelExtraction: payload.labelExtraction,
+          }),
+        );
+      }
+
+      if (payload.criticReviews !== undefined) {
+        statements.push(
+          ...(await prepareCriticReviewStatements({
+            database,
+            reviews: payload.criticReviews,
+            overwriteExisting: false,
+            removeMissing: false,
+            siteId,
+            userId: authenticatedUser.userId,
+            wineVintageId: vintage.wineVintageId,
+          })),
+        );
+      }
+
+      if (payload.awards !== undefined) {
+        statements.push(
+          ...(await prepareWineAwardStatements({
+            awards: payload.awards,
+            overwriteExisting: false,
+            removeMissing: false,
+            database,
+            siteId,
+            userId: authenticatedUser.userId,
+            wineVintageId: vintage.wineVintageId,
+          })),
+        );
+      }
+
+      await database.batch([vintage.statements[0], ...statements.slice(1)]);
+      return created(
+        {
+          bottleIds,
+          siteId,
+          storageLocationId,
+          wineryId: vintage.wineryId,
+          wineVintageId: vintage.wineVintageId,
+        },
+        locationHeader(`/api/bottles/${bottleIds[0]}`),
+      );
+    });
   })
   .patch("/bottles/:bottleId", async (context) => {
     const payload = patchBottleSchema.parse(await context.req.json());
@@ -273,102 +276,113 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
         storageLocationId: payload.storageLocationId,
       });
     }
-    const previousWine =
-      payload.wine === undefined
-        ? undefined
-        : await wineInputForVintage({ database, wineVintageId: existing.wineVintageId });
-    const wine =
-      previousWine === undefined
-        ? undefined
-        : {
-            ...previousWine,
-            ...payload.wine,
-            wineryName: payload.wine?.wineryName ?? previousWine.wineryName,
-            designation: payload.wine?.designation ?? previousWine.designation,
-          };
-    if (wine !== undefined) assertDrinkWindow(wine);
-    const nextVintage =
-      wine === undefined
-        ? { wineVintageId: existing.wineVintageId, statements: [] }
-        : await prepareWineVintage({
-            database,
-            siteId: existing.siteId,
-            wine,
-            overwriteExisting: true,
-            updates: payload.wine ?? {},
-            sourceWineVintageId: existing.wineVintageId,
-          });
-    const statements: Parameters<BoozeDatabase["batch"]>[0][number][] = [...nextVintage.statements];
+    return retryCatalogueTransaction(async () => {
+      const previousWine =
+        payload.wine === undefined
+          ? undefined
+          : await wineInputForVintage({ database, wineVintageId: existing.wineVintageId });
+      const wine =
+        previousWine === undefined
+          ? undefined
+          : {
+              ...previousWine,
+              ...payload.wine,
+              wineryName: payload.wine?.wineryName ?? previousWine.wineryName,
+              designation: payload.wine?.designation ?? previousWine.designation,
+            };
+      if (wine !== undefined) assertDrinkWindow(wine);
+      const nextVintage =
+        wine === undefined
+          ? { wineVintageId: existing.wineVintageId, statements: [] }
+          : await prepareWineVintage({
+              database,
+              siteId: existing.siteId,
+              wine,
+              overwriteExisting: true,
+              updates: payload.wine ?? {},
+              sourceWineVintageId: existing.wineVintageId,
+            });
+      const statements: Parameters<BoozeDatabase["batch"]>[0][number][] = [
+        ...nextVintage.statements,
+      ];
 
-    const bottleUpdate = database
-      .update(bottles)
-      .set(bottleUpdateValues(payload, nextVintage.wineVintageId))
-      .where(eq(bottles.id, bottleId));
-    statements.push(bottleUpdate);
+      const bottleUpdate = database
+        .update(bottles)
+        .set(
+          bottleUpdateValues(
+            payload,
+            nextVintage.wineVintageId === existing.wineVintageId
+              ? undefined
+              : nextVintage.wineVintageId,
+          ),
+        )
+        .where(eq(bottles.id, bottleId));
+      statements.push(bottleUpdate);
 
-    if (payload.storageLocationId !== undefined) {
-      statements.push(
-        database.delete(bottleLocations).where(eq(bottleLocations.bottleId, bottleId)),
-      );
-      if (payload.storageLocationId !== null) {
+      if (payload.storageLocationId !== undefined) {
         statements.push(
-          database.insert(bottleLocations).values({
-            bottleId,
-            siteId: existing.siteId,
-            storageLocationId: payload.storageLocationId,
-            positionHint: optionalText(payload.positionHint),
+          database.delete(bottleLocations).where(eq(bottleLocations.bottleId, bottleId)),
+        );
+        if (payload.storageLocationId !== null) {
+          statements.push(
+            database.insert(bottleLocations).values({
+              bottleId,
+              siteId: existing.siteId,
+              storageLocationId: payload.storageLocationId,
+              positionHint: optionalText(payload.positionHint),
+            }),
+          );
+        }
+      } else if (payload.positionHint !== undefined) {
+        statements.push(
+          database
+            .update(bottleLocations)
+            .set({
+              positionHint: optionalText(payload.positionHint),
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(bottleLocations.bottleId, bottleId)),
+        );
+      }
+      if (payload.labelExtraction !== undefined) {
+        statements.push(
+          ...createLabelExtractionStatements({
+            database,
+            bottleIds: [bottleId],
+            wineVintageId: nextVintage.wineVintageId,
+            labelExtraction: payload.labelExtraction,
           }),
         );
       }
-    } else if (payload.positionHint !== undefined) {
-      statements.push(
-        database
-          .update(bottleLocations)
-          .set({
-            positionHint: optionalText(payload.positionHint),
-            updatedAt: sql`CURRENT_TIMESTAMP`,
-          })
-          .where(eq(bottleLocations.bottleId, bottleId)),
-      );
-    }
-    if (payload.labelExtraction !== undefined) {
-      statements.push(
-        ...createLabelExtractionStatements({
-          database,
-          bottleIds: [bottleId],
-          wineVintageId: nextVintage.wineVintageId,
-          labelExtraction: payload.labelExtraction,
-        }),
-      );
-    }
 
-    if (payload.criticReviews !== undefined) {
-      statements.push(
-        ...(await prepareCriticReviewStatements({
-          database,
-          reviews: payload.criticReviews,
-          siteId: existing.siteId,
-          userId: authenticatedUser.userId,
-          wineVintageId: nextVintage.wineVintageId,
-        })),
-      );
-    }
+      if (payload.criticReviews !== undefined) {
+        statements.push(
+          ...(await prepareCriticReviewStatements({
+            database,
+            reviews: payload.criticReviews,
+            siteId: existing.siteId,
+            userId: authenticatedUser.userId,
+            wineVintageId: nextVintage.wineVintageId,
+          })),
+        );
+      }
 
-    if (payload.awards !== undefined) {
-      statements.push(
-        ...(await prepareWineAwardStatements({
-          awards: payload.awards,
-          database,
-          siteId: existing.siteId,
-          userId: authenticatedUser.userId,
-          wineVintageId: nextVintage.wineVintageId,
-        })),
-      );
-    }
+      if (payload.awards !== undefined) {
+        statements.push(
+          ...(await prepareWineAwardStatements({
+            awards: payload.awards,
+            database,
+            siteId: existing.siteId,
+            userId: authenticatedUser.userId,
+            wineVintageId: nextVintage.wineVintageId,
+          })),
+        );
+      }
 
-    const [first, ...rest] = statements;
-    if (first !== undefined) await database.batch([first, ...rest]);
-    return context.json({ data: { id: bottleId } });
+      const [first, ...rest] = statements;
+      if (first !== undefined) await database.batch([first, ...rest]);
+      return context.json({ data: { id: bottleId } });
+    });
   })
   .delete("/bottles/:bottleId", async (context) => {
     const database = createD1Client(context.env.DB);
@@ -499,7 +513,10 @@ async function wineInputForVintage({
   };
 }
 
-function bottleUpdateValues(payload: z.infer<typeof patchBottleSchema>, wineVintageId: string) {
+function bottleUpdateValues(
+  payload: z.infer<typeof patchBottleSchema>,
+  wineVintageId: string | undefined,
+) {
   return {
     ...(payload.status === undefined ? {} : { status: payload.status }),
     ...(payload.bottle?.bottleNumber === undefined
@@ -513,7 +530,7 @@ function bottleUpdateValues(payload: z.infer<typeof patchBottleSchema>, wineVint
       ? {}
       : { lotCode: optionalText(payload.bottle.lotCode) }),
     ...(payload.bottle?.notes === undefined ? {} : { notes: optionalText(payload.bottle.notes) }),
-    wineVintageId: wineVintageId,
+    ...(wineVintageId === undefined ? {} : { wineVintageId }),
     updatedAt: sql`CURRENT_TIMESTAMP`,
   };
 }

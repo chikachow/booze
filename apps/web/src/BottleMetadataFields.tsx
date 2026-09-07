@@ -58,7 +58,7 @@ export function CriticReviewFields({
                     }
                     value={review.reviewSourceName ?? ""}
                     onChange={(value: string) => {
-                      update(index, { reviewSourceName: value });
+                      update(index, { reviewSourceName: value, reviewSourceId: undefined });
                     }}
                   />
                   <TextInput

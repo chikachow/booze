@@ -242,7 +242,7 @@ export async function prepareCriticReviewStatements({
     .select({ id: criticReviews.id, reviewSourceId: criticReviews.reviewSourceId })
     .from(criticReviews)
     .where(and(eq(criticReviews.siteId, siteId), eq(criticReviews.wineVintageId, wineVintageId)));
-  const keptReviewIds: string[] = [];
+  const keptReviewSourceIds: string[] = [];
   for (const review of reviews) {
     let source =
       review.reviewSourceId === undefined
@@ -275,14 +275,15 @@ export async function prepareCriticReviewStatements({
     }
     if (!source.isActive)
       throw new HTTPException(400, { message: "Review source is not available for this site" });
+    keptReviewSourceIds.push(source.id);
     const previous = existing.find((candidate) => candidate.reviewSourceId === source.id);
     if (previous !== undefined && !overwriteExisting) continue;
     const reviewId = previous?.id ?? generatedId("critic-review");
     existing.push({ id: reviewId, reviewSourceId: source.id });
-    keptReviewIds.push(reviewId);
     statements.push(
       createCriticReviewUpsert({
         database,
+        overwriteExisting,
         review,
         reviewId,
         reviewSourceId: source.id,
@@ -300,7 +301,9 @@ export async function prepareCriticReviewStatements({
           and(
             eq(criticReviews.siteId, siteId),
             eq(criticReviews.wineVintageId, wineVintageId),
-            keptReviewIds.length === 0 ? undefined : notInArray(criticReviews.id, keptReviewIds),
+            keptReviewSourceIds.length === 0
+              ? undefined
+              : notInArray(criticReviews.reviewSourceId, keptReviewSourceIds),
           ),
         ),
     );
@@ -310,6 +313,7 @@ export async function prepareCriticReviewStatements({
 
 export function createCriticReviewUpsert({
   database,
+  overwriteExisting = true,
   review,
   reviewId,
   reviewSourceId,
@@ -318,6 +322,7 @@ export function createCriticReviewUpsert({
   wineVintageId,
 }: {
   readonly database: BoozeDatabase;
+  readonly overwriteExisting?: boolean;
   readonly review: CriticReviewInput;
   readonly reviewId: string;
   readonly reviewSourceId: string;
@@ -325,35 +330,37 @@ export function createCriticReviewUpsert({
   readonly userId: string;
   readonly wineVintageId: string;
 }): ReturnType<ReturnType<BoozeDatabase["insert"]>["values"]> {
-  return database
-    .insert(criticReviews)
-    .values({
-      id: reviewId,
-      siteId,
-      wineVintageId,
-      reviewSourceId,
-      ratingText: review.ratingText.trim(),
-      ratingValue: review.ratingValue ?? null,
-      ratingScale: optionalText(review.ratingScale),
-      sourceUrl: optionalText(review.sourceUrl),
-      reviewedAt: optionalText(review.reviewedAt),
-      provenance: optionalText(review.provenance),
-      notes: optionalText(review.notes),
-      createdByUserId: userId,
-    })
-    .onConflictDoUpdate({
-      target: [criticReviews.siteId, criticReviews.wineVintageId, criticReviews.reviewSourceId],
-      set: {
-        ratingText: review.ratingText.trim(),
-        ratingValue: review.ratingValue ?? null,
-        ratingScale: optionalText(review.ratingScale),
-        sourceUrl: optionalText(review.sourceUrl),
-        reviewedAt: optionalText(review.reviewedAt),
-        provenance: optionalText(review.provenance),
-        notes: optionalText(review.notes),
-        updatedAt: sql`CURRENT_TIMESTAMP`,
-      },
-    });
+  const statement = database.insert(criticReviews).values({
+    id: reviewId,
+    siteId,
+    wineVintageId,
+    reviewSourceId,
+    ratingText: review.ratingText.trim(),
+    ratingValue: review.ratingValue ?? null,
+    ratingScale: optionalText(review.ratingScale),
+    sourceUrl: optionalText(review.sourceUrl),
+    reviewedAt: optionalText(review.reviewedAt),
+    provenance: optionalText(review.provenance),
+    notes: optionalText(review.notes),
+    createdByUserId: userId,
+  });
+  return overwriteExisting
+    ? statement.onConflictDoUpdate({
+        target: [criticReviews.siteId, criticReviews.wineVintageId, criticReviews.reviewSourceId],
+        set: {
+          ratingText: review.ratingText.trim(),
+          ratingValue: review.ratingValue ?? null,
+          ratingScale: optionalText(review.ratingScale),
+          sourceUrl: optionalText(review.sourceUrl),
+          reviewedAt: optionalText(review.reviewedAt),
+          provenance: optionalText(review.provenance),
+          notes: optionalText(review.notes),
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      })
+    : statement.onConflictDoNothing({
+        target: [criticReviews.siteId, criticReviews.wineVintageId, criticReviews.reviewSourceId],
+      });
 }
 
 export async function upsertCriticReview({
