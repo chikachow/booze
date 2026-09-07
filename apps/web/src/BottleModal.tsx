@@ -259,7 +259,7 @@ export function BottleModal({
           subtitle={
             item === undefined
               ? "Review the cellar record before saving."
-              : "Wine details are shared by bottles of this wine and vintage. Storage and bottle notes apply to this bottle."
+              : "Wine details are shared by bottles of this wine and vintage. Storage and bottle notes apply to this bottle. Changing the winery, region, or vintage assigns only this bottle to another wine; unchanged reviews and awards stay with the original wine."
           }
           title={title}
           onOpenChange={changeOpen}

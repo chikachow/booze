@@ -11,6 +11,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { createBottleStatements, prepareWineVintage } from "./api/catalogue.ts";
 import { stableId, vintageLabelForYear } from "./api/ids.ts";
+import { retryCatalogueTransaction } from "./api/catalogue-transaction.ts";
 import type { ImportCandidate } from "./bottle-extractor.ts";
 import { claimCaptureForImport } from "./capture-store.ts";
 
@@ -83,70 +84,72 @@ export async function importBottleCandidate({
   readonly runId: string;
   readonly workflowInstanceId?: string;
 }): Promise<BottleImportResult> {
-  const committed = await committedImportResult({ database, runId });
-  if (committed !== null) {
-    return committed;
-  }
-  const matchResult = await matchBottleCandidate({ candidate, database, siteId });
-  if (matchResult.kind === "needs_review") {
-    return {
-      kind: "needs_review",
-      reason: matchResult.reason,
+  return retryCatalogueTransaction(async (): Promise<BottleImportResult> => {
+    const committed = await committedImportResult({ database, runId });
+    if (committed !== null) {
+      return committed;
+    }
+    const matchResult = await matchBottleCandidate({ candidate, database, siteId });
+    if (matchResult.kind === "needs_review") {
+      return {
+        kind: "needs_review",
+        reason: matchResult.reason,
+        matchResult,
+      };
+    }
+
+    if (!(await claimCaptureForImport({ captureId, database, resume: true, workflowInstanceId }))) {
+      return {
+        kind: "skipped",
+        reason: "capture_import_already_claimed",
+        matchResult,
+      };
+    }
+
+    const vintage =
+      matchResult.kind === "reuse_wine_vintage"
+        ? await getExistingVintage({
+            database,
+            siteId,
+            wineVintageId: matchResult.wineVintageCandidate.id,
+          })
+        : await prepareWineVintage({ database, siteId, wine: candidate.wine });
+    const destination = await currentCaptureDestination({
+      captureId,
+      database,
+      storageLocationId,
+      positionHint,
+    });
+    const { bottleIds, statements } = createBottleStatements({
+      bottleIds: bottleIdsForCapture({ captureId, quantity }),
+      database,
+      siteId,
+      wineVintageId: vintage.wineVintageId,
+      ...destination,
+      bottle: candidate.bottle,
+      quantity,
+    });
+
+    const result = {
+      kind: "imported",
+      bottleIds,
+      wineryId: vintage.wineryId,
+      wineVintageId: vintage.wineVintageId,
       matchResult,
-    };
-  }
-
-  if (!(await claimCaptureForImport({ captureId, database, resume: true, workflowInstanceId }))) {
-    return {
-      kind: "skipped",
-      reason: "capture_import_already_claimed",
-      matchResult,
-    };
-  }
-
-  const vintage =
-    matchResult.kind === "reuse_wine_vintage"
-      ? await getExistingVintage({
-          database,
-          siteId,
-          wineVintageId: matchResult.wineVintageCandidate.id,
-        })
-      : await prepareWineVintage({ database, siteId, wine: candidate.wine });
-  const destination = await currentCaptureDestination({
-    captureId,
-    database,
-    storageLocationId,
-    positionHint,
+    } satisfies Extract<BottleImportResult, { readonly kind: "imported" }>;
+    await assertExistingBottlesMatch({
+      bottleIds,
+      database,
+      siteId,
+      wineVintageId: vintage.wineVintageId,
+    });
+    await database.batch([
+      ...importCompletionStatements({ captureId, database, result, runId }),
+      ...vintage.statements,
+      ...statements,
+    ]);
+    return result;
   });
-  const { bottleIds, statements } = createBottleStatements({
-    bottleIds: bottleIdsForCapture({ captureId, quantity }),
-    database,
-    siteId,
-    wineVintageId: vintage.wineVintageId,
-    ...destination,
-    bottle: candidate.bottle,
-    quantity,
-  });
-
-  const result = {
-    kind: "imported",
-    bottleIds,
-    wineryId: vintage.wineryId,
-    wineVintageId: vintage.wineVintageId,
-    matchResult,
-  } satisfies Extract<BottleImportResult, { readonly kind: "imported" }>;
-  await assertExistingBottlesMatch({
-    bottleIds,
-    database,
-    siteId,
-    wineVintageId: vintage.wineVintageId,
-  });
-  await database.batch([
-    ...importCompletionStatements({ captureId, database, result, runId }),
-    ...vintage.statements,
-    ...statements,
-  ]);
-  return result;
 }
 
 export async function importReviewedCapture({
@@ -170,59 +173,61 @@ export async function importReviewedCapture({
   readonly wineVintageId?: string | undefined;
   readonly runId: string;
 }): Promise<Extract<BottleImportResult, { readonly kind: "imported" }>> {
-  const committed = await committedImportResult({ database, runId });
-  if (committed !== null) {
-    return committed;
-  }
-  const vintage =
-    wineVintageId === undefined
-      ? await prepareWineVintage({ database, siteId, wine: candidate.wine })
-      : await getExistingVintage({ database, siteId, wineVintageId });
-  const destination = await currentCaptureDestination({
-    captureId,
-    database,
-    storageLocationId,
-    positionHint,
-  });
-  const { bottleIds, statements } = createBottleStatements({
-    bottleIds: bottleIdsForCapture({ captureId, quantity }),
-    database,
-    siteId,
-    wineVintageId: vintage.wineVintageId,
-    ...destination,
-    bottle: candidate.bottle,
-    quantity,
-  });
+  return retryCatalogueTransaction(async () => {
+    const committed = await committedImportResult({ database, runId });
+    if (committed !== null) {
+      return committed;
+    }
+    const vintage =
+      wineVintageId === undefined
+        ? await prepareWineVintage({ database, siteId, wine: candidate.wine })
+        : await getExistingVintage({ database, siteId, wineVintageId });
+    const destination = await currentCaptureDestination({
+      captureId,
+      database,
+      storageLocationId,
+      positionHint,
+    });
+    const { bottleIds, statements } = createBottleStatements({
+      bottleIds: bottleIdsForCapture({ captureId, quantity }),
+      database,
+      siteId,
+      wineVintageId: vintage.wineVintageId,
+      ...destination,
+      bottle: candidate.bottle,
+      quantity,
+    });
 
-  const matchResult: BottleMatchResult =
-    wineVintageId === undefined
-      ? { kind: "create_new", wineryCandidates: [], wineVintageCandidates: [] }
-      : {
-          kind: "reuse_wine_vintage",
-          wineryCandidates: [],
-          wineVintageCandidate: { id: wineVintageId, label: wineVintageId },
-          wineVintageCandidates: [],
-        };
+    const matchResult: BottleMatchResult =
+      wineVintageId === undefined
+        ? { kind: "create_new", wineryCandidates: [], wineVintageCandidates: [] }
+        : {
+            kind: "reuse_wine_vintage",
+            wineryCandidates: [],
+            wineVintageCandidate: { id: wineVintageId, label: wineVintageId },
+            wineVintageCandidates: [],
+          };
 
-  const result = {
-    kind: "imported",
-    bottleIds,
-    wineryId: vintage.wineryId,
-    wineVintageId: vintage.wineVintageId,
-    matchResult,
-  } satisfies Extract<BottleImportResult, { readonly kind: "imported" }>;
-  await assertExistingBottlesMatch({
-    bottleIds,
-    database,
-    siteId,
-    wineVintageId: vintage.wineVintageId,
+    const result = {
+      kind: "imported",
+      bottleIds,
+      wineryId: vintage.wineryId,
+      wineVintageId: vintage.wineVintageId,
+      matchResult,
+    } satisfies Extract<BottleImportResult, { readonly kind: "imported" }>;
+    await assertExistingBottlesMatch({
+      bottleIds,
+      database,
+      siteId,
+      wineVintageId: vintage.wineVintageId,
+    });
+    await database.batch([
+      ...importCompletionStatements({ captureId, database, result, runId }),
+      ...vintage.statements,
+      ...statements,
+    ]);
+    return result;
   });
-  await database.batch([
-    ...importCompletionStatements({ captureId, database, result, runId }),
-    ...vintage.statements,
-    ...statements,
-  ]);
-  return result;
 }
 
 async function assertExistingBottlesMatch({

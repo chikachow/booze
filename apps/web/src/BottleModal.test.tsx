@@ -2,7 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { BottleModal, type BottleModalSubmitResult } from "./BottleModal.tsx";
+import {
+  BottleModal,
+  type BottleModalSubmit,
+  type BottleModalSubmitResult,
+} from "./BottleModal.tsx";
 import { formStateForItem } from "./inventory-model.ts";
 import { inventoryItemFixture, locationsFixture, sitesFixture } from "./test/catalogue-fixtures.ts";
 
@@ -23,6 +27,65 @@ async function submitBottle(): Promise<BottleModalSubmitResult> {
 }
 
 describe("BottleModal destructive actions", () => {
+  it.each([
+    { field: "Source", value: "Corrected critic", expectedSourceId: undefined },
+    { field: "Rating", value: "96 points", expectedSourceId: "original-source" },
+  ])(
+    "preserves review provenance when editing $field",
+    async ({ field, value, expectedSourceId }) => {
+      const user = userEvent.setup();
+      const item = inventoryItemFixture({
+        criticReviews: [
+          {
+            id: "original-review",
+            siteId: "site-owner",
+            wineVintageId: "vintage-1",
+            reviewSourceId: "original-source",
+            reviewSourceName: "Original critic",
+            ratingText: "95 points",
+            ratingValue: 95,
+            ratingScale: "100 points",
+            sourceUrl: "https://example.com/review",
+            reviewedAt: null,
+            provenance: "Wine guide",
+            notes: "Checked by owner",
+            createdAt: "2026-07-25T00:00:00.000Z",
+            updatedAt: "2026-07-25T00:00:00.000Z",
+          },
+        ],
+      });
+      const onSubmit =
+        vi.fn<(submission: BottleModalSubmit) => Promise<BottleModalSubmitResult>>(submitBottle);
+      render(
+        <BottleModal
+          form={formStateForItem(item)}
+          isSaving={false}
+          item={item}
+          locations={locationsFixture}
+          sites={sitesFixture}
+          title="Edit bottle"
+          onClose={closeBottle}
+          onSubmit={onSubmit}
+        />,
+      );
+      const input = screen.getByRole("textbox", { name: new RegExp(`^${field}.*Required`, "iu") });
+      await user.clear(input);
+      await user.type(input, value);
+      await user.click(screen.getByRole("button", { name: "Save bottle" }));
+      await waitFor(() => {
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+      });
+      expect(onSubmit.mock.calls[0]?.[0].criticReviews[0]).toMatchObject({
+        reviewSourceId: expectedSourceId,
+        reviewSourceName: field === "Source" ? value : "Original critic",
+        ratingText: field === "Rating" ? value : "95 points",
+        provenance: "Wine guide",
+        notes: "Checked by owner",
+      });
+      expect(item.criticReviews[0]?.reviewSourceName).toBe("Original critic");
+    },
+  );
+
   it("does not offer a position note until a storage location is chosen", () => {
     const item = inventoryItemFixture({ locationId: null, location: null, position: null });
     render(

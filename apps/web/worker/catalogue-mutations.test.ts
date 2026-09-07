@@ -120,6 +120,30 @@ await describe("catalogue mutation preservation", async () => {
     assert.equal(db.prepare("SELECT notes FROM wine_vintages").get()?.["notes"], null);
   });
 
+  await it("preserves retained grape measurements while adding or removing other grapes", async () => {
+    const db = setup();
+    const id = await create(db, { wine: { ...wine, grapeVarieties: ["Shiraz", "Merlot"] } });
+    db.exec(
+      "UPDATE wine_constituents SET percentage = 80, blend_text = 'Old vines' WHERE grape_variety_id = (SELECT id FROM grape_varieties WHERE name = 'Shiraz')",
+    );
+    const response = await request(db, "PATCH", `/bottles/${id}`, {
+      wine: { grapeVarieties: ["Shiraz", "Cabernet"] },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      db
+        .prepare(
+          "SELECT g.name, c.percentage, c.blend_text FROM wine_constituents c JOIN grape_varieties g ON g.id = c.grape_variety_id ORDER BY g.name",
+        )
+        .all()
+        .map((row) => ({ ...row })),
+      [
+        { name: "Cabernet", percentage: null, blend_text: null },
+        { name: "Shiraz", percentage: 80, blend_text: "Old vines" },
+      ],
+    );
+  });
+
   await it("preserves nullable designation and constituent measurements on unrelated edits and reassignment", async () => {
     const db = setup();
     const id = await create(db, { wine: { ...wine, grapeVarieties: ["Shiraz"], notes: "Keep" } });
@@ -142,6 +166,32 @@ await describe("catalogue mutation preservation", async () => {
       { ...stored },
       { notes: "Updated", designation: null, percentage: 100, blend_text: "Old vines" },
     );
+  });
+
+  await it("does not reverse a concurrent wine reassignment during unrelated bottle updates", async () => {
+    for (const patch of [
+      { bottle: { notes: "Updated bottle note" } },
+      { status: "consumed" },
+      { storageLocationId: "location-1", positionHint: "A2" },
+      { wine: { notes: "Updated wine note" } },
+    ]) {
+      const db = setup();
+      const id = await create(db, { wine });
+      const other = await create(db, { wine: { ...wine, vintageYear: 2021 } });
+      const otherVintageId = db
+        .prepare("SELECT wine_vintage_id FROM bottles WHERE id = ?")
+        .get(other)?.["wine_vintage_id"];
+      assert.ok(typeof otherVintageId === "string");
+      const response = await request(db, "PATCH", `/bottles/${id}`, patch, () => {
+        db.prepare("UPDATE bottles SET wine_vintage_id = ? WHERE id = ?").run(otherVintageId, id);
+      });
+      assert.equal(response.status, 200);
+      assert.equal(
+        db.prepare("SELECT wine_vintage_id FROM bottles WHERE id = ?").get(id)?.["wine_vintage_id"],
+        otherVintageId,
+        JSON.stringify(patch),
+      );
+    }
   });
 
   await it("preserves reviews and awards when more bottles are entered with empty evidence", async () => {
@@ -258,6 +308,19 @@ await describe("catalogue mutation preservation", async () => {
     assert.equal(db.prepare("SELECT status FROM bottles").get()?.["status"], "in_stock");
   });
 
+  await it("clears award points while retaining the award identity and provenance", async () => {
+    const db = setup();
+    const award = { awardName: "Wine show", awardLevel: "Gold", provenance: "2024 results" };
+    const id = await create(db, { wine, awards: [{ ...award, points: 95 }] });
+    const before = db.prepare("SELECT id FROM wine_awards").get()?.["id"];
+    const response = await request(db, "PATCH", `/bottles/${id}`, { awards: [award] });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      { ...db.prepare("SELECT id, points, provenance FROM wine_awards").get() },
+      { id: before, points: null, provenance: "2024 results" },
+    );
+  });
+
   await it("uses bounded statements for 24 physical bottles", () => {
     const db = setup();
     const result = createBottleStatements({
@@ -324,9 +387,16 @@ async function request(
   method: string,
   path: string,
   payload: Record<string, unknown>,
+  beforeBatch?: () => void,
 ): Promise<Response> {
+  const database = asD1(db);
+  const batch = database.batch.bind(database);
+  database.batch = async <T>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> => {
+    beforeBatch?.();
+    return batch<T>(statements);
+  };
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Route tests supply only the database binding used by these handlers.
-  const bindings = { DB: asD1(db) } as Bindings;
+  const bindings = { DB: database } as Bindings;
   return bottleRoutes.request(
     `http://localhost${path}`,
     {
