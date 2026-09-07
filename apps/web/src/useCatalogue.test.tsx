@@ -17,9 +17,182 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("useCatalogue", () => {
+  it("pauses capture polling in hidden tabs and refreshes immediately on return", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        requests.push(path);
+        return jsonResponse(
+          path === "/api/bottle-captures"
+            ? captures.map((capture) => ({ ...capture, status: "queued" }))
+            : (dataByPath.get(path) ?? []),
+        );
+      }),
+    );
+    renderHook(() => useCatalogue(getAuthHeaders));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    requests.length = 0;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(requests).toEqual([]);
+
+    visibility.mockReturnValue("visible");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(requests).toEqual(["/api/bottle-captures"]);
+  });
+
+  it("does not replace newer inventory with an older overlapping response", async () => {
+    let resolveInitialInventory: ((response: Response) => void) | undefined;
+    let requestedInventory = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/bottles") {
+          if (!requestedInventory) {
+            requestedInventory = true;
+            return new Promise<Response>((resolve) => {
+              resolveInitialInventory = resolve;
+            });
+          }
+          return jsonResponse(bottles.map((bottle) => ({ ...bottle, bottleNotes: "Newer fact" })));
+        }
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(requestedInventory).toBe(true);
+    });
+    await act(async () => {
+      await result.current.loadCatalogue();
+    });
+    expect(result.current.items[0]?.bottleNotes).toBe("Newer fact");
+
+    await act(async () => {
+      resolveInitialInventory?.(jsonResponse(bottles));
+    });
+    expect(result.current.items[0]?.bottleNotes).toBe("Newer fact");
+  });
+
+  it("offers a retry after the initial catalogue load fails", async () => {
+    let unavailable = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        unavailable
+          ? new Response(null, { status: 503 })
+          : jsonResponse(dataByPath.get(requestPath(input)) ?? []),
+      ),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.refreshIssue?.refresh).toBe("catalogue");
+    });
+
+    unavailable = false;
+    await act(async () => {
+      await result.current.retryRefresh();
+    });
+
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.refreshIssue).toBeNull();
+  });
+
+  it("refreshes pending captures, updates imported inventory, and stops after processing finishes", async () => {
+    vi.useFakeTimers();
+    let captureStatus = "queued";
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        requests.push(path);
+        return jsonResponse(
+          path === "/api/bottle-captures"
+            ? captures.map((capture) => ({ ...capture, status: captureStatus }))
+            : (dataByPath.get(path) ?? []),
+        );
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.captures[0]?.status).toBe("queued");
+    requests.length = 0;
+
+    captureStatus = "extracting";
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(requests).toEqual(["/api/bottle-captures"]);
+    expect(result.current.captures[0]?.status).toBe("extracting");
+
+    captureStatus = "imported";
+    requests.length = 0;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(requests).toContain("/api/bottles");
+    expect(result.current.captures[0]?.status).toBe("imported");
+    expect(result.current.status).toBe("Capture imported. Inventory updated.");
+
+    requests.length = 0;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(requests).toEqual([]);
+  });
+
+  it("retains pending captures through temporary polling failure and clears the warning on recovery", async () => {
+    vi.useFakeTimers();
+    let unavailable = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/bottle-captures") {
+          return unavailable
+            ? new Response(null, { status: 503 })
+            : jsonResponse(captures.map((capture) => ({ ...capture, status: "extracting" })));
+        }
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    unavailable = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.captures[0]?.status).toBe("extracting");
+    expect(result.current.refreshIssue?.refresh).toBe("captures");
+
+    unavailable = false;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(result.current.refreshIssue).toBeNull();
+  });
+
   it("keeps a committed mutation successful and retries only its failed refresh", async () => {
     let failedPath: string | null = null;
     const requests: string[] = [];

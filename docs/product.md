@@ -56,7 +56,7 @@ A top-level storage context such as `home`, `wine fridge`, `offsite storage`, or
 
 ### Storage Location
 
-A storage position inside a site, such as `left rack`, `shelf 2`, or `box 4`. The data model supports parent locations so racks, shelves, bins, and slots can be represented without separate rack-specific tables. The current UI keeps entry flat for speed.
+A storage position inside a site, such as `left rack`, `shelf 2`, or `box 4`. The data model supports parent locations so racks, shelves, bins, and slots can be represented without separate rack-specific tables. The UI supports optional containing locations while keeping a top-level location quick to create.
 
 ### Winery
 
@@ -118,9 +118,9 @@ The app must support:
 5. showing available bottle counts;
 6. using a location as the target for new bottle entry.
 
-Deactivate, capacity, parent/child hierarchy, and short location codes are not implemented.
+Deactivate, capacity, and short location codes are not implemented. Parent/child locations are supported; parent edits must stay within one site and cannot introduce cycles.
 
-Deleting a location must set affected bottles to a location-less state while preserving their site association.
+Deleting a location must set affected bottles and captures to a location-less state while preserving their site association. Child locations become top-level locations in the same site. These changes must commit together.
 
 ## Site Management
 
@@ -233,12 +233,12 @@ The system should:
 
 ### Next
 
-1. Add browser interaction tests for bottle creation, movement, and storage-location rename.
-2. Add member invitation and role-management workflows.
-3. Add richer wine/bottle detail editing beyond the current capture form.
-4. Add CSV export before adding AI features.
+1. Add export and rehearse recovery of catalogue records and original images.
+2. Add consumed-history browsing and a deliberate restore operation.
+3. Add a complete read-only bottle-details view.
+4. Add member invitation and role-management workflows.
 5. Add capture-retention controls and operational visibility for R2 cleanup retries.
-6. Expand MCP protocol integration tests beyond the shared database-role and atomic-audit coverage.
+6. Expand hosted MCP/OAuth and Workflow restart verification using a dedicated test site.
 
 ## Success Criteria
 

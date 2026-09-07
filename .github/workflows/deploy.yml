@@ -50,6 +50,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check browser authentication configuration
+        run: |
+          if [[ -z "${VITE_CLERK_PUBLISHABLE_KEY//[[:space:]]/}" ]]; then
+            echo "::error::Set VITE_CLERK_PUBLISHABLE_KEY in the production environment before deploying."
+            exit 1
+          fi
+
+      - name: Build Worker and browser assets
+        run: pnpm --filter @chikachow/booze-web run build
+
       - name: Apply D1 migrations
         run: pnpm --filter @chikachow/booze-web exec wrangler d1 migrations apply booze --remote
         env:
@@ -58,7 +68,7 @@ jobs:
           WRANGLER_WRITE_LOGS: "false"
 
       - name: Deploy Worker
-        run: pnpm --filter @chikachow/booze-web run deploy
+        run: pnpm --filter @chikachow/booze-web exec wrangler deploy
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

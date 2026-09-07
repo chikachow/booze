@@ -275,37 +275,42 @@ export type SiteFormState = {
 
 export type BottlePatch = {
   readonly status?: "in_stock" | "consumed";
-  readonly storageLocationId?: string | null;
-  readonly positionHint?: string;
-  readonly bottle?: {
-    readonly volumeMl?: number | undefined;
-    readonly barcode?: string;
-    readonly lotCode?: string;
-    readonly notes?: string;
-  };
-  readonly wine?: {
-    readonly wineryName: string;
-    readonly brandName: string;
-    readonly baseName?: string | undefined;
-    readonly designation: string;
-    readonly displayName: string;
-    readonly vintageYear?: number | undefined;
-    readonly grapeVarieties: readonly string[];
-    readonly country: string;
-    readonly region: string;
-    readonly appellation: string;
-    readonly classification: string;
-    readonly wineType: string;
-    readonly wineColor: string;
-    readonly alcoholPercent?: number | undefined;
-    readonly drinkFromYear?: number | undefined;
-    readonly drinkToYear?: number | undefined;
-    readonly description: string;
-    readonly drinkingAdvice: string;
-    readonly labelText: string;
-    readonly sourceUrl: string;
-    readonly notes: string;
-  };
+  readonly storageLocationId?: string | null | undefined;
+  readonly positionHint?: string | undefined;
+  readonly bottle?:
+    | {
+        readonly volumeMl?: number | undefined;
+        readonly barcode?: string;
+        readonly lotCode?: string;
+        readonly notes?: string;
+      }
+    | undefined;
+  readonly wine?:
+    | {
+        readonly wineryName?: string | undefined;
+        readonly brandName?: string | undefined;
+        readonly baseName?: string | undefined;
+        readonly designation?: string | undefined;
+        readonly displayName?: string | undefined;
+        readonly vintageYear?: number | null | undefined;
+        readonly grapeVarieties?: readonly string[] | undefined;
+        readonly country?: string | undefined;
+        readonly region?: string | undefined;
+        readonly appellation?: string | undefined;
+        readonly classification?: string | undefined;
+        readonly wineType?: string | undefined;
+        readonly wineColor?: string | undefined;
+        readonly addressQualification?: string | undefined;
+        readonly alcoholPercent?: number | null | undefined;
+        readonly drinkFromYear?: number | null | undefined;
+        readonly drinkToYear?: number | null | undefined;
+        readonly description?: string | undefined;
+        readonly drinkingAdvice?: string | undefined;
+        readonly labelText?: string | undefined;
+        readonly sourceUrl?: string | undefined;
+        readonly notes?: string | undefined;
+      }
+    | undefined;
   readonly labelExtraction?:
     | {
         readonly extractedFieldsJson: string;
@@ -397,32 +402,17 @@ export const initialCaptureFormState: CaptureFormState = {
 
 export function parseOptionalYear(value: string): number | undefined {
   const trimmed = value.trim();
-  if (trimmed === "") {
-    return undefined;
-  }
-  // oxlint-disable-next-line unicorn/prefer-number-coercion -- Preserve acceptance of a leading year in user input.
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  return /^\d{4}$/u.test(trimmed) ? Number(trimmed) : undefined;
 }
 
 export function parseOptionalDecimal(value: string): number | undefined {
-  const normalised = value.trim().replace("%", "");
-  if (normalised === "") {
-    return undefined;
-  }
-  // oxlint-disable-next-line unicorn/prefer-number-coercion -- Preserve acceptance of a leading decimal in user input.
-  const parsed = Number.parseFloat(normalised);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  const match = /^(\d+(?:\.\d+)?|\.\d+)\s*(?:%\s*(?:alc\/vol)?)?$/iu.exec(value.trim());
+  return match === null ? undefined : Number(match[1]);
 }
 
 export function parseOptionalVolumeMl(value: string): number | undefined {
-  const normalised = value.trim().toLowerCase();
-  if (normalised === "") {
-    return undefined;
-  }
-  // oxlint-disable-next-line unicorn/prefer-number-coercion -- Preserve acceptance of a leading volume in user input.
-  const parsed = Number.parseInt(normalised.replace("ml", ""), 10);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  const match = /^(\d+)\s*(?:ml)?$/iu.exec(value.trim());
+  return match === null ? undefined : Number(match[1]);
 }
 
 export function parseQuantity(value: string): number {

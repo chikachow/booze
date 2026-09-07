@@ -18,6 +18,7 @@ import { bottleExtractorId, type BottleOcrDiagnostic } from "./bottle-ocr.ts";
 import { putCaptureRunArtifact, type CaptureRunArtifact } from "./capture-artifacts.ts";
 import {
   createCaptureRun,
+  beginCaptureWorkflow,
   getCaptureForWorkflow,
   updateCaptureRun,
   updateCaptureStatus,
@@ -28,6 +29,7 @@ import { errorDetails, logError, logInfo } from "./observability.ts";
 type CaptureRunContext = {
   readonly capture: CaptureWorkflowRecord;
   readonly runId: string;
+  readonly workflowInstanceId: string;
 };
 
 type CaptureImportCandidate = {
@@ -58,10 +60,24 @@ export class BottleCaptureWorkflow extends WorkflowEntrypoint<
     let runContext: CaptureRunContext | null = null;
 
     try {
-      await markCaptureExtracting({ captureId, env: this.env, step });
+      if (
+        !(await markCaptureExtracting({
+          captureId,
+          env: this.env,
+          step,
+          workflowInstanceId: event.instanceId,
+        }))
+      ) {
+        return { captureId, status: "skipped" };
+      }
 
       failedStage = "create capture run";
-      runContext = await createCaptureRunContext({ captureId, env: this.env, step });
+      runContext = await createCaptureRunContext({
+        captureId,
+        env: this.env,
+        step,
+        workflowInstanceId: event.instanceId,
+      });
       const context = runContext;
 
       failedStage = "extract label evidence";
@@ -149,6 +165,7 @@ export class BottleCaptureWorkflow extends WorkflowEntrypoint<
         captureId,
         database,
         status: "failed",
+        workflowInstanceId: event.instanceId,
         errorMessage: message,
         errorDetail: runContext === null ? errorDetails(error) : null,
       });
@@ -161,21 +178,20 @@ async function markCaptureExtracting({
   captureId,
   env,
   step,
+  workflowInstanceId,
 }: {
   readonly captureId: string;
   readonly env: Bindings;
   readonly step: WorkflowStep;
-}): Promise<void> {
-  await step.do("mark capture extracting", async () => {
+  readonly workflowInstanceId: string;
+}): Promise<boolean> {
+  return step.do("mark capture extracting", async () => {
     const database = createD1Client(env.DB);
-    await updateCaptureStatus({
+    return beginCaptureWorkflow({
       captureId,
       database,
-      status: "extracting",
-      errorMessage: null,
-      errorDetail: null,
+      workflowInstanceId,
     });
-    return { captureId };
   });
 }
 
@@ -183,16 +199,23 @@ async function createCaptureRunContext({
   captureId,
   env,
   step,
+  workflowInstanceId,
 }: {
   readonly captureId: string;
   readonly env: Bindings;
   readonly step: WorkflowStep;
+  readonly workflowInstanceId: string;
 }): Promise<CaptureRunContext> {
   return step.do("create capture run", async () => {
     const database = createD1Client(env.DB);
     const capture = await getCaptureForWorkflow({ captureId, database });
-    const run = await createCaptureRun({ captureId, database, status: "extracting" });
-    return { capture, runId: run.runId };
+    const run = await createCaptureRun({
+      captureId,
+      database,
+      runId: `run_${workflowInstanceId}`,
+      status: "extracting",
+    });
+    return { capture, runId: run.runId, workflowInstanceId };
   });
 }
 
@@ -207,18 +230,13 @@ async function runExtractorSteps({
   readonly env: Bindings;
   readonly step: WorkflowStep;
 }): Promise<readonly CaptureExtractorResult[]> {
-  return Promise.all(
-    defaultBottleExtractorConfigs.map(async (extractor) => {
-      const result = await runExtractorStep({
-        captureId,
-        context,
-        env,
-        extractor,
-        step,
-      });
-      return result;
-    }),
-  );
+  const results: CaptureExtractorResult[] = [];
+  // Each model call prepares image buffers and serializes a request. Keep only
+  // one such payload in memory while retaining separate durable retry steps.
+  for (const extractor of defaultBottleExtractorConfigs) {
+    results.push(await runExtractorStep({ captureId, context, env, extractor, step }));
+  }
+  return results;
 }
 
 async function runExtractorStep({
@@ -250,6 +268,7 @@ async function runExtractorStep({
       try {
         const extracted = await extractCaptureLabelEvidence({
           bucket: env.IMAGE_BUCKET,
+          images: env.IMAGES,
           capture: context.capture,
           diagnostics,
           extractor,
@@ -352,8 +371,8 @@ async function writeExtractionArtifact({
   readonly reconciliation: CaptureReconciliationResult;
   readonly step: WorkflowStep;
 }): Promise<CaptureRunArtifact> {
-  return step.do("write extraction artifact", async () =>
-    putCaptureRunArtifact({
+  return step.do("write extraction artifact", async () => {
+    const artifact = await putCaptureRunArtifact({
       bucket: env.IMAGE_BUCKET,
       captureId,
       kind: "extraction",
@@ -369,8 +388,17 @@ async function writeExtractionArtifact({
         reviewDecision: extracted.reviewDecision,
         runId: context.runId,
       },
-    }),
-  );
+    });
+    await updateCaptureRun({
+      database: createD1Client(env.DB),
+      runId: context.runId,
+      status: "extracting",
+      extractionArtifact: artifact,
+      importCandidate: compactImportCandidate(extracted.candidate),
+      model: extracted.model,
+    });
+    return artifact;
+  });
 }
 
 async function importCaptureCandidateStep({
@@ -404,6 +432,8 @@ async function importCaptureCandidateStep({
       candidate: extracted.candidate,
       captureId,
       database,
+      runId: context.runId,
+      workflowInstanceId: context.workflowInstanceId,
       quantity: context.capture.quantity,
       siteId: context.capture.siteId,
       storageLocationId: context.capture.storageLocationId,
@@ -452,10 +482,16 @@ async function recordCaptureResult({
           errorMessage: null,
           errorDetail: null,
           importedBottleIds: imported.bottleIds,
+          workflowInstanceId: context.workflowInstanceId,
         });
         break;
       case "needs_review":
-        await updateCaptureStatus({ captureId, database, status: "needs_review" });
+        await updateCaptureStatus({
+          captureId,
+          database,
+          status: "needs_review",
+          workflowInstanceId: context.workflowInstanceId,
+        });
         break;
       case "skipped":
         break;

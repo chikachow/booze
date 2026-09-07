@@ -1,7 +1,7 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
-import { parseGrapeVarieties } from "./bottle-metadata.ts";
+import { bottleCreatePayload, bottleEditPayload } from "./bottle-payload.ts";
 import type { BottleModalSubmit, BottleModalSubmitResult } from "./BottleModal.tsx";
 import type { CaptureSubmitResult } from "./CaptureView.tsx";
 import type { MutationCompletion } from "./useCatalogue.ts";
@@ -12,9 +12,6 @@ import {
   initialLocationFormState,
   initialSiteFormState,
   locationPath,
-  parseOptionalDecimal,
-  parseOptionalVolumeMl,
-  parseOptionalYear,
   type BottlePatch,
   type CaptureFormState,
   type FormState,
@@ -114,7 +111,7 @@ export function useBottleController({
     setIsSaving(true);
     setStatus("Saving bottle...");
     try {
-      const payload = bottlePayload({ awards, criticReviews, form });
+      const payload = bottleCreatePayload({ awards, criticReviews, form });
       const response = await fetch("/api/bottles", {
         method: "POST",
         headers: jsonHeaders(await getAuthHeaders()),
@@ -122,10 +119,6 @@ export function useBottleController({
           ...payload,
           siteId: form.siteId,
           quantity: quantity.value,
-          wine: {
-            ...payload.wine,
-            addressQualification: form.addressQualification,
-          },
         }),
       });
       if (!response.ok) {
@@ -196,7 +189,7 @@ export function useBottleController({
     try {
       const updated = await updateBottle({
         bottleId: editingBottle.bottleId,
-        payload: bottlePayload(submission),
+        payload: bottleEditPayload(submission, editingBottle),
       });
       if (updated) {
         setEditingBottle(null);
@@ -504,48 +497,6 @@ function useDefaultSite<T extends FormState | CaptureFormState | LocationFormSta
           },
     );
   }, [setForm, writableSites]);
-}
-
-function bottlePayload({ awards, criticReviews, form }: BottleModalSubmit): BottlePatch {
-  return {
-    storageLocationId: form.storageLocationId === "" ? null : form.storageLocationId,
-    positionHint: form.position,
-    wine: {
-      wineryName: form.wineryName,
-      brandName: form.brandName,
-      baseName: form.displayName,
-      designation: form.displayName,
-      displayName: form.displayName,
-      vintageYear: parseOptionalYear(form.vintageYear),
-      grapeVarieties: parseGrapeVarieties(form.grapeVarieties),
-      country: form.country,
-      region: form.region,
-      appellation: form.appellation,
-      classification: form.classification,
-      wineType: form.wineType,
-      wineColor: form.wineColor,
-      alcoholPercent: parseOptionalDecimal(form.alcoholPercent),
-      drinkFromYear: parseOptionalYear(form.drinkFromYear),
-      drinkToYear: parseOptionalYear(form.drinkToYear),
-      description: form.description,
-      drinkingAdvice: form.drinkingAdvice,
-      labelText: form.labelText,
-      sourceUrl: form.sourceUrl,
-      notes: form.wineNotes,
-    },
-    bottle: {
-      volumeMl: parseOptionalVolumeMl(form.bottleVolumeMl),
-      barcode: form.barcode,
-      lotCode: form.lotCode,
-      notes: form.bottleNotes,
-    },
-    labelExtraction:
-      form.labelExtractionJson.trim() === ""
-        ? undefined
-        : { extractedFieldsJson: form.labelExtractionJson },
-    criticReviews,
-    awards,
-  };
 }
 
 function jsonHeaders(authHeaders: Record<string, string>): Record<string, string> {

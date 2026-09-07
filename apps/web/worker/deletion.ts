@@ -14,8 +14,10 @@ export async function deleteBottleCaptureData({
 }: {
   readonly captureId: string;
   readonly database: D1Database;
-}): Promise<void> {
-  await database.batch([
+}): Promise<boolean> {
+  const deletableCapture = `SELECT id FROM bottle_captures
+    WHERE id = ? AND status NOT IN ('queued', 'extracting', 'importing')`;
+  const results = await database.batch([
     database
       .prepare(
         `INSERT INTO r2_object_deletion_queue (r2_key, source_kind, source_id)
@@ -23,7 +25,7 @@ export async function deleteBottleCaptureData({
          FROM image_assets
          INNER JOIN bottle_capture_images
            ON bottle_capture_images.image_asset_id = image_assets.id
-         WHERE bottle_capture_images.capture_id = ?
+         WHERE bottle_capture_images.capture_id = (${deletableCapture})
            AND NOT EXISTS (
              SELECT 1
              FROM bottle_capture_images AS other_capture_image
@@ -40,7 +42,7 @@ export async function deleteBottleCaptureData({
          FROM image_assets
          INNER JOIN bottle_capture_images
            ON bottle_capture_images.image_asset_id = image_assets.id
-         WHERE bottle_capture_images.capture_id = ?
+         WHERE bottle_capture_images.capture_id = (${deletableCapture})
            AND image_assets.thumbnail_r2_key IS NOT NULL
            AND NOT EXISTS (
              SELECT 1
@@ -56,7 +58,7 @@ export async function deleteBottleCaptureData({
         `INSERT INTO r2_object_deletion_queue (r2_key, source_kind, source_id)
          SELECT extraction_r2_key, 'capture_run', id
          FROM bottle_capture_runs
-         WHERE capture_id = ? AND extraction_r2_key IS NOT NULL
+         WHERE capture_id = (${deletableCapture}) AND extraction_r2_key IS NOT NULL
          ON CONFLICT (r2_key) DO NOTHING`,
       )
       .bind(captureId),
@@ -65,22 +67,28 @@ export async function deleteBottleCaptureData({
         `INSERT INTO r2_object_deletion_queue (r2_key, source_kind, source_id)
          SELECT error_detail_r2_key, 'capture_run', id
          FROM bottle_capture_runs
-         WHERE capture_id = ? AND error_detail_r2_key IS NOT NULL
+         WHERE capture_id = (${deletableCapture}) AND error_detail_r2_key IS NOT NULL
          ON CONFLICT (r2_key) DO NOTHING`,
       )
       .bind(captureId),
     database
       .prepare(
         `DELETE FROM label_extractions
-         WHERE capture_id = ?
+         WHERE capture_id = (${deletableCapture})
             OR capture_run_id IN (
-              SELECT id FROM bottle_capture_runs WHERE capture_id = ?
+              SELECT id FROM bottle_capture_runs WHERE capture_id = (${deletableCapture})
             )`,
       )
       .bind(captureId, captureId),
-    database.prepare("DELETE FROM bottle_capture_images WHERE capture_id = ?").bind(captureId),
-    database.prepare("DELETE FROM bottle_capture_runs WHERE capture_id = ?").bind(captureId),
-    database.prepare("DELETE FROM bottle_captures WHERE id = ?").bind(captureId),
+    database
+      .prepare(`DELETE FROM bottle_capture_images WHERE capture_id = (${deletableCapture})`)
+      .bind(captureId),
+    database
+      .prepare(`DELETE FROM bottle_capture_runs WHERE capture_id = (${deletableCapture})`)
+      .bind(captureId),
+    database
+      .prepare(`DELETE FROM bottle_captures WHERE id = (${deletableCapture})`)
+      .bind(captureId),
     database.prepare(
       `DELETE FROM image_assets
        WHERE id IN (
@@ -95,6 +103,7 @@ export async function deleteBottleCaptureData({
        )`,
     ),
   ]);
+  return results[7]?.meta.changes === 1;
 }
 
 export async function deleteSiteData({
@@ -103,14 +112,18 @@ export async function deleteSiteData({
 }: {
   readonly database: D1Database;
   readonly siteId: string;
-}): Promise<void> {
-  await database.batch([
+}): Promise<boolean> {
+  const deletableSite = `SELECT id FROM sites WHERE id = ? AND NOT EXISTS (
+    SELECT 1 FROM bottle_captures WHERE site_id = sites.id
+      AND status IN ('queued', 'extracting', 'importing')
+  )`;
+  const results = await database.batch([
     database
       .prepare(
         `INSERT INTO r2_object_deletion_queue (r2_key, source_kind, source_id)
          SELECT r2_key, 'image_asset', id
          FROM image_assets
-         WHERE site_id = ?
+         WHERE site_id = (${deletableSite})
          ON CONFLICT (r2_key) DO NOTHING`,
       )
       .bind(siteId),
@@ -119,7 +132,7 @@ export async function deleteSiteData({
         `INSERT INTO r2_object_deletion_queue (r2_key, source_kind, source_id)
          SELECT thumbnail_r2_key, 'image_asset', id
          FROM image_assets
-         WHERE site_id = ? AND thumbnail_r2_key IS NOT NULL
+         WHERE site_id = (${deletableSite}) AND thumbnail_r2_key IS NOT NULL
          ON CONFLICT (r2_key) DO NOTHING`,
       )
       .bind(siteId),
@@ -129,7 +142,7 @@ export async function deleteSiteData({
          SELECT bottle_capture_runs.extraction_r2_key, 'capture_run', bottle_capture_runs.id
          FROM bottle_capture_runs
          INNER JOIN bottle_captures ON bottle_captures.id = bottle_capture_runs.capture_id
-         WHERE bottle_captures.site_id = ?
+         WHERE bottle_captures.site_id = (${deletableSite})
            AND bottle_capture_runs.extraction_r2_key IS NOT NULL
          ON CONFLICT (r2_key) DO NOTHING`,
       )
@@ -140,7 +153,7 @@ export async function deleteSiteData({
          SELECT bottle_capture_runs.error_detail_r2_key, 'capture_run', bottle_capture_runs.id
          FROM bottle_capture_runs
          INNER JOIN bottle_captures ON bottle_captures.id = bottle_capture_runs.capture_id
-         WHERE bottle_captures.site_id = ?
+         WHERE bottle_captures.site_id = (${deletableSite})
            AND bottle_capture_runs.error_detail_r2_key IS NOT NULL
          ON CONFLICT (r2_key) DO NOTHING`,
       )
@@ -148,48 +161,55 @@ export async function deleteSiteData({
     database
       .prepare(
         `DELETE FROM label_extractions
-         WHERE bottle_id IN (SELECT id FROM bottles WHERE site_id = ?)
-            OR wine_vintage_id IN (SELECT id FROM wine_vintages WHERE site_id = ?)
-            OR capture_id IN (SELECT id FROM bottle_captures WHERE site_id = ?)
+         WHERE bottle_id IN (SELECT id FROM bottles WHERE site_id = (${deletableSite}))
+            OR wine_vintage_id IN (SELECT id FROM wine_vintages WHERE site_id = (${deletableSite}))
+            OR capture_id IN (SELECT id FROM bottle_captures WHERE site_id = (${deletableSite}))
             OR capture_run_id IN (
               SELECT bottle_capture_runs.id
               FROM bottle_capture_runs
               INNER JOIN bottle_captures ON bottle_captures.id = bottle_capture_runs.capture_id
-              WHERE bottle_captures.site_id = ?
+              WHERE bottle_captures.site_id = (${deletableSite})
             )`,
       )
       .bind(siteId, siteId, siteId, siteId),
-    database.prepare("DELETE FROM critic_reviews WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM wine_awards WHERE site_id = ?").bind(siteId),
+    database.prepare(`DELETE FROM critic_reviews WHERE site_id = (${deletableSite})`).bind(siteId),
+    database.prepare(`DELETE FROM wine_awards WHERE site_id = (${deletableSite})`).bind(siteId),
     database
       .prepare(
         `DELETE FROM bottle_capture_images
-         WHERE capture_id IN (SELECT id FROM bottle_captures WHERE site_id = ?)`,
+         WHERE capture_id IN (SELECT id FROM bottle_captures WHERE site_id = (${deletableSite}))`,
       )
       .bind(siteId),
     database
       .prepare(
         `DELETE FROM bottle_capture_runs
-         WHERE capture_id IN (SELECT id FROM bottle_captures WHERE site_id = ?)`,
+         WHERE capture_id IN (SELECT id FROM bottle_captures WHERE site_id = (${deletableSite}))`,
       )
       .bind(siteId),
-    database.prepare("DELETE FROM bottle_captures WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM image_assets WHERE site_id = ?").bind(siteId),
+    database.prepare(`DELETE FROM bottle_captures WHERE site_id = (${deletableSite})`).bind(siteId),
+    database.prepare(`DELETE FROM image_assets WHERE site_id = (${deletableSite})`).bind(siteId),
     database
       .prepare(
         `DELETE FROM bottle_locations
-         WHERE bottle_id IN (SELECT id FROM bottles WHERE site_id = ?)`,
+         WHERE bottle_id IN (SELECT id FROM bottles WHERE site_id = (${deletableSite}))`,
       )
       .bind(siteId),
-    database.prepare("DELETE FROM bottles WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM wine_constituents WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM review_sources WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM wine_vintages WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM wineries WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM storage_locations WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM site_memberships WHERE site_id = ?").bind(siteId),
-    database.prepare("DELETE FROM sites WHERE id = ?").bind(siteId),
+    database.prepare(`DELETE FROM bottles WHERE site_id = (${deletableSite})`).bind(siteId),
+    database
+      .prepare(`DELETE FROM wine_constituents WHERE site_id = (${deletableSite})`)
+      .bind(siteId),
+    database.prepare(`DELETE FROM review_sources WHERE site_id = (${deletableSite})`).bind(siteId),
+    database.prepare(`DELETE FROM wine_vintages WHERE site_id = (${deletableSite})`).bind(siteId),
+    database.prepare(`DELETE FROM wineries WHERE site_id = (${deletableSite})`).bind(siteId),
+    database
+      .prepare(`DELETE FROM storage_locations WHERE site_id = (${deletableSite})`)
+      .bind(siteId),
+    database
+      .prepare(`DELETE FROM site_memberships WHERE site_id = (${deletableSite})`)
+      .bind(siteId),
+    database.prepare(`DELETE FROM sites WHERE id = (${deletableSite})`).bind(siteId),
   ]);
+  return results.at(-1)?.meta.changes === 1;
 }
 
 export async function drainR2ObjectDeletionQueue({
@@ -200,6 +220,17 @@ export async function drainR2ObjectDeletionQueue({
   readonly database: D1Database;
 }): Promise<number> {
   let deletedObjectCount = 0;
+  // Older uploads reused content-addressed keys. A pending deletion may refer
+  // to an object that has since been attached to a live image or capture run.
+  await database
+    .prepare(`DELETE FROM r2_object_deletion_queue
+    WHERE r2_key IN (
+      SELECT r2_key FROM image_assets
+      UNION SELECT thumbnail_r2_key FROM image_assets WHERE thumbnail_r2_key IS NOT NULL
+      UNION SELECT extraction_r2_key FROM bottle_capture_runs WHERE extraction_r2_key IS NOT NULL
+      UNION SELECT error_detail_r2_key FROM bottle_capture_runs WHERE error_detail_r2_key IS NOT NULL
+    )`)
+    .run();
   for (let batchNumber = 0; batchNumber < maximumDeletionBatchesPerDrain; batchNumber += 1) {
     const queued = await database
       .prepare(

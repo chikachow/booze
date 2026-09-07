@@ -8,6 +8,11 @@ export type SortKey<TCursor extends Cursor> = {
   readonly expression: SQLWrapper;
 };
 
+// SQLite lower() folds ASCII only. Cursors and search inputs must use the same rules.
+export function sqliteLower(value: string): string {
+  return value.replaceAll(/[A-Z]/gu, (character) => character.toLowerCase());
+}
+
 export function andAll(conditions: readonly (SQL | undefined)[]): SQL | undefined {
   const present = conditions.filter((condition): condition is SQL => condition !== undefined);
   return present.length === 0 ? undefined : and(...present);
@@ -104,9 +109,7 @@ function cursorValue<TCursor extends Cursor>(
 }
 
 function likePattern(value: string): string {
-  return `%${value
-    .trim()
-    .toLowerCase()
+  return `%${sqliteLower(value.trim())
     .replaceAll("\\", "\\\\")
     .replaceAll("%", "\\%")
     .replaceAll("_", "\\_")}%`;

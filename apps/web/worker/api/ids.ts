@@ -20,17 +20,17 @@ export function userIdForClerkUser(clerkUserId: string): string {
   return stableId("user", clerkUserId);
 }
 
-export function optionalText(value: string | undefined): string | null {
-  if (value === undefined || value.trim() === "") {
+export function optionalText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined || value.trim() === "") {
     return null;
   }
   return value.trim();
 }
 
-export function optionalInteger(value: number | undefined): number | null {
+export function optionalInteger(value: number | null | undefined): number | null {
   return value ?? null;
 }
 
-export function vintageLabelForYear(vintageYear: number | undefined): string {
-  return vintageYear === undefined ? "NV" : String(vintageYear);
+export function vintageLabelForYear(vintageYear: number | null | undefined): string {
+  return vintageYear === null || vintageYear === undefined ? "NV" : String(vintageYear);
 }

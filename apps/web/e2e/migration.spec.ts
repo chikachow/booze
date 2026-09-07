@@ -606,8 +606,9 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(captureStatus).toHaveText("Showing all 80 captures");
   const firstRevealedCapture = page.locator(".capture-card").nth(50);
   await expect(firstRevealedCapture).toBeFocused();
+  await expect(firstRevealedCapture.getByRole("button", { name: "Create new" })).toBeDisabled();
   await page.keyboard.press("Tab");
-  await expect(firstRevealedCapture.getByRole("button").first()).toBeFocused();
+  await expect(firstRevealedCapture.getByRole("button", { name: "Retry" })).toBeFocused();
 
   await page.getByRole("button", { name: "Storage" }).click();
   const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });
