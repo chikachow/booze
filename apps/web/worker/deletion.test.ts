@@ -10,6 +10,27 @@ import { createMcpToolAuditEventInsert } from "./mcp/audit.ts";
 import { asD1, migratedDatabase } from "./d1-support.ts";
 
 await describe("durable deletion", async () => {
+  await it("preserves the entire site when a capture is processing", async () => {
+    const database = migratedDatabase();
+    seedSite(database, "site-1");
+    seedCatalogueAndCapture(database, "site-1", "capture-1", "asset-1");
+    database.exec("UPDATE bottle_captures SET status = 'extracting'");
+    assert.equal(await deleteSiteData({ database: asD1(database), siteId: "site-1" }), false);
+    for (const table of [
+      "sites",
+      "bottles",
+      "wine_vintages",
+      "bottle_locations",
+      "bottle_captures",
+      "bottle_capture_runs",
+      "image_assets",
+      "label_extractions",
+    ]) {
+      assert.equal(scalar(database, `SELECT count(*) FROM ${table}`), 1, table);
+    }
+    assert.deepEqual(queuedKeys(database), []);
+  });
+
   await it("deletes a complete site while preserving audit rows unchanged", async () => {
     const database = migratedDatabase();
     seedSite(database, "site-1");

@@ -109,6 +109,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
     captures,
     completeMutation,
     items,
+    isLoading,
     locations,
     refreshIssue,
     retryRefresh,
@@ -184,12 +185,15 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
             item.wineryName,
             item.brandName,
             item.displayName,
+            item.vintageLabel,
+            item.vintageYear?.toString() ?? null,
             item.grapeVarieties,
             item.country,
             item.region,
             item.appellation,
             item.classification,
             item.wineType,
+            item.wineColor,
             item.alcoholPercent,
             item.bottleVolumeMl,
             item.addressQualification,
@@ -317,6 +321,14 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
                 filter={filter}
                 grouping={grouping}
                 items={listedItems}
+                isLoading={isLoading}
+                onCreateSite={
+                  sites.length === 0 && refreshIssue === null
+                    ? () => {
+                        setArea("management");
+                      }
+                    : undefined
+                }
                 editableSiteIds={writableSiteIds}
                 locationFilter={locationFilter}
                 locationOptions={locationOptions}

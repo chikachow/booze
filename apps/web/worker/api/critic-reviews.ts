@@ -10,7 +10,7 @@ import { and, asc, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { requireSitePermission } from "./auth.ts";
-import { generatedId, optionalText, stableId } from "./ids.ts";
+import { generatedId, optionalText } from "./ids.ts";
 
 export type ReviewSourceInput = {
   readonly siteId: string;
@@ -114,7 +114,10 @@ export async function createOrUpdateReviewSource({
     userId,
   });
 
-  const reviewSourceId = reviewSourceIdForInput(input);
+  const existing = (await listReviewSources({ database, siteId: input.siteId, userId })).find(
+    (source) => source.siteId === input.siteId && source.name === input.name.trim(),
+  );
+  const reviewSourceId = existing?.id ?? generatedId("review-source");
   await createReviewSourceUpsert({ database, input, reviewSourceId }).run();
 
   const rows = await listReviewSources({ database, siteId: input.siteId, userId });
@@ -125,14 +128,10 @@ export async function createOrUpdateReviewSource({
   return source;
 }
 
-export function reviewSourceIdForInput(input: ReviewSourceInput): string {
-  return stableId("review-source", `${input.siteId}:${input.name.trim()}`);
-}
-
 export function createReviewSourceUpsert({
   database,
   input,
-  reviewSourceId = reviewSourceIdForInput(input),
+  reviewSourceId = generatedId("review-source"),
 }: {
   readonly database: BoozeDatabase;
   readonly input: ReviewSourceInput;
@@ -208,56 +207,105 @@ export async function replaceCriticReviewsForWine({
   });
   await assertWineVintageInSite({ database, siteId, wineVintageId });
 
+  const statements = await prepareCriticReviewStatements({
+    database,
+    reviews,
+    siteId,
+    userId,
+    wineVintageId,
+  });
+  const [first, ...rest] = statements;
+  if (first !== undefined) await database.batch([first, ...rest]);
+  return listCriticReviews({ database, userId, wineVintageId });
+}
+
+export async function prepareCriticReviewStatements({
+  database,
+  reviews,
+  siteId,
+  userId,
+  wineVintageId,
+  removeMissing = true,
+  overwriteExisting = true,
+}: {
+  readonly database: BoozeDatabase;
+  readonly reviews: readonly CriticReviewInput[];
+  readonly siteId: string;
+  readonly userId: string;
+  readonly wineVintageId: string;
+  readonly removeMissing?: boolean;
+  readonly overwriteExisting?: boolean;
+}): Promise<Parameters<BoozeDatabase["batch"]>[0][number][]> {
+  const statements: Parameters<BoozeDatabase["batch"]>[0][number][] = [];
+  const sources = [...(await listReviewSources({ database, siteId, userId }))];
+  const existing = await database
+    .select({ id: criticReviews.id, reviewSourceId: criticReviews.reviewSourceId })
+    .from(criticReviews)
+    .where(and(eq(criticReviews.siteId, siteId), eq(criticReviews.wineVintageId, wineVintageId)));
   const keptReviewIds: string[] = [];
   for (const review of reviews) {
-    const reviewSourceId = await resolveOrCreateReviewSource({
-      database,
-      review,
-      siteId,
-      userId,
-    });
-    const existingRows = await database
-      .select({ id: criticReviews.id })
-      .from(criticReviews)
-      .where(
-        and(
-          eq(criticReviews.siteId, siteId),
-          eq(criticReviews.wineVintageId, wineVintageId),
-          eq(criticReviews.reviewSourceId, reviewSourceId),
-        ),
-      )
-      .limit(1);
-    const reviewId = existingRows[0]?.id ?? review.id ?? generatedId("critic-review");
-    keptReviewIds.push(reviewId);
-
-    await createCriticReviewUpsert({
-      database,
-      review,
-      reviewId,
-      reviewSourceId,
-      siteId,
-      userId,
-      wineVintageId,
-    }).run();
-  }
-
-  if (keptReviewIds.length === 0) {
-    await database
-      .delete(criticReviews)
-      .where(and(eq(criticReviews.siteId, siteId), eq(criticReviews.wineVintageId, wineVintageId)));
-  } else {
-    await database
-      .delete(criticReviews)
-      .where(
-        and(
-          eq(criticReviews.siteId, siteId),
-          eq(criticReviews.wineVintageId, wineVintageId),
-          notInArray(criticReviews.id, keptReviewIds),
-        ),
+    let source =
+      review.reviewSourceId === undefined
+        ? sources.find(
+            (candidate) =>
+              candidate.siteId === siteId && candidate.name === review.reviewSourceName?.trim(),
+          )
+        : sources.find((candidate) => candidate.id === review.reviewSourceId);
+    if (source === undefined) {
+      if (review.reviewSourceId !== undefined || optionalText(review.reviewSourceName) === null) {
+        throw new HTTPException(400, { message: "Review source is not available for this site" });
+      }
+      const name = review.reviewSourceName?.trim() ?? "";
+      source = {
+        id: generatedId("review-source"),
+        siteId,
+        siteName: null,
+        name,
+        sourceType: "critic",
+        url: null,
+        notes: null,
+        isActive: true,
+      };
+      sources.push(source);
+      statements.push(
+        database
+          .insert(reviewSources)
+          .values({ id: source.id, siteId, name, sourceType: "critic", isActive: true }),
       );
+    }
+    if (!source.isActive)
+      throw new HTTPException(400, { message: "Review source is not available for this site" });
+    const previous = existing.find((candidate) => candidate.reviewSourceId === source.id);
+    if (previous !== undefined && !overwriteExisting) continue;
+    const reviewId = previous?.id ?? generatedId("critic-review");
+    existing.push({ id: reviewId, reviewSourceId: source.id });
+    keptReviewIds.push(reviewId);
+    statements.push(
+      createCriticReviewUpsert({
+        database,
+        review,
+        reviewId,
+        reviewSourceId: source.id,
+        siteId,
+        userId,
+        wineVintageId,
+      }),
+    );
   }
-
-  return listCriticReviews({ database, userId, wineVintageId });
+  if (removeMissing) {
+    statements.push(
+      database
+        .delete(criticReviews)
+        .where(
+          and(
+            eq(criticReviews.siteId, siteId),
+            eq(criticReviews.wineVintageId, wineVintageId),
+            keptReviewIds.length === 0 ? undefined : notInArray(criticReviews.id, keptReviewIds),
+          ),
+        ),
+    );
+  }
+  return statements;
 }
 
 export function createCriticReviewUpsert({
@@ -320,13 +368,22 @@ export async function upsertCriticReview({
   readonly wineVintageId: string;
 }): Promise<CriticReviewResource> {
   const wine = await authorisedWineVintage({ database, userId, wineVintageId });
-  const reviews = await replaceCriticReviewsForWine({
+  await requireSitePermission({
     database,
-    reviews: [review, ...(await reviewsExceptSource({ database, review, userId, wineVintageId }))],
+    permission: "site.content.write",
+    siteId: wine.siteId,
+    userId,
+  });
+  const [first, ...rest] = await prepareCriticReviewStatements({
+    database,
+    reviews: [review],
     siteId: wine.siteId,
     userId,
     wineVintageId,
+    removeMissing: false,
   });
+  if (first !== undefined) await database.batch([first, ...rest]);
+  const reviews = await listCriticReviews({ database, userId, wineVintageId });
   const result = reviews.find(
     (candidate) =>
       candidate.id === review.id ||
@@ -370,62 +427,6 @@ export async function deleteCriticReview({
   return review;
 }
 
-async function resolveOrCreateReviewSource({
-  database,
-  review,
-  siteId,
-  userId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly review: CriticReviewInput;
-  readonly siteId: string;
-  readonly userId: string;
-}): Promise<string> {
-  if (review.reviewSourceId !== undefined) {
-    await assertReviewSourceUsableForSite({
-      database,
-      reviewSourceId: review.reviewSourceId,
-      siteId,
-      userId,
-    });
-    return review.reviewSourceId;
-  }
-
-  if (review.reviewSourceName === undefined || review.reviewSourceName.trim() === "") {
-    throw new HTTPException(400, { message: "Review source is required" });
-  }
-
-  const source = await createOrUpdateReviewSource({
-    database,
-    input: {
-      siteId,
-      name: review.reviewSourceName,
-      sourceType: "critic",
-      isActive: true,
-    },
-    userId,
-  });
-  return source.id;
-}
-
-async function assertReviewSourceUsableForSite({
-  database,
-  reviewSourceId,
-  siteId,
-  userId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly reviewSourceId: string;
-  readonly siteId: string;
-  readonly userId: string;
-}): Promise<void> {
-  const rows = await listReviewSources({ database, siteId, userId });
-  const source = rows.find((candidate) => candidate.id === reviewSourceId);
-  if (source === undefined || !source.isActive) {
-    throw new HTTPException(400, { message: "Review source is not available for this site" });
-  }
-}
-
 async function assertWineVintageInSite({
   database,
   siteId,
@@ -465,38 +466,6 @@ async function authorisedWineVintage({
     throw new HTTPException(404, { message: "Wine vintage not found" });
   }
   return row;
-}
-
-async function reviewsExceptSource({
-  database,
-  review,
-  userId,
-  wineVintageId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly review: CriticReviewInput;
-  readonly userId: string;
-  readonly wineVintageId: string;
-}): Promise<readonly CriticReviewInput[]> {
-  const reviews = await listCriticReviews({ database, userId, wineVintageId });
-  return reviews
-    .filter(
-      (candidate) =>
-        candidate.id !== review.id &&
-        candidate.reviewSourceId !== review.reviewSourceId &&
-        candidate.reviewSourceName !== review.reviewSourceName,
-    )
-    .map((candidate) => ({
-      id: candidate.id,
-      reviewSourceId: candidate.reviewSourceId,
-      ratingText: candidate.ratingText,
-      ratingValue: candidate.ratingValue ?? undefined,
-      ratingScale: candidate.ratingScale ?? undefined,
-      sourceUrl: candidate.sourceUrl ?? undefined,
-      reviewedAt: candidate.reviewedAt ?? undefined,
-      provenance: candidate.provenance ?? undefined,
-      notes: candidate.notes ?? undefined,
-    }));
 }
 
 function criticReviewColumns() {

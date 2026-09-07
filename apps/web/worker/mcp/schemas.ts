@@ -22,7 +22,7 @@ const paginationInputSchema = {
     .string()
     .trim()
     .min(1)
-    .max(512)
+    .max(16_384)
     .optional()
     .describe("Opaque token from a previous page. Pass it back unchanged to fetch the next page."),
 };

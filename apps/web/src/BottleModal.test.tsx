@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,159 @@ async function submitBottle(): Promise<BottleModalSubmitResult> {
 }
 
 describe("BottleModal destructive actions", () => {
+  it("does not offer a position note until a storage location is chosen", () => {
+    const item = inventoryItemFixture({ locationId: null, location: null, position: null });
+    render(
+      <BottleModal
+        form={formStateForItem(item)}
+        isSaving={false}
+        item={item}
+        locations={locationsFixture}
+        sites={sitesFixture}
+        title="Edit bottle"
+        onClose={closeBottle}
+        onSubmit={submitBottle}
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: "Position note" })).toBeDisabled();
+    expect(screen.getByText("Choose a location to add a position note.")).toBeVisible();
+  });
+
+  it("keeps unsaved changes until discarding is explicitly confirmed", async () => {
+    const user = userEvent.setup();
+    const item = inventoryItemFixture();
+    const onClose = vi.fn<() => void>();
+    render(
+      <BottleModal
+        form={formStateForItem(item)}
+        isSaving={false}
+        item={item}
+        locations={locationsFixture}
+        sites={sitesFixture}
+        title="Edit bottle"
+        onClose={onClose}
+        onSubmit={submitBottle}
+      />,
+    );
+    const winery = screen.getByRole("textbox", { name: /Winery/iu });
+    await user.type(winery, " corrected");
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByRole("alertdialog", { name: "Discard unsaved changes?" })).toBeVisible();
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(winery).toHaveValue(`${item.wineryName} corrected`);
+
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("serializes saving with consume, deletion, closing, and repeated form submission", async () => {
+    const user = userEvent.setup();
+    const item = inventoryItemFixture();
+    const onClose = vi.fn<() => void>();
+    const onMarkConsumed = vi.fn(async () => true);
+    const onDelete = vi.fn(async () => true);
+    let resolveSave: ((result: BottleModalSubmitResult) => void) | undefined;
+    const onSubmit = vi.fn(
+      async () =>
+        new Promise<BottleModalSubmitResult>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    render(
+      <BottleModal
+        form={formStateForItem(item)}
+        isSaving={false}
+        item={item}
+        locations={locationsFixture}
+        sites={sitesFixture}
+        title="Edit bottle"
+        onClose={onClose}
+        onSubmit={onSubmit}
+        onDelete={onDelete}
+        onMarkConsumed={onMarkConsumed}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Save bottle" }));
+    const winery = screen.getByRole("textbox", { name: /Winery/iu });
+    expect(winery).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mark drunk" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete bottle" })).toBeDisabled();
+    const form = winery.closest("form");
+    if (form === null) {
+      throw new Error("Missing bottle form");
+    }
+    fireEvent.submit(form);
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onMarkConsumed).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
+
+    resolveSave?.({ ok: false, message: "Temporary failure" });
+    expect(await screen.findByText("Temporary failure")).toBeVisible();
+    expect(winery).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Mark drunk" })).toBeEnabled();
+  });
+
+  it("requires saving an edited draft before marking the bottle drunk", async () => {
+    const user = userEvent.setup();
+    const item = inventoryItemFixture();
+    const onMarkConsumed = vi.fn(async () => true);
+    render(
+      <BottleModal
+        form={formStateForItem(item)}
+        isSaving={false}
+        item={item}
+        locations={locationsFixture}
+        sites={sitesFixture}
+        title="Edit bottle"
+        onClose={closeBottle}
+        onSubmit={submitBottle}
+        onMarkConsumed={onMarkConsumed}
+      />,
+    );
+    await user.type(screen.getByRole("textbox", { name: "Bottle notes" }), "Opened tonight");
+    expect(screen.getByRole("button", { name: "Mark drunk" })).toBeDisabled();
+    expect(screen.getByText("Save your changes before marking this bottle drunk.")).toBeVisible();
+    expect(onMarkConsumed).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed numbers and preserves the draft instead of silently truncating them", async () => {
+    const user = userEvent.setup();
+    const item = inventoryItemFixture();
+    const onSubmit = vi.fn(submitBottle);
+    render(
+      <BottleModal
+        form={formStateForItem(item)}
+        isSaving={false}
+        item={item}
+        locations={locationsFixture}
+        sites={sitesFixture}
+        title="Edit bottle"
+        onClose={closeBottle}
+        onSubmit={onSubmit}
+      />,
+    );
+    const vintage = screen.getByRole("textbox", { name: "Vintage" });
+    await user.clear(vintage);
+    await user.type(vintage, "2023 typo");
+    await user.click(screen.getByRole("button", { name: "Save bottle" }));
+
+    expect(
+      await screen.findByText("Vintage must be a whole year from 1800 to 2200."),
+    ).toBeVisible();
+    expect(vintage).toHaveValue("2023 typo");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("requires explicit AlertDialog confirmation before deleting", async () => {
     const user = userEvent.setup();
     const item = inventoryItemFixture();

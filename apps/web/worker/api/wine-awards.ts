@@ -3,7 +3,7 @@ import { and, asc, eq, notInArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { requireSitePermission } from "./auth.ts";
-import { optionalText, stableId } from "./ids.ts";
+import { generatedId, optionalText } from "./ids.ts";
 
 export type WineAwardInput = {
   readonly id?: string | undefined;
@@ -112,6 +112,45 @@ export async function replaceWineAwardsForWine({
   });
   await assertWineVintageInSite({ database, siteId, wineVintageId });
 
+  const [first, ...rest] = await prepareWineAwardStatements({
+    awards,
+    database,
+    siteId,
+    userId,
+    wineVintageId,
+  });
+  if (first !== undefined) await database.batch([first, ...rest]);
+  return listWineAwards({ database, userId, wineVintageId });
+}
+
+export async function prepareWineAwardStatements({
+  awards,
+  database,
+  siteId,
+  userId,
+  wineVintageId,
+  overwriteExisting = true,
+  removeMissing = true,
+}: {
+  readonly overwriteExisting?: boolean;
+  readonly removeMissing?: boolean;
+  readonly awards: readonly WineAwardInput[];
+  readonly database: BoozeDatabase;
+  readonly siteId: string;
+  readonly userId: string;
+  readonly wineVintageId: string;
+}): Promise<Parameters<BoozeDatabase["batch"]>[0][number][]> {
+  const statements: Parameters<BoozeDatabase["batch"]>[0][number][] = [];
+  const existing = await database
+    .select()
+    .from(wineAwards)
+    .where(and(eq(wineAwards.siteId, siteId), eq(wineAwards.wineVintageId, wineVintageId)));
+  const idsByAward = new Map(
+    existing.map((award) => [
+      JSON.stringify([award.awardName, award.awardLevel, award.awardYear]),
+      award.id,
+    ]),
+  );
   const keptAwardIds: string[] = [];
   for (const input of awards) {
     const awardName = input.awardName.trim();
@@ -120,32 +159,19 @@ export async function replaceWineAwardsForWine({
       continue;
     }
 
-    const awardId = stableId(
-      "wine-award",
-      [siteId, wineVintageId, awardName, awardLevel, input.awardYear?.toString() ?? ""].join(":"),
-    );
+    const awardKey = JSON.stringify([awardName, awardLevel, input.awardYear ?? null]);
+    if (idsByAward.has(awardKey) && !overwriteExisting) continue;
+    const awardId = idsByAward.get(awardKey) ?? generatedId("wine-award");
+    idsByAward.set(awardKey, awardId);
     keptAwardIds.push(awardId);
 
-    await database
-      .insert(wineAwards)
-      .values({
-        id: awardId,
-        siteId,
-        wineVintageId,
-        awardName,
-        awardLevel,
-        awardYear: input.awardYear,
-        awardBody: optionalText(input.awardBody),
-        category: optionalText(input.category),
-        points: input.points,
-        sourceUrl: optionalText(input.sourceUrl),
-        provenance: optionalText(input.provenance),
-        notes: optionalText(input.notes),
-        createdByUserId: userId,
-      })
-      .onConflictDoUpdate({
-        target: wineAwards.id,
-        set: {
+    statements.push(
+      database
+        .insert(wineAwards)
+        .values({
+          id: awardId,
+          siteId,
+          wineVintageId,
           awardName,
           awardLevel,
           awardYear: input.awardYear,
@@ -155,26 +181,45 @@ export async function replaceWineAwardsForWine({
           sourceUrl: optionalText(input.sourceUrl),
           provenance: optionalText(input.provenance),
           notes: optionalText(input.notes),
-          updatedAt: sql`CURRENT_TIMESTAMP`,
-        },
-      });
+          createdByUserId: userId,
+        })
+        .onConflictDoUpdate({
+          target: wineAwards.id,
+          set: {
+            awardName,
+            awardLevel,
+            awardYear: input.awardYear,
+            awardBody: optionalText(input.awardBody),
+            category: optionalText(input.category),
+            points: input.points,
+            sourceUrl: optionalText(input.sourceUrl),
+            provenance: optionalText(input.provenance),
+            notes: optionalText(input.notes),
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          },
+        }),
+    );
   }
 
-  if (keptAwardIds.length === 0) {
-    await database
-      .delete(wineAwards)
-      .where(and(eq(wineAwards.siteId, siteId), eq(wineAwards.wineVintageId, wineVintageId)));
-  } else {
-    await database
-      .delete(wineAwards)
-      .where(
-        and(
-          eq(wineAwards.siteId, siteId),
-          eq(wineAwards.wineVintageId, wineVintageId),
-          notInArray(wineAwards.id, keptAwardIds),
+  if (removeMissing && keptAwardIds.length === 0) {
+    statements.push(
+      database
+        .delete(wineAwards)
+        .where(and(eq(wineAwards.siteId, siteId), eq(wineAwards.wineVintageId, wineVintageId))),
+    );
+  } else if (removeMissing) {
+    statements.push(
+      database
+        .delete(wineAwards)
+        .where(
+          and(
+            eq(wineAwards.siteId, siteId),
+            eq(wineAwards.wineVintageId, wineVintageId),
+            notInArray(wineAwards.id, keptAwardIds),
+          ),
         ),
-      );
+    );
   }
 
-  return listWineAwards({ database, userId, wineVintageId });
+  return statements;
 }

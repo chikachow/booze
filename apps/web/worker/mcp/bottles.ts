@@ -28,6 +28,7 @@ import {
   andAll,
   containsAnyText,
   cursorPredicate,
+  sqliteLower,
   drinkStatusExpression,
   optionalContains,
   optionalEquals,
@@ -282,11 +283,11 @@ async function listBottleSummaryRows({
   const rowPage = pageFromRows({
     cursorForItem: (row) => ({
       bottleId: row.id,
-      site: row.siteName.toLowerCase(),
+      site: sqliteLower(row.siteName),
       storageLocationId: row.storageLocationId ?? "",
       vintageSort: row.vintageYear ?? -1,
-      wine: row.displayName.toLowerCase(),
-      winery: row.wineryName.toLowerCase(),
+      wine: sqliteLower(row.displayName),
+      winery: sqliteLower(row.wineryName),
     }),
     input,
     items: rows,

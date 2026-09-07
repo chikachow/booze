@@ -98,7 +98,11 @@ export const siteRoutes = new Hono<{ Bindings: Bindings }>()
       siteId,
       userId: authenticatedUser.userId,
     });
-    await deleteSiteData({ database: context.env.DB, siteId });
+    if (!(await deleteSiteData({ database: context.env.DB, siteId }))) {
+      throw new HTTPException(409, {
+        message: "Wait for capture processing to finish before deleting this site",
+      });
+    }
     await tryDrainR2ObjectDeletionQueue({
       bucket: context.env.IMAGE_BUCKET,
       database: context.env.DB,

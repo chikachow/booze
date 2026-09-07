@@ -1,7 +1,15 @@
-import { createD1Client, wineries, wineVintages, type BoozeDatabase } from "@chikachow/booze-db";
-import { and, eq } from "drizzle-orm";
+import {
+  bottleCaptureRuns,
+  bottleCaptures,
+  bottles,
+  createD1Client,
+  wineries,
+  wineVintages,
+  type BoozeDatabase,
+} from "@chikachow/booze-db";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
-import { createBottles, upsertWineVintage } from "./api/catalogue.ts";
+import { createBottleStatements, prepareWineVintage } from "./api/catalogue.ts";
 import { stableId, vintageLabelForYear } from "./api/ids.ts";
 import type { ImportCandidate } from "./bottle-extractor.ts";
 import { claimCaptureForImport } from "./capture-store.ts";
@@ -62,6 +70,8 @@ export async function importBottleCandidate({
   siteId,
   storageLocationId,
   positionHint,
+  runId,
+  workflowInstanceId,
 }: {
   readonly candidate: ImportCandidate;
   readonly captureId: string;
@@ -70,7 +80,13 @@ export async function importBottleCandidate({
   readonly siteId: string;
   readonly storageLocationId: string | null;
   readonly positionHint: string | null;
+  readonly runId: string;
+  readonly workflowInstanceId?: string;
 }): Promise<BottleImportResult> {
+  const committed = await committedImportResult({ database, runId });
+  if (committed !== null) {
+    return committed;
+  }
   const matchResult = await matchBottleCandidate({ candidate, database, siteId });
   if (matchResult.kind === "needs_review") {
     return {
@@ -80,7 +96,7 @@ export async function importBottleCandidate({
     };
   }
 
-  if (!(await claimCaptureForImport({ captureId, database }))) {
+  if (!(await claimCaptureForImport({ captureId, database, resume: true, workflowInstanceId }))) {
     return {
       kind: "skipped",
       reason: "capture_import_already_claimed",
@@ -95,25 +111,42 @@ export async function importBottleCandidate({
           siteId,
           wineVintageId: matchResult.wineVintageCandidate.id,
         })
-      : await upsertWineVintage({ database, siteId, wine: candidate.wine });
-  const bottleIds = await createBottles({
+      : await prepareWineVintage({ database, siteId, wine: candidate.wine });
+  const destination = await currentCaptureDestination({
+    captureId,
+    database,
+    storageLocationId,
+    positionHint,
+  });
+  const { bottleIds, statements } = createBottleStatements({
     bottleIds: bottleIdsForCapture({ captureId, quantity }),
     database,
     siteId,
     wineVintageId: vintage.wineVintageId,
-    storageLocationId,
-    positionHint,
+    ...destination,
     bottle: candidate.bottle,
     quantity,
   });
 
-  return {
+  const result = {
     kind: "imported",
     bottleIds,
     wineryId: vintage.wineryId,
     wineVintageId: vintage.wineVintageId,
     matchResult,
-  };
+  } satisfies Extract<BottleImportResult, { readonly kind: "imported" }>;
+  await assertExistingBottlesMatch({
+    bottleIds,
+    database,
+    siteId,
+    wineVintageId: vintage.wineVintageId,
+  });
+  await database.batch([
+    ...importCompletionStatements({ captureId, database, result, runId }),
+    ...vintage.statements,
+    ...statements,
+  ]);
+  return result;
 }
 
 export async function importReviewedCapture({
@@ -125,6 +158,7 @@ export async function importReviewedCapture({
   storageLocationId,
   positionHint,
   wineVintageId,
+  runId,
 }: {
   readonly candidate: ImportCandidate;
   readonly captureId: string;
@@ -134,18 +168,28 @@ export async function importReviewedCapture({
   readonly storageLocationId: string | null;
   readonly positionHint: string | null;
   readonly wineVintageId?: string | undefined;
+  readonly runId: string;
 }): Promise<Extract<BottleImportResult, { readonly kind: "imported" }>> {
+  const committed = await committedImportResult({ database, runId });
+  if (committed !== null) {
+    return committed;
+  }
   const vintage =
     wineVintageId === undefined
-      ? await upsertWineVintage({ database, siteId, wine: candidate.wine })
+      ? await prepareWineVintage({ database, siteId, wine: candidate.wine })
       : await getExistingVintage({ database, siteId, wineVintageId });
-  const bottleIds = await createBottles({
+  const destination = await currentCaptureDestination({
+    captureId,
+    database,
+    storageLocationId,
+    positionHint,
+  });
+  const { bottleIds, statements } = createBottleStatements({
     bottleIds: bottleIdsForCapture({ captureId, quantity }),
     database,
     siteId,
     wineVintageId: vintage.wineVintageId,
-    storageLocationId,
-    positionHint,
+    ...destination,
     bottle: candidate.bottle,
     quantity,
   });
@@ -160,13 +204,126 @@ export async function importReviewedCapture({
           wineVintageCandidates: [],
         };
 
-  return {
+  const result = {
     kind: "imported",
     bottleIds,
     wineryId: vintage.wineryId,
     wineVintageId: vintage.wineVintageId,
     matchResult,
-  };
+  } satisfies Extract<BottleImportResult, { readonly kind: "imported" }>;
+  await assertExistingBottlesMatch({
+    bottleIds,
+    database,
+    siteId,
+    wineVintageId: vintage.wineVintageId,
+  });
+  await database.batch([
+    ...importCompletionStatements({ captureId, database, result, runId }),
+    ...vintage.statements,
+    ...statements,
+  ]);
+  return result;
+}
+
+async function assertExistingBottlesMatch({
+  bottleIds,
+  database,
+  siteId,
+  wineVintageId,
+}: {
+  readonly bottleIds: readonly string[];
+  readonly database: BoozeDatabase;
+  readonly siteId: string;
+  readonly wineVintageId: string;
+}): Promise<void> {
+  const existing = await database
+    .select({ siteId: bottles.siteId, wineVintageId: bottles.wineVintageId })
+    .from(bottles)
+    .where(inArray(bottles.id, [...bottleIds]));
+  if (
+    existing.some((bottle) => bottle.siteId !== siteId || bottle.wineVintageId !== wineVintageId)
+  ) {
+    throw new Error(
+      "Capture already contains bottles for a different wine. Review the existing bottles before importing.",
+    );
+  }
+}
+
+async function currentCaptureDestination({
+  captureId,
+  database,
+  storageLocationId,
+  positionHint,
+}: {
+  readonly captureId: string;
+  readonly database: BoozeDatabase;
+  readonly storageLocationId: string | null;
+  readonly positionHint: string | null;
+}) {
+  const [capture] = await database
+    .select({
+      storageLocationId: bottleCaptures.storageLocationId,
+      positionHint: bottleCaptures.positionHint,
+    })
+    .from(bottleCaptures)
+    .where(eq(bottleCaptures.id, captureId))
+    .limit(1);
+  return capture ?? { storageLocationId, positionHint };
+}
+
+function importCompletionStatements({
+  captureId,
+  database,
+  result,
+  runId,
+}: {
+  readonly captureId: string;
+  readonly database: BoozeDatabase;
+  readonly result: Extract<BottleImportResult, { readonly kind: "imported" }>;
+  readonly runId: string;
+}) {
+  return [
+    database
+      .update(bottleCaptureRuns)
+      .set({
+        status: "imported",
+        importResultJson: JSON.stringify(result),
+        matchResultJson: JSON.stringify(result.matchResult),
+        errorMessage: null,
+        completedAt: new Date().toISOString(),
+      })
+      .where(eq(bottleCaptureRuns.id, runId)),
+    database
+      .update(bottleCaptures)
+      .set({
+        status: "imported",
+        importedBottleIdsJson: JSON.stringify(result.bottleIds),
+        errorMessage: null,
+        errorDetailJson: null,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(bottleCaptures.id, captureId)),
+  ] as const;
+}
+
+async function committedImportResult({
+  database,
+  runId,
+}: {
+  readonly database: BoozeDatabase;
+  readonly runId: string;
+}): Promise<Extract<BottleImportResult, { readonly kind: "imported" }> | null> {
+  const [run] = await database
+    .select({ result: bottleCaptureRuns.importResultJson })
+    .from(bottleCaptureRuns)
+    .where(and(eq(bottleCaptureRuns.id, runId), eq(bottleCaptureRuns.status, "imported")))
+    .limit(1);
+  if (run?.result === null || run?.result === undefined) {
+    return null;
+  }
+  // This receipt is written atomically with the bottles by importCompletionStatements.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Reads the internal persisted import result.
+  return JSON.parse(run.result) as Extract<BottleImportResult, { readonly kind: "imported" }>;
 }
 
 export async function matchBottleCandidate({
@@ -178,7 +335,7 @@ export async function matchBottleCandidate({
   readonly database: BoozeDatabase;
   readonly siteId: string;
 }): Promise<BottleMatchResult> {
-  if (candidate.wine.wineryName.trim() === "" || candidate.wine.designation.trim() === "") {
+  if (normalize(candidate.wine.wineryName) === "" || normalize(candidate.wine.designation) === "") {
     return {
       kind: "needs_review",
       reason: "missing_required_candidate",
@@ -271,7 +428,8 @@ async function findWineVintageCandidates({
     .filter((wine) => wine.vintageLabel === vintageLabel)
     .filter(
       (wine) =>
-        normalize(wine.displayName) === normalize(candidate.wine.displayName) ||
+        (normalize(candidate.wine.displayName) !== "" &&
+          normalize(wine.displayName) === normalize(candidate.wine.displayName)) ||
         normalize(wine.baseName) === normalize(candidate.wine.designation),
     )
     .filter((wine) => compatibleText(wine.region, candidate.wine.region))
@@ -289,7 +447,11 @@ async function getExistingVintage({
   readonly database: BoozeDatabase;
   readonly siteId: string;
   readonly wineVintageId: string;
-}): Promise<{ readonly wineryId: string; readonly wineVintageId: string }> {
+}): Promise<{
+  readonly wineryId: string;
+  readonly wineVintageId: string;
+  readonly statements: readonly never[];
+}> {
   const rows = await database
     .select({ wineVintageId: wineVintages.id, wineryId: wineVintages.wineryId })
     .from(wineVintages)
@@ -299,22 +461,24 @@ async function getExistingVintage({
   if (row === undefined) {
     throw new Error(`Wine vintage ${wineVintageId} not found in site ${siteId}`);
   }
-  return row;
+  return { ...row, statements: [] };
 }
 
-function normalize(value: string | undefined): string {
+function normalize(value: string | null | undefined): string {
   return (
     value
-      ?.toLowerCase()
+      ?.normalize("NFKD")
+      .replaceAll(/\p{M}+/gu, "")
+      .toLowerCase()
       .replaceAll("&", "and")
-      .replaceAll(/[^a-z0-9]+/gu, " ")
+      .replaceAll(/[^\p{L}\p{N}]+/gu, " ")
       .replaceAll(/\b(wines?|winery|estate|vineyards?)\b/gu, "")
       .replaceAll(/\s+/gu, " ")
       .trim() ?? ""
   );
 }
 
-function compatibleText(existing: string | null, candidate: string | undefined): boolean {
+function compatibleText(existing: string | null, candidate: string | null | undefined): boolean {
   const existingValue = normalize(existing ?? undefined);
   const candidateValue = normalize(candidate);
   return existingValue === "" || candidateValue === "" || existingValue === candidateValue;

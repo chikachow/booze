@@ -2,7 +2,14 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useRef, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type SubmitEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { useForm, type Control, type UseFormSetValue, type UseFormWatch } from "react-hook-form";
 
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
@@ -129,16 +136,51 @@ export function BottleModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
-  const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
-  const isMarkingConsumedRef = useRef(false);
+  const [isDiscardOpen, setIsDiscardOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"save" | "consume" | "delete" | null>(null);
+  const pendingActionRef = useRef<typeof pendingAction>(null);
+  const originalReviews = useRef(JSON.stringify(criticReviews));
+  const originalAwards = useRef(JSON.stringify(awards));
   const [consumeError, setConsumeError] = useState<string | null>(null);
   const {
     control,
     handleSubmit,
     setValue,
     watch,
-    formState: { isSubmitting },
+    formState: { isDirty },
   } = useForm<FormState>({ defaultValues: form });
+
+  const isBusy = isSaving || pendingAction !== null;
+  const hasUnsavedChanges =
+    isDirty ||
+    JSON.stringify(criticReviews) !== originalReviews.current ||
+    JSON.stringify(awards) !== originalAwards.current;
+
+  useEffect(() => {
+    function warnBeforeUnload(event: BeforeUnloadEvent): void {
+      event.preventDefault();
+    }
+    if (hasUnsavedChanges) {
+      window.addEventListener("beforeunload", warnBeforeUnload);
+    }
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload);
+    };
+  }, [hasUnsavedChanges]);
+
+  function beginAction(action: NonNullable<typeof pendingAction>): boolean {
+    if (pendingActionRef.current !== null || isSaving) {
+      return false;
+    }
+    pendingActionRef.current = action;
+    setPendingAction(action);
+    return true;
+  }
+
+  function finishAction(): void {
+    pendingActionRef.current = null;
+    setPendingAction(null);
+  }
 
   const submitForm = handleSubmit(async (values) => {
     setSubmitError(null);
@@ -162,12 +204,23 @@ export function BottleModal({
     }
   });
 
-  async function markConsumed(): Promise<void> {
-    if (onMarkConsumed === undefined || isMarkingConsumedRef.current) {
+  async function saveForm(event: SubmitEvent<HTMLFormElement>): Promise<void> {
+    if (isDeleteOpen || isDiscardOpen || !beginAction("save")) {
       return;
     }
-    isMarkingConsumedRef.current = true;
-    setIsMarkingConsumed(true);
+    try {
+      await submitForm(event);
+    } catch {
+      setSubmitError("Bottle was not saved. Check your connection and try again.");
+    } finally {
+      finishAction();
+    }
+  }
+
+  async function markConsumed(): Promise<void> {
+    if (onMarkConsumed === undefined || hasUnsavedChanges || !beginAction("consume")) {
+      return;
+    }
     setConsumeError(null);
     try {
       const updated = await onMarkConsumed();
@@ -177,13 +230,17 @@ export function BottleModal({
     } catch {
       setConsumeError("Bottle was not marked drunk. Try again.");
     } finally {
-      isMarkingConsumedRef.current = false;
-      setIsMarkingConsumed(false);
+      finishAction();
     }
   }
 
   function changeOpen(isOpen: boolean): void {
-    if (!isOpen) {
+    if (isOpen || pendingActionRef.current !== null || isSaving || isDeleteOpen || isDiscardOpen) {
+      return;
+    }
+    if (hasUnsavedChanges) {
+      setIsDiscardOpen(true);
+    } else {
       onClose();
     }
   }
@@ -199,7 +256,11 @@ export function BottleModal({
         onOpenChange={changeOpen}
       >
         <DialogHeader
-          subtitle="Review the cellar record before saving."
+          subtitle={
+            item === undefined
+              ? "Review the cellar record before saving."
+              : "Wine details are shared by bottles of this wine and vintage. Storage and bottle notes apply to this bottle."
+          }
           title={title}
           onOpenChange={changeOpen}
         />
@@ -207,44 +268,48 @@ export function BottleModal({
           className="form-stack"
           onSubmit={(event) => {
             event.preventDefault();
-            void submitForm(event);
+            void saveForm(event);
           }}
         >
-          <BottleFields
-            control={control}
-            disableSiteSelection={item !== undefined}
-            locations={locations}
-            setValue={setValue}
-            showQuantity={item === undefined}
-            sites={sites}
-            watch={watch}
-          />
-          <CriticReviewFields
-            errors={reviewErrors}
-            reviews={criticReviews}
-            onChange={(next) => {
-              setCriticReviews(next);
-              setReviewErrors([]);
-            }}
-          />
-          <AwardFields
-            awards={awards}
-            errors={awardErrors}
-            onChange={(next) => {
-              setAwards(next);
-              setAwardErrors([]);
-            }}
-          />
+          <fieldset className="form-stack bottle-form-fields" disabled={isBusy}>
+            <BottleFields
+              control={control}
+              disableSiteSelection={item !== undefined}
+              locations={locations}
+              setValue={setValue}
+              showQuantity={item === undefined}
+              sites={sites}
+              watch={watch}
+            />
+            <CriticReviewFields
+              errors={reviewErrors}
+              reviews={criticReviews}
+              onChange={(next) => {
+                setCriticReviews(next);
+                setReviewErrors([]);
+              }}
+            />
+            <AwardFields
+              awards={awards}
+              errors={awardErrors}
+              onChange={(next) => {
+                setAwards(next);
+                setAwardErrors([]);
+              }}
+            />
+          </fieldset>
           <div className="dialog-actions">
             <Button
-              isLoading={isSaving || isSubmitting}
+              isDisabled={isBusy || isDeleteOpen || isDiscardOpen}
+              isLoading={isSaving || pendingAction === "save"}
               label="Save bottle"
               type="submit"
               variant="primary"
             />
             {onMarkConsumed === undefined ? null : (
               <Button
-                isLoading={isMarkingConsumed}
+                isDisabled={isBusy || hasUnsavedChanges || isDeleteOpen || isDiscardOpen}
+                isLoading={pendingAction === "consume"}
                 label="Mark drunk"
                 onClick={() => {
                   void markConsumed();
@@ -254,6 +319,7 @@ export function BottleModal({
             {onDelete === undefined ? null : (
               <Button
                 ref={deleteTriggerRef}
+                isDisabled={isBusy || isDiscardOpen}
                 label="Delete bottle"
                 variant="destructive"
                 onClick={() => {
@@ -261,6 +327,9 @@ export function BottleModal({
                 }}
               />
             )}
+            {onMarkConsumed !== undefined && hasUnsavedChanges ? (
+              <p className="field-hint">Save your changes before marking this bottle drunk.</p>
+            ) : null}
             {consumeError === null ? null : <Banner status="error" title={consumeError} />}
             {submitError === null ? null : (
               <Banner aria-live="assertive" status="error" title={submitError} />
@@ -268,6 +337,16 @@ export function BottleModal({
           </div>
         </form>
       </Dialog>
+      <DestructiveActionDialog
+        actionLabel="Discard changes"
+        description="Your unsaved changes will be discarded. The stored bottle record will stay as it is."
+        failureMessage="The editor could not be closed. Try again."
+        isOpen={isDiscardOpen}
+        title="Discard unsaved changes?"
+        onAction={async () => true}
+        onOpenChange={setIsDiscardOpen}
+        onSuccess={onClose}
+      />
       {onDelete === undefined ? null : (
         <DestructiveActionDialog
           actionLabel="Delete bottle"
@@ -276,7 +355,16 @@ export function BottleModal({
           isOpen={isDeleteOpen}
           returnFocusRef={deleteTriggerRef}
           title="Delete this bottle?"
-          onAction={onDelete}
+          onAction={async () => {
+            if (!beginAction("delete")) {
+              return false;
+            }
+            try {
+              return await onDelete();
+            } finally {
+              finishAction();
+            }
+          }}
           onOpenChange={setIsDeleteOpen}
           onSuccess={onClose}
         />
@@ -316,7 +404,12 @@ function BottleFields({
         <FieldGrid
           control={control}
           fields={[
-            { label: "Bottle size", name: "bottleVolumeMl", placeholder: "750ml" },
+            {
+              label: "Bottle size",
+              name: "bottleVolumeMl",
+              placeholder: "750ml",
+              required: !showQuantity,
+            },
             { label: "Barcode", name: "barcode", placeholder: "9342675000444" },
           ]}
         />
@@ -335,6 +428,9 @@ function BottleFields({
               shouldTouch: true,
             });
             setValue("location", selection.location, { shouldDirty: true, shouldTouch: true });
+            if (selection.storageLocationId === "") {
+              setValue("position", "", { shouldDirty: true, shouldTouch: true });
+            }
           }}
         />
         <FieldGrid
@@ -344,7 +440,16 @@ function BottleFields({
               ? [{ label: "Lot code", name: "lotCode", placeholder: "L23051" }]
               : [
                   { label: "Lot code", name: "lotCode", placeholder: "L23051" },
-                  { label: "Position note", name: "position", placeholder: "Row 3, slot 2" },
+                  {
+                    label: "Position note",
+                    name: "position",
+                    placeholder: "Row 3, slot 2",
+                    disabled: selectedStorageLocationId === "",
+                    description:
+                      selectedStorageLocationId === ""
+                        ? "Choose a location to add a position note."
+                        : undefined,
+                  },
                 ]
           }
         />
@@ -361,6 +466,12 @@ function BottleFields({
             label="Position note"
             name="position"
             placeholder="Row 3, slot 2"
+            disabled={selectedStorageLocationId === ""}
+            description={
+              selectedStorageLocationId === ""
+                ? "Choose a location to add a position note."
+                : undefined
+            }
           />
         ) : null}
       </FormSection>
