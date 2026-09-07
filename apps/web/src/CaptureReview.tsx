@@ -1,4 +1,3 @@
-import { Collapsible } from "@astryxdesign/core/Collapsible";
 import type { ReactElement } from "react";
 
 import type { CaptureRunResource } from "./inventory-model.ts";
@@ -49,7 +48,8 @@ export function CaptureReview({ run }: { readonly run: CaptureRunResource | null
   const bottle = objectField(run?.importCandidate, "bottle");
   const reasons = stringValues(objectField(run?.importResult, "reviewReasons"));
   return (
-    <Collapsible defaultIsOpen trigger="Review extracted facts">
+    <details className="capture-disclosure" open>
+      <summary>Review extracted facts</summary>
       <div className="capture-review">
         <p>
           Check these facts against the photos before choosing an existing wine or creating a new
@@ -71,7 +71,7 @@ export function CaptureReview({ run }: { readonly run: CaptureRunResource | null
           ))}
         </dl>
       </div>
-    </Collapsible>
+    </details>
   );
 }
 
