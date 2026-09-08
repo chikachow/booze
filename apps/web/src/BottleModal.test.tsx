@@ -27,6 +27,39 @@ async function submitBottle(): Promise<BottleModalSubmitResult> {
 }
 
 describe("BottleModal destructive actions", () => {
+  it("keeps an invalid drinking window in the editor until corrected", async () => {
+    const user = userEvent.setup();
+    const item = inventoryItemFixture();
+    const onSubmit =
+      vi.fn<(submission: BottleModalSubmit) => Promise<BottleModalSubmitResult>>(submitBottle);
+    render(
+      <BottleModal
+        form={formStateForItem(item)}
+        isSaving={false}
+        item={item}
+        locations={locationsFixture}
+        sites={sitesFixture}
+        title="Edit bottle"
+        onClose={closeBottle}
+        onSubmit={onSubmit}
+      />,
+    );
+    const from = screen.getByRole("textbox", { name: "Drink from" });
+    const to = screen.getByRole("textbox", { name: "Drink to" });
+    await user.clear(from);
+    await user.type(from, "2038");
+    await user.click(screen.getByRole("button", { name: "Save bottle" }));
+    expect(await screen.findByText("Drink to must be on or after Drink from.")).toBeVisible();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(from).toHaveValue("2038");
+    await user.clear(to);
+    await user.type(to, "2040");
+    await user.click(screen.getByRole("button", { name: "Save bottle" }));
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it.each([
     { field: "Source", value: "Corrected critic", expectedSourceId: undefined },
     { field: "Rating", value: "96 points", expectedSourceId: "original-source" },

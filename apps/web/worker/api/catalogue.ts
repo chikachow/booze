@@ -9,6 +9,7 @@ import {
   type BoozeDatabase,
 } from "@chikachow/booze-db";
 import { and, eq, isNull, sql, type SQLWrapper } from "drizzle-orm";
+import { HTTPException } from "hono/http-exception";
 
 import { generatedId, optionalInteger, optionalText, vintageLabelForYear } from "./ids.ts";
 
@@ -69,6 +70,23 @@ export async function prepareWineVintage({
 }): Promise<
   UpsertVintageResult & { readonly statements: [CatalogueStatement, ...CatalogueStatement[]] }
 > {
+  if (
+    overwriteExisting &&
+    (updates.drinkFromYear === undefined) !== (updates.drinkToYear === undefined)
+  ) {
+    throw new HTTPException(400, {
+      message: "Edit drinkFromYear and drinkToYear together; use null for an unknown endpoint",
+    });
+  }
+  if (
+    wine.drinkFromYear !== null &&
+    wine.drinkFromYear !== undefined &&
+    wine.drinkToYear !== null &&
+    wine.drinkToYear !== undefined &&
+    wine.drinkFromYear > wine.drinkToYear
+  ) {
+    throw new HTTPException(400, { message: "Drink window must end on or after it starts" });
+  }
   const statements: CatalogueStatement[] = [];
   const wineryRegion = optionalText(wine.region);
   const baseName = baseNameForWine(wine);
@@ -82,7 +100,7 @@ export async function prepareWineVintage({
     region: wineryRegion,
     siteId,
   });
-  const wineVintageId = await upsertVintageRow({
+  const vintage = await upsertVintageRow({
     statements,
     baseName,
     database,
@@ -95,6 +113,7 @@ export async function prepareWineVintage({
     overwriteExisting,
     updates,
   });
+  const wineVintageId = vintage.wineVintageId;
 
   if (wine.grapeVarieties !== undefined) {
     replaceConstituents({
@@ -109,6 +128,7 @@ export async function prepareWineVintage({
 
   if (
     wine.grapeVarieties === undefined &&
+    vintage.isNew &&
     sourceWineVintageId !== undefined &&
     sourceWineVintageId !== wineVintageId
   ) {
@@ -163,33 +183,46 @@ async function upsertWinery({
       ),
     )
     .limit(1);
-  const existingRow = existing[0];
-  if (existingRow !== undefined) {
-    statements.push(
-      database
-        .update(wineries)
-        .set({
-          country: sql`coalesce(${wineries.country}, ${country})`,
-          updatedAt: sql`CURRENT_TIMESTAMP`,
-        })
-        .where(eq(wineries.id, existingRow.id)),
-    );
-    return existingRow.id;
-  }
-
-  const wineryId = generatedId("winery");
+  const wineryId = existing[0]?.id ?? (await wineryIdForIdentity({ siteId, name, region }));
 
   statements.push(
-    database.insert(wineries).values({
-      id: wineryId,
-      siteId,
-      name,
-      country,
-      region,
-    }),
+    database
+      .insert(wineries)
+      .values({
+        id: wineryId,
+        siteId,
+        name,
+        country,
+        region,
+      })
+      .onConflictDoUpdate({
+        target: wineries.id,
+        set: {
+          country: sql`coalesce(${wineries.country}, ${country})`,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      }),
   );
 
   return wineryId;
+}
+
+async function wineryIdForIdentity({
+  siteId,
+  name,
+  region,
+}: {
+  readonly siteId: string;
+  readonly name: string;
+  readonly region: string | null;
+}): Promise<string> {
+  // Current writers share this ID before committing dependent vintages, even
+  // when the nullable region bypasses SQLite's natural-key uniqueness check.
+  // Existing IDs are reused above. Older writers using random IDs can still
+  // create duplicates during an overlapping deployment.
+  const identity = new TextEncoder().encode(JSON.stringify([siteId, name, region]));
+  const digest = await crypto.subtle.digest("SHA-256", identity);
+  return `winery_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 async function upsertVintageRow({
@@ -216,7 +249,7 @@ async function upsertVintageRow({
   readonly wine: WineInput;
   readonly wineryId: string;
   readonly wineryRegion: string | null;
-}): Promise<string> {
+}): Promise<{ readonly wineVintageId: string; readonly isNew: boolean }> {
   const rows = await database
     .select({ id: wineVintages.id })
     .from(wineVintages)
@@ -266,7 +299,7 @@ async function upsertVintageRow({
       }),
   );
 
-  return wineVintageId;
+  return { wineVintageId, isNew: rows.length === 0 };
 }
 
 export type BottleCreationInput = {
@@ -411,6 +444,13 @@ function wineVintageUpdateSet({
       : overwriteExisting
         ? value
         : sql`coalesce(${column}, ${value})`;
+  // A drinking window is one fact. Additions may fill a wholly unknown window,
+  // but must not combine endpoints supplied by different records.
+  const updateDrinkYear = (column: SQLWrapper, value: number | null | undefined) =>
+    overwriteExisting
+      ? value
+      : sql`case when ${wineVintages.drinkFromYear} is null and ${wineVintages.drinkToYear} is null
+          then ${value ?? null} else ${column} end`;
   return {
     brandName: update(
       wineVintages.brandName,
@@ -454,11 +494,11 @@ function wineVintageUpdateSet({
       wineVintages.alcoholPercent,
       wine.alcoholPercent === undefined ? undefined : wine.alcoholPercent,
     ),
-    drinkFromYear: update(
+    drinkFromYear: updateDrinkYear(
       wineVintages.drinkFromYear,
       wine.drinkFromYear === undefined ? undefined : optionalInteger(wine.drinkFromYear),
     ),
-    drinkToYear: update(
+    drinkToYear: updateDrinkYear(
       wineVintages.drinkToYear,
       wine.drinkToYear === undefined ? undefined : optionalInteger(wine.drinkToYear),
     ),

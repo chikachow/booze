@@ -70,6 +70,20 @@ describe("bottle edit payload", () => {
     });
   });
 
+  it("submits the complete drinking window when either endpoint changes", () => {
+    const item = inventoryItemFixture();
+    const submission = submissionFor(item);
+    submission.form.drinkFromYear = "2028";
+    expect(serialized(bottleEditPayload(submission, item))).toEqual({
+      wine: { drinkFromYear: 2028, drinkToYear: item.drinkToYear },
+    });
+    submission.form.drinkFromYear = String(item.drinkFromYear);
+    submission.form.drinkToYear = "";
+    expect(serialized(bottleEditPayload(submission, item))).toEqual({
+      wine: { drinkFromYear: item.drinkFromYear, drinkToYear: null },
+    });
+  });
+
   it("retains existing creation defaults and producer address", () => {
     const item = inventoryItemFixture({ addressQualification: "Orange, NSW" });
     const payload = bottleCreatePayload(submissionFor(item));

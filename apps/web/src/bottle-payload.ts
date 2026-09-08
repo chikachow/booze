@@ -74,7 +74,16 @@ export function bottleEditPayload(submission: BottleModalSubmit, item: Inventory
     form: formStateForItem(item),
   });
   const current = editablePayload(submission);
-  const wine = changedFields(current.wine, original.wine);
+  const wine = {
+    ...changedFields(current.wine, original.wine),
+    ...(current.wine.drinkFromYear !== original.wine.drinkFromYear ||
+    current.wine.drinkToYear !== original.wine.drinkToYear
+      ? {
+          drinkFromYear: current.wine.drinkFromYear,
+          drinkToYear: current.wine.drinkToYear,
+        }
+      : {}),
+  };
   const bottle = changedFields(current.bottle, original.bottle);
   return {
     ...changedFields(current, original),

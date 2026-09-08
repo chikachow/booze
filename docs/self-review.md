@@ -11,7 +11,7 @@ No hard violation of documented repository rules was validated. Four maintenance
 1. **Fixed: duplicated request handling accepted stale errors.** The four collection loaders discarded stale successful responses but still allowed older errors and refresh completions to overwrite newer results. One local loader now handles both outcomes, and refresh completion distinguishes superseded requests. Three deferred-response regressions failed before the fix and pass afterward.
 2. **Fixed: unused mutation wrappers retained unsafe composition options.** Removed the unused `upsertWineVintage` and `createBottles` wrappers, which committed independently. Callers compose prepared statements into the complete domain transaction.
 3. **Fixed: unnecessary global grape lookup.** Removed the full grape-variety read before every constituent edit. Existing IDs are resolved by name in the transaction; new IDs are used only for newly inserted varieties.
-4. **Deferred maintenance judgment: duplicated import composition.** Automatic and reviewed imports still repeat their final preparation/receipt structure. Their matching and claiming differ, and both paths now share the bounded collision-retry helper and have direct transactional tests. A future extraction should preserve those separate entry conditions.
+4. **Fixed during the mergeability follow-up: duplicated import composition.** Automatic and reviewed imports now share their guarded preparation/receipt commit. Their matching and initial claim conditions remain explicit, and the importer owns both claiming and completion.
 
 ## Spec
 
@@ -28,12 +28,26 @@ Eight findings were addressed:
 | Concurrent additive review evidence could overwrite the rating, notes, and provenance committed first.        | Additions use a conflict-time no-op; explicit review replacements retain their separate behavior.                                                                                                                                      | Reproduced the overwritten rating and lost notes before the fix.                     |
 | Concurrent creation of the same wine could fail after IDs had been prepared.                                  | A known natural-key collision retries the entire preparation and transaction once with current IDs. Other errors are not replayed; repeated collisions return a retryable conflict, and manual captures retain their review candidate. | Interleaved catalogue/import writes, receipt replay, and error-classification tests. |
 
+## Mergeability follow-up
+
+A subsequent critical review reproduced five further defects despite the passing checks. The follow-up fixes concentrate identity and lifecycle rules in the mutation modules:
+
+- Reassigning a bottle to an existing vintage preserves that vintage's blend. Constituent inheritance applies only to a new target, including after a concurrent creation forces preparation to retry.
+- Drinking windows are complete pairs. Bottle PATCH requires both endpoints when either changes, the browser submits the pair and explains reversed dates, and additions retain an existing partial window. Validation lives in catalogue preparation so imports cannot bypass it.
+- Award INSERT statements resolve the stored ID by their complete identity, including an unknown year, inside the transaction. Additions preserve evidence, replacement cleanup uses identities, and historical duplicate rows are retained rather than guessed away. The preparation read and ID map were removed.
+- Review mutation functions resolve identities, own proven-rollback retries, and commit MCP audit statements with the mutation. MCP no longer chooses pending IDs or assembles these batches. Native D1 testing exposed an extended uniqueness-error suffix; the classifier now handles that exact format without replaying unrelated or uncertain failures.
+- Current Workflow instances can restart unfinished captures. Automatic and reviewed imports share a guarded commit that verifies ownership and the latest run in the transaction. Manual claiming moved into the importer, and launch failures can only downgrade queued captures. Stale runs cannot commit or reset a newer run's state.
+
+The same review also exposed a pre-existing race when creating a winery without a region. New winery identities now use a full SHA-256 hash of their canonical site/name/region tuple; lookups retain existing stored IDs. This coordinates current writers without rewriting historical records or adding a migration. Concurrent older deployments using random IDs can still create duplicates during a version overlap.
+
+Each reproduced failure has a regression test. The complete-window REST contract is a deliberate compatibility change; callers that previously patched one endpoint must include the other endpoint or explicit `null`. It does not add general optimistic locking: concurrent changes to the same fact still use the last committed value.
+
 ## Preservation and remaining limits
 
-The rebased build initially exceeded the existing total-JavaScript gzip budget. Native capture disclosures and grouping shared UI modules that already load at startup reduced total JavaScript from 221,286 to 218,979 bytes and the initial entry plus preloads from 152,467 to 151,109 bytes, measured with Node 24. Lazy editor and capture modules remain lazy, and budget ceilings are unchanged. Both light and dark browser runs verify disclosure keyboard behavior, focus, and accessibility.
+The rebased build initially exceeded the existing total-JavaScript gzip budget. Native capture disclosures and grouping shared UI modules that already load at startup brought it below the unchanged ceiling. After the follow-up fixes, total JavaScript is 219,060 bytes gzipped, compared with 221,286 before optimization; the initial entry plus preloads is 151,138 bytes, compared with 152,467, measured with Node 24. Lazy editor and capture modules remain lazy. Both light and dark browser runs verify disclosure keyboard behavior, focus, and accessibility.
 
 The review retained the atomic catalogue and import boundaries, unique R2 upload keys, live-reference deletion guards, and unchanged migration lineage. A lost import acknowledgement was tested separately: replay returned the stored receipt and retained the original bottle count.
 
 The [audit's remaining priorities](audit.md#remaining-priorities) still apply. In particular, this work does not provide general optimistic locking, export/restore, complete viewer details, or automatic reconciliation of a manual import terminated between its claim and transaction. It does not reconstruct facts lost before these fixes.
 
-Standards: four findings, three addressed and one maintenance judgment deferred; the most consequential was stale refresh state. Spec: eight findings addressed; the most consequential was concurrent review deletion. Final combined verification is recorded in the [audit](audit.md#verification-boundaries).
+The initial review's four Standards findings and eight Spec findings are addressed, together with the five additional mergeability defects above. Final combined verification is recorded in the [audit](audit.md#verification-boundaries).

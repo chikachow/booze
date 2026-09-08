@@ -13,12 +13,11 @@ import { created, noContent } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
 import type { Bindings } from "../api/types.ts";
 import { putCaptureRunArtifact, type CaptureRunArtifact } from "../capture-artifacts.ts";
-import { importReviewedCapture } from "../bottle-importer.ts";
+import { CaptureImportConflictError, importReviewedCapture } from "../bottle-importer.ts";
 import type { ImportCandidate } from "../bottle-extractor.ts";
 import { canImportCapture, canRetryCapture } from "../capture-state.ts";
 import {
   createBottleCapture,
-  claimCaptureForImport,
   getBottleCapture,
   getCaptureImageObject,
   listBottleCaptures,
@@ -149,6 +148,7 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         database,
         status: "failed",
         workflowInstanceId: capture.captureId,
+        expectedStatus: "queued",
         errorMessage: "Capture was saved, but extraction did not start. Retry the capture.",
         errorDetail: details,
       });
@@ -229,10 +229,13 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         database,
         workflowInstanceId,
         status: "failed",
+        expectedStatus: "queued",
         errorMessage: "Capture was saved, but extraction did not start. Retry the capture.",
         errorDetail: errorDetails(error),
       });
-      throw new HTTPException(503, { message: "Extraction did not start. Retry the capture." });
+      throw new HTTPException(503, {
+        message: "Could not confirm extraction started. Refresh capture status before retrying.",
+      });
     }
     return context.json({ data: { captureId: capture.id, workflowInstanceId } });
   })
@@ -271,17 +274,13 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         message: "Select an existing wine before importing an incomplete OCR candidate",
       });
     }
-    if (!(await claimCaptureForImport({ captureId: capture.id, database }))) {
-      throw new HTTPException(409, {
-        message: "Capture import is already in progress or complete",
-      });
-    }
     try {
       const imported = await importReviewedCapture({
         candidate: candidate satisfies ImportCandidate,
         captureId: capture.id,
         database,
         runId: capture.latestRun.id,
+        workflowInstanceId: capture.workflowInstanceId,
         quantity: capture.quantity,
         siteId: capture.siteId,
         storageLocationId: capture.storageLocationId,
@@ -290,14 +289,21 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       });
       return context.json({ data: imported });
     } catch (error) {
-      if (error instanceof CatalogueConflictError) {
-        // Both batches rolled back; retain the reviewed extraction for another
-        // import attempt instead of requiring the user to rerun OCR.
+      if (error instanceof CaptureImportConflictError) throw error;
+      if (
+        error instanceof CatalogueConflictError ||
+        (error instanceof HTTPException && error.status === 400)
+      ) {
+        // Validation or proven transaction rollback left the catalogue unchanged;
+        // retain the reviewed extraction instead of requiring another OCR run.
         await updateCaptureStatus({
           captureId: capture.id,
           database,
           status: "needs_review",
           errorMessage: error.message,
+          workflowInstanceId: capture.workflowInstanceId,
+          runId: capture.latestRun.id,
+          expectedStatus: "importing",
         });
         throw error;
       }
@@ -323,6 +329,9 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         status: "failed",
         errorMessage: message,
         errorDetail: null,
+        workflowInstanceId: capture.workflowInstanceId,
+        runId: capture.latestRun.id,
+        expectedStatus: "importing",
       });
       throw error;
     }

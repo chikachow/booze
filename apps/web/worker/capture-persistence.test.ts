@@ -118,7 +118,15 @@ await describe("capture persistence", async () => {
       await beginCaptureWorkflow({ captureId: "capture", database, workflowInstanceId: "new" }),
       true,
     );
-    assert.equal(await claimCaptureForImport({ captureId: "capture", database }), false);
+    assert.equal(
+      await claimCaptureForImport({
+        captureId: "capture",
+        database,
+        runId: "same-run",
+        siteId: "site",
+      }),
+      null,
+    );
     await updateCaptureStatus({
       captureId: "capture",
       database,

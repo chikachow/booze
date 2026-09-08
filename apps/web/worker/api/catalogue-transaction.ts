@@ -5,6 +5,7 @@ const catalogueUniqueConstraints = new Set([
   "wine_vintages.site_id, wine_vintages.winery_id, wine_vintages.base_name, wine_vintages.vintage_label",
   "grape_varieties.name",
   "review_sources.site_id, review_sources.name",
+  "critic_reviews.site_id, critic_reviews.wine_vintage_id, critic_reviews.review_source_id",
   "wine_awards.site_id, wine_awards.wine_vintage_id, wine_awards.award_name, wine_awards.award_level, wine_awards.award_year",
 ]);
 
@@ -38,7 +39,7 @@ function isCatalogueUniqueConflict(error: unknown): boolean {
   while (cause instanceof Error && !seen.has(cause)) {
     seen.add(cause);
     const match =
-      /^(?:D1_ERROR: )?UNIQUE constraint failed: ([a-z_., ]+)(?:: SQLITE_CONSTRAINT)?$/u.exec(
+      /^(?:D1_ERROR: )?UNIQUE constraint failed: ([a-z_., ]+)(?:: SQLITE_CONSTRAINT(?: \(extended: SQLITE_CONSTRAINT_UNIQUE\))?)?$/u.exec(
         cause.message,
       );
     if (match?.[1] !== undefined && catalogueUniqueConstraints.has(match[1])) return true;

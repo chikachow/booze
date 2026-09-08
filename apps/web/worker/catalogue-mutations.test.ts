@@ -120,6 +120,88 @@ await describe("catalogue mutation preservation", async () => {
     assert.equal(db.prepare("SELECT notes FROM wine_vintages").get()?.["notes"], null);
   });
 
+  await it("preserves an existing drinking window as a pair when adding bottles", async () => {
+    const db = setup();
+    await create(db, { wine: { ...wine, drinkFromYear: 2030 } });
+    await create(db, { wine: { ...wine, drinkFromYear: 2020, drinkToYear: 2025 } });
+    assert.deepEqual(
+      { ...db.prepare("SELECT drink_from_year, drink_to_year FROM wine_vintages").get() },
+      { drink_from_year: 2030, drink_to_year: null },
+    );
+    const other = await create(db, { wine: { ...wine, vintageYear: 2021 } });
+    await create(db, {
+      wine: { ...wine, vintageYear: 2021, drinkFromYear: 2025, drinkToYear: 2035 },
+    });
+    assert.deepEqual(
+      {
+        ...db
+          .prepare(
+            "SELECT v.drink_from_year, v.drink_to_year FROM wine_vintages v JOIN bottles b ON b.wine_vintage_id = v.id WHERE b.id = ?",
+          )
+          .get(other),
+      },
+      { drink_from_year: 2025, drink_to_year: 2035 },
+    );
+  });
+
+  await it("requires a complete drinking-window edit and leaves rejected mutations unchanged", async () => {
+    const db = setup();
+    const id = await create(db, { wine: { ...wine, drinkFromYear: 2020, drinkToYear: 2030 } });
+    for (const window of [
+      { drinkFromYear: 2028 },
+      { drinkToYear: 2025 },
+      { drinkFromYear: null },
+      { drinkFromYear: 2035, drinkToYear: 2030 },
+    ]) {
+      const response = await request(db, "PATCH", `/bottles/${id}`, {
+        status: "consumed",
+        wine: window,
+      });
+      assert.equal(response.status, 400, JSON.stringify(window));
+      assert.equal(
+        db.prepare("SELECT status FROM bottles WHERE id = ?").get(id)?.["status"],
+        "in_stock",
+      );
+    }
+    const response = await request(
+      db,
+      "PATCH",
+      `/bottles/${id}`,
+      {
+        wine: { drinkFromYear: 2028, drinkToYear: null },
+      },
+      () => {
+        db.exec("UPDATE wine_vintages SET drink_from_year = 2020, drink_to_year = 2025");
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      { ...db.prepare("SELECT drink_from_year, drink_to_year FROM wine_vintages").get() },
+      { drink_from_year: 2028, drink_to_year: null },
+    );
+  });
+
+  await it("preserves the existing target blend when a bottle changes vintage", async () => {
+    const db = setup();
+    const id = await create(db, { wine: { ...wine, grapeVarieties: ["Shiraz"] } });
+    await create(db, { wine: { ...wine, vintageYear: 2021, grapeVarieties: ["Cabernet"] } });
+    db.exec("UPDATE wine_constituents SET percentage = 100, blend_text = 'Original blend'");
+    const before = db.prepare("SELECT * FROM wine_constituents ORDER BY wine_vintage_id").all();
+    const response = await request(db, "PATCH", `/bottles/${id}`, {
+      wine: { vintageYear: 2021 },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(
+      db.prepare("SELECT * FROM wine_constituents ORDER BY wine_vintage_id").all(),
+      before,
+    );
+    assert.equal(count(db, "wine_vintages"), 2);
+    assert.equal(
+      db.prepare("SELECT count(DISTINCT wine_vintage_id) AS count FROM bottles").get()?.["count"],
+      1,
+    );
+  });
+
   await it("preserves retained grape measurements while adding or removing other grapes", async () => {
     const db = setup();
     const id = await create(db, { wine: { ...wine, grapeVarieties: ["Shiraz", "Merlot"] } });

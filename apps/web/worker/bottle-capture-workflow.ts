@@ -29,7 +29,6 @@ import { errorDetails, logError, logInfo } from "./observability.ts";
 type CaptureRunContext = {
   readonly capture: CaptureWorkflowRecord;
   readonly runId: string;
-  readonly workflowInstanceId: string;
 };
 
 type CaptureImportCandidate = {
@@ -123,6 +122,7 @@ export class BottleCaptureWorkflow extends WorkflowEntrypoint<
         env: this.env,
         extracted,
         step,
+        workflowInstanceId: event.instanceId,
       });
 
       failedStage = "record capture result";
@@ -135,6 +135,7 @@ export class BottleCaptureWorkflow extends WorkflowEntrypoint<
         importCandidate,
         imported,
         step,
+        workflowInstanceId: event.instanceId,
       });
 
       return { captureId, status: imported.kind };
@@ -215,7 +216,7 @@ async function createCaptureRunContext({
       runId: `run_${workflowInstanceId}`,
       status: "extracting",
     });
-    return { capture, runId: run.runId, workflowInstanceId };
+    return { capture, runId: run.runId };
   });
 }
 
@@ -407,12 +408,14 @@ async function importCaptureCandidateStep({
   env,
   extracted,
   step,
+  workflowInstanceId,
 }: {
   readonly captureId: string;
   readonly context: CaptureRunContext;
   readonly env: Bindings;
   readonly extracted: CaptureImportCandidate;
   readonly step: WorkflowStep;
+  readonly workflowInstanceId: string;
 }): Promise<CaptureImportResult> {
   return step.do("import capture candidate", async () => {
     const database = createD1Client(env.DB);
@@ -433,7 +436,9 @@ async function importCaptureCandidateStep({
       captureId,
       database,
       runId: context.runId,
-      workflowInstanceId: context.workflowInstanceId,
+      // Read identity from the event, not the cached run context: checkpoints
+      // written by older deployments do not include workflowInstanceId.
+      workflowInstanceId,
       quantity: context.capture.quantity,
       siteId: context.capture.siteId,
       storageLocationId: context.capture.storageLocationId,
@@ -451,6 +456,7 @@ async function recordCaptureResult({
   importCandidate,
   imported,
   step,
+  workflowInstanceId,
 }: {
   readonly captureId: string;
   readonly context: CaptureRunContext;
@@ -460,6 +466,7 @@ async function recordCaptureResult({
   readonly importCandidate: ImportCandidate;
   readonly imported: CaptureImportResult;
   readonly step: WorkflowStep;
+  readonly workflowInstanceId: string;
 }): Promise<void> {
   await step.do("record capture result", async () => {
     const database = createD1Client(env.DB);
@@ -482,7 +489,7 @@ async function recordCaptureResult({
           errorMessage: null,
           errorDetail: null,
           importedBottleIds: imported.bottleIds,
-          workflowInstanceId: context.workflowInstanceId,
+          workflowInstanceId,
         });
         break;
       case "needs_review":
@@ -490,7 +497,7 @@ async function recordCaptureResult({
           captureId,
           database,
           status: "needs_review",
-          workflowInstanceId: context.workflowInstanceId,
+          workflowInstanceId,
         });
         break;
       case "skipped":
