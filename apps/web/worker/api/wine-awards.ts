@@ -1,5 +1,5 @@
 import { siteMemberships, wineAwards, wineVintages, type BoozeDatabase } from "@chikachow/booze-db";
-import { and, asc, eq, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { requireSitePermission } from "./auth.ts";
@@ -34,6 +34,8 @@ export type WineAwardResource = {
   readonly createdAt: string;
   readonly updatedAt: string;
 };
+
+type WineAwardIdentity = Pick<WineAwardResource, "awardName" | "awardLevel" | "awardYear">;
 
 export async function listWineAwards({
   database,
@@ -141,17 +143,7 @@ export async function prepareWineAwardStatements({
   readonly wineVintageId: string;
 }): Promise<Parameters<BoozeDatabase["batch"]>[0][number][]> {
   const statements: Parameters<BoozeDatabase["batch"]>[0][number][] = [];
-  const existing = await database
-    .select()
-    .from(wineAwards)
-    .where(and(eq(wineAwards.siteId, siteId), eq(wineAwards.wineVintageId, wineVintageId)));
-  const idsByAward = new Map(
-    existing.map((award) => [
-      JSON.stringify([award.awardName, award.awardLevel, award.awardYear]),
-      award.id,
-    ]),
-  );
-  const keptAwardIds: string[] = [];
+  const keptAwards: WineAwardIdentity[] = [];
   for (const input of awards) {
     const awardName = input.awardName.trim();
     const awardLevel = input.awardLevel.trim();
@@ -159,65 +151,67 @@ export async function prepareWineAwardStatements({
       continue;
     }
 
-    const awardKey = JSON.stringify([awardName, awardLevel, input.awardYear ?? null]);
-    if (idsByAward.has(awardKey) && !overwriteExisting) continue;
-    const awardId = idsByAward.get(awardKey) ?? generatedId("wine-award");
-    idsByAward.set(awardKey, awardId);
-    keptAwardIds.push(awardId);
+    const awardYear = input.awardYear ?? null;
+    keptAwards.push({ awardName, awardLevel, awardYear });
 
+    // Resolve the stored ID during the INSERT: nullable years are part of award
+    // identity even though SQLite's natural-key constraint treats NULLs as distinct.
+    const statement = database.insert(wineAwards).values({
+      id: sql`coalesce((
+            select id from wine_awards
+            where site_id = ${siteId} and wine_vintage_id = ${wineVintageId}
+              and award_name = ${awardName} and award_level = ${awardLevel}
+              and award_year is ${awardYear}
+            order by created_at, id limit 1
+          ), ${generatedId("wine-award")})`,
+      siteId,
+      wineVintageId,
+      awardName,
+      awardLevel,
+      awardYear,
+      awardBody: optionalText(input.awardBody),
+      category: optionalText(input.category),
+      points: input.points,
+      sourceUrl: optionalText(input.sourceUrl),
+      provenance: optionalText(input.provenance),
+      notes: optionalText(input.notes),
+      createdByUserId: userId,
+    });
     statements.push(
-      database
-        .insert(wineAwards)
-        .values({
-          id: awardId,
-          siteId,
-          wineVintageId,
-          awardName,
-          awardLevel,
-          awardYear: input.awardYear,
-          awardBody: optionalText(input.awardBody),
-          category: optionalText(input.category),
-          points: input.points,
-          sourceUrl: optionalText(input.sourceUrl),
-          provenance: optionalText(input.provenance),
-          notes: optionalText(input.notes),
-          createdByUserId: userId,
-        })
-        .onConflictDoUpdate({
-          target: wineAwards.id,
-          set: {
-            awardName,
-            awardLevel,
-            awardYear: input.awardYear,
-            awardBody: optionalText(input.awardBody),
-            category: optionalText(input.category),
-            points: input.points ?? null,
-            sourceUrl: optionalText(input.sourceUrl),
-            provenance: optionalText(input.provenance),
-            notes: optionalText(input.notes),
-            updatedAt: sql`CURRENT_TIMESTAMP`,
-          },
-        }),
+      overwriteExisting
+        ? statement.onConflictDoUpdate({
+            target: wineAwards.id,
+            set: {
+              awardName,
+              awardLevel,
+              awardYear,
+              awardBody: optionalText(input.awardBody),
+              category: optionalText(input.category),
+              points: input.points ?? null,
+              sourceUrl: optionalText(input.sourceUrl),
+              provenance: optionalText(input.provenance),
+              notes: optionalText(input.notes),
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            },
+          })
+        : statement.onConflictDoNothing({ target: wineAwards.id }),
     );
   }
 
-  if (removeMissing && keptAwardIds.length === 0) {
+  if (removeMissing) {
     statements.push(
-      database
-        .delete(wineAwards)
-        .where(and(eq(wineAwards.siteId, siteId), eq(wineAwards.wineVintageId, wineVintageId))),
-    );
-  } else if (removeMissing) {
-    statements.push(
-      database
-        .delete(wineAwards)
-        .where(
-          and(
-            eq(wineAwards.siteId, siteId),
-            eq(wineAwards.wineVintageId, wineVintageId),
-            notInArray(wineAwards.id, keptAwardIds),
-          ),
+      database.delete(wineAwards).where(
+        and(
+          eq(wineAwards.siteId, siteId),
+          eq(wineAwards.wineVintageId, wineVintageId),
+          sql`not exists (
+              select 1 from json_each(${JSON.stringify(keptAwards)}) retained
+              where ${wineAwards.awardName} = json_extract(retained.value, '$.awardName')
+                and ${wineAwards.awardLevel} = json_extract(retained.value, '$.awardLevel')
+                and ${wineAwards.awardYear} is json_extract(retained.value, '$.awardYear')
+            )`,
         ),
+      ),
     );
   }
 

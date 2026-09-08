@@ -107,6 +107,10 @@ The app must support:
 7. searching available inventory;
 8. showing drink status derived from the drink window.
 
+The drinking window is edited as one fact: both endpoints are submitted together, with `null` for an unknown endpoint. The browser still presents separate Drink from and Drink to fields. REST bottle PATCH callers must send both fields when changing either one; MCP already uses this contract. Concurrent edits replace the complete window, and the last committed edit wins. Adding bottles can supply a window only when both stored endpoints are unknown; it cannot combine endpoints from different records.
+
+Changing a bottle's wine identity can reuse an existing wine vintage or create a new one. Reusing an existing vintage preserves its grape blend. A new vintage can inherit the original wine's constituent measurements; the original vintage's reviews and awards remain attached to it unless explicitly edited.
+
 ## Location Management
 
 The app must support:

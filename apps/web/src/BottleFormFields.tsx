@@ -32,15 +32,20 @@ function rulesFor({
   readonly required: boolean | undefined;
 }): RegisterOptions<FormState> {
   return {
-    validate: (value) => {
+    validate: (value, values) => {
       if (typeof value !== "string" || value.trim() === "") {
         return required === true ? `${label} is required.` : true;
       }
-      if (name === "vintageYear" || name === "drinkFromYear" || name === "drinkToYear") {
+      if (["vintageYear", "drinkFromYear", "drinkToYear"].includes(name)) {
         const year = parseOptionalYear(value);
-        return year !== undefined && year >= 1800 && year <= 2200
-          ? true
-          : `${label} must be a whole year from 1800 to 2200.`;
+        if (year === undefined || year < 1800 || year > 2200) {
+          return `${label} must be a whole year from 1800 to 2200.`;
+        }
+        const fromYear =
+          name === "drinkToYear" ? parseOptionalYear(values.drinkFromYear) : undefined;
+        return fromYear !== undefined && fromYear > year
+          ? "Drink to must be on or after Drink from."
+          : true;
       }
       if (name === "alcoholPercent") {
         const alcohol = parseOptionalDecimal(value);

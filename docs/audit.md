@@ -41,6 +41,9 @@ Additional fixes cover several boundary cases:
 - Capture lists hydrate images and latest runs in three queries regardless of list length. Image authorization uses one scoped query, and the review screen links to the retained original photo.
 - Capture matching preserves non-Latin text and sends empty normalized identities for review. Conflicting bottles from a historical partial import block completion without overwriting those bottles or issuing a misleading receipt.
 - Bottle actions cannot overlap, unsaved edits require explicit discard, and capture review exposes extracted facts and disagreements. A position note requires a storage location, matching the current storage model.
+- Reassigning a bottle to an existing vintage retains that vintage's blend. Drinking windows are edited as complete pairs, and additions preserve an existing partial window instead of combining endpoints from different records.
+- Award identities, including unknown years, resolve inside the transaction. Review mutations own identity resolution and proven-rollback retries; MCP audit records commit with the corresponding mutation. New wineries with an unknown region use a full hash of their canonical identity, while existing IDs remain valid.
+- Automatic and reviewed capture imports share one commit path. The transaction verifies capture ownership and the latest run before writing inventory or a receipt. Current Workflow owners can restart unfinished processing, cached contexts from older deployments remain usable, and launch errors cannot downgrade processing that already started.
 
 The authorization review examined browser session and MCP OAuth subject handling, site membership and role checks, image access, and development-auth isolation. No production authorization bypass was validated. Production Clerk configuration still requires hosted verification.
 
@@ -55,7 +58,7 @@ These fixes prevent further loss through the identified paths. They do not infer
 1. **Make recovery a product capability.** Add an authorized export covering bottles of every status, wine facts, locations, reviews, awards, and original-image references. Then add consumed-history browsing and a deliberate restore action. Define deletion retention before introducing a soft-delete schema.
 2. **Complete the read-only experience.** Viewers can browse inventory but need a details view for notes, sources, reviews, and individual bottle facts without entering an editor.
 3. **Bound whole-catalogue reads.** The browser still loads complete inventory and capture summaries; progressive rendering bounds DOM work, not response size. Introduce server pagination once measured catalogue sizes justify it. Preserve stable identity and user-selected filters across pages.
-4. **Define concurrent editing behavior.** Changed-field PATCH reduces accidental overwrites. It does not detect two users changing the same fact concurrently. A revision/precondition contract is preferable to broad replacement or a speculative synchronization layer.
+4. **Define concurrent editing behavior.** Changed-field PATCH reduces accidental overwrites, and drinking windows are replaced as complete pairs. These rules do not detect two users changing the same fact concurrently. A revision/precondition contract is preferable to broad replacement or a speculative synchronization layer.
 5. **Exercise hosted integrations.** Local tests do not establish production Clerk/OAuth configuration, Cloudflare restart behavior, real image-service memory, model accuracy, or backup recoverability. Use a dedicated test site and maximum-size image fixtures in staging, with observed limits and failure injection.
 6. **Strengthen release identity checks.** CI deployment is serialized, but completion order can differ from commit order. Prevent an older successful CI run from deploying over a newer revision, and verify deployed revision/configuration rather than relying solely on `/healthz`.
 7. **Keep shared editing explicit.** Metadata belongs to a wine vintage while position, consumption, barcode, lot, and bottle notes belong to a physical bottle. Any future bulk editing or identity reassignment must state which records change and preserve the original evidence.
@@ -63,6 +66,8 @@ These fixes prevent further loss through the identified paths. They do not infer
 9. **Harden general request parsing.** Capture uploads have an enforced byte limit. Other JSON routes still need a consistent bounded parser and malformed-JSON responses. Verify the intended Clerk audience/authorized-party policy against the actual hosted origins before changing authentication policy.
 
 Preparing a site or storage location by name can leave an empty container if a later bottle transaction fails. Winery and wine-vintage preparation is inside the atomic batch. Existing wine facts and bottles remain unchanged; eliminating these empty site/location containers is a smaller follow-up to the transactional fixes. Reassigning a bottle to another vintage deliberately leaves the old vintage's reviews and awards attached to that vintage.
+
+Existing duplicate awards and wineries are retained to avoid discarding evidence. The winery identity fix coordinates current writers; an older deployment that still generates random winery IDs can create duplicates during a version overlap. Review audit records commit atomically with mutations, but their pre-read values can be stale under concurrent edits to an existing record.
 
 Member invitations, movement history, semantic search, and additional enrichment are product extensions. They should follow export/recovery and reliable core flows.
 
@@ -73,8 +78,8 @@ The initial checkout passed formatting, lint, TypeScript, 56 Worker/script tests
 Final local verification passed:
 
 - `pnpm install --frozen-lockfile`.
-- `pnpm check`: formatting, type-aware lint, both workspace TypeScript checks, 102 Worker/script tests, 104 React tests, generated-theme validation, and 22 Chrome tests across light and dark modes. Browser coverage includes keyboard recovery, native capture disclosures, accessibility, reduced motion, 320px reflow, and large catalogues.
-- `pnpm --filter @chikachow/booze-web build`, including unchanged client bundle budgets. The entry JavaScript is 86,497 bytes gzipped; total JavaScript is 218,979 bytes gzipped. The entry plus its initial preloads totals 151,109 bytes gzipped. The existing initial-JavaScript gate counts only the entry file, so the preload-inclusive measurement is reported separately.
+- `pnpm check`: formatting, type-aware lint, both workspace TypeScript checks, 140 Worker/script tests, 106 React tests, generated-theme validation, and 22 Chrome tests across light and dark modes. Browser coverage includes keyboard recovery, native capture disclosures, accessibility, reduced motion, 320px reflow, and large catalogues.
+- `pnpm --filter @chikachow/booze-web build`, including unchanged client bundle budgets. The entry JavaScript is 86,526 bytes gzipped; total JavaScript is 219,060 bytes gzipped. The entry plus its initial preloads totals 151,138 bytes gzipped. The existing initial-JavaScript gate counts only the entry file, so the preload-inclusive measurement is reported separately.
 - `pnpm audit --prod --json`: zero reported advisories across 126 production dependencies at the time of the audit.
 - `git diff --check`, and no changes under `packages/db`, including its schema and migrations.
 
@@ -82,7 +87,9 @@ Live local-browser verification used a fresh migrated development database: crea
 
 Production state, remote migration ledgers, hosted authentication, real model calls, and backup restoration are outside this audit's validation boundary.
 
-Concurrent-write tests use a transactional SQLite adapter and injected interleavings. D1 error classification was checked against the runtime's public error-wrapper source and exercised with nested causes. A separate local native D1 probe did not initialize, so it provides no additional runtime validation.
+Concurrent-write regressions use a transactional SQLite adapter and injected interleavings. A running local Worker with native D1 also verified existing-blend and partial-window preservation, complete-window validation, and concurrent awards, review sources, critic reviews, and wineries with unknown regions. The native runtime exposed extended UNIQUE and NOT NULL error suffixes; regression tests now cover those exact formats without broadening retries to unknown failures.
+
+A temporary local Worker probe invoked actual `DB.batch` calls: a stale capture guard rolled back preceding fixture inserts, while a valid guard committed a bottle and receipt without changing the existing run's extractor, prompt, or schema metadata. Workflow orchestration tests separately exercise same-owner restarts and cached contexts from older deployments. These checks do not establish hosted Workflow restart behavior. All temporary probe code, fixture records, and development servers were removed.
 
 ## Primary references
 

@@ -10,7 +10,7 @@ import {
   storageLocations,
   type BoozeDatabase,
 } from "@chikachow/booze-db";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql, type SQL } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { isCaptureStatus, type CaptureStatus } from "./capture-state.ts";
@@ -70,6 +70,7 @@ export type CaptureResource = {
   readonly positionHint: string | null;
   readonly quantity: number;
   readonly status: CaptureStatus;
+  readonly workflowInstanceId: string | null;
   readonly importedBottleIds: readonly string[];
   readonly errorMessage: string | null;
   readonly createdAt: string;
@@ -290,6 +291,7 @@ export async function listBottleCaptures({
       positionHint: bottleCaptures.positionHint,
       quantity: bottleCaptures.quantity,
       status: bottleCaptures.status,
+      workflowInstanceId: bottleCaptures.workflowInstanceId,
       importedBottleIdsJson: bottleCaptures.importedBottleIdsJson,
       errorMessage: bottleCaptures.errorMessage,
       createdAt: bottleCaptures.createdAt,
@@ -464,6 +466,8 @@ export async function updateCaptureStatus({
   importedBottleIds,
   status,
   workflowInstanceId,
+  expectedStatus,
+  runId,
 }: {
   readonly captureId: string;
   readonly database: BoozeDatabase;
@@ -471,7 +475,9 @@ export async function updateCaptureStatus({
   readonly errorMessage?: string | null;
   readonly importedBottleIds?: readonly string[];
   readonly status: CaptureStatus;
-  readonly workflowInstanceId?: string | undefined;
+  readonly workflowInstanceId?: string | null | undefined;
+  readonly expectedStatus?: CaptureStatus;
+  readonly runId?: string;
 }): Promise<void> {
   await database
     .update(bottleCaptures)
@@ -492,7 +498,9 @@ export async function updateCaptureStatus({
         status === "imported" ? undefined : ne(bottleCaptures.status, "imported"),
         workflowInstanceId === undefined
           ? undefined
-          : eq(bottleCaptures.workflowInstanceId, workflowInstanceId),
+          : sql`${bottleCaptures.workflowInstanceId} IS ${workflowInstanceId}`,
+        expectedStatus === undefined ? undefined : eq(bottleCaptures.status, expectedStatus),
+        runId === undefined ? undefined : eq(latestCaptureRunId(captureId), runId),
       ),
     );
 }
@@ -526,29 +534,62 @@ export async function beginCaptureWorkflow({
     SET status = 'extracting', error_message = NULL, error_detail_json = NULL,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ${captureId} AND workflow_instance_id = ${workflowInstanceId}
-      AND status IN ('queued', 'extracting')`);
+      AND status IN ('queued', 'extracting', 'importing', 'failed', 'needs_review')`);
   return result.meta.changes === 1;
 }
+
+export type CaptureImportClaim = {
+  readonly captureId: string;
+  readonly runId: string;
+  readonly siteId: string;
+  readonly workflowInstanceId: string | null;
+};
 
 export async function claimCaptureForImport({
   captureId,
   database,
+  runId,
+  siteId,
   resume = false,
   workflowInstanceId,
 }: {
   readonly captureId: string;
   readonly database: BoozeDatabase;
+  readonly runId: string;
+  readonly siteId: string;
   readonly resume?: boolean;
-  readonly workflowInstanceId?: string | undefined;
-}): Promise<boolean> {
-  const result = await database.run(
-    sql`UPDATE ${bottleCaptures}
-        SET status = 'importing', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ${captureId}
-          AND ${resume ? sql`status IN ('extracting', 'importing')` : sql`status = 'needs_review'`}
-          ${workflowInstanceId === undefined ? sql`` : sql`AND workflow_instance_id = ${workflowInstanceId}`}`,
-  );
-  return result.meta.changes === 1;
+  readonly workflowInstanceId?: string | null | undefined;
+}): Promise<CaptureImportClaim | null> {
+  const [claim] = await database
+    .update(bottleCaptures)
+    .set({ status: "importing", updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(
+      and(
+        eq(bottleCaptures.id, captureId),
+        eq(bottleCaptures.siteId, siteId),
+        eq(latestCaptureRunId(captureId), runId),
+        resume
+          ? sql`${bottleCaptures.status} IN ('extracting', 'importing')`
+          : eq(bottleCaptures.status, "needs_review"),
+        // Historical captures without a Workflow ID have a NULL owner; omission
+        // must not bypass ownership for automatic imports.
+        workflowInstanceId === undefined && !resume
+          ? undefined
+          : sql`${bottleCaptures.workflowInstanceId} IS ${workflowInstanceId ?? null}`,
+      ),
+    )
+    .returning({
+      captureId: bottleCaptures.id,
+      siteId: bottleCaptures.siteId,
+      workflowInstanceId: bottleCaptures.workflowInstanceId,
+    });
+  return claim === undefined ? null : { ...claim, runId };
+}
+
+export function latestCaptureRunId(captureId: string | typeof bottleCaptures.id): SQL<string> {
+  return sql<string>`(SELECT latest.id FROM bottle_capture_runs AS latest
+    WHERE latest.capture_id = ${captureId}
+    ORDER BY latest.attempt_number DESC, latest.created_at DESC, latest.id DESC LIMIT 1)`;
 }
 
 export async function updateCaptureRun({
@@ -849,12 +890,7 @@ async function listLatestRuns({
       and(
         eq(siteMemberships.userId, userId),
         captureId === undefined ? undefined : eq(bottleCaptures.id, captureId),
-        eq(
-          bottleCaptureRuns.id,
-          sql`(SELECT latest.id FROM bottle_capture_runs AS latest
-        WHERE latest.capture_id = ${bottleCaptures.id}
-        ORDER BY latest.attempt_number DESC, latest.created_at DESC, latest.id DESC LIMIT 1)`,
-        ),
+        eq(bottleCaptureRuns.id, latestCaptureRunId(bottleCaptures.id)),
       ),
     );
   return new Map(
