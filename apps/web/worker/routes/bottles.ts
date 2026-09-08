@@ -183,7 +183,6 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
       await assertStorageLocationInSite({ database, siteId, storageLocationId });
     }
 
-    assertDrinkWindow(payload.wine);
     return retryCatalogueTransaction(async () => {
       const vintage = await prepareWineVintage({ database, siteId, wine: payload.wine });
       const creation = createBottleStatements({
@@ -290,7 +289,6 @@ export const bottleRoutes = new Hono<{ Bindings: Bindings }>()
               wineryName: payload.wine?.wineryName ?? previousWine.wineryName,
               designation: payload.wine?.designation ?? previousWine.designation,
             };
-      if (wine !== undefined) assertDrinkWindow(wine);
       const nextVintage =
         wine === undefined
           ? { wineVintageId: existing.wineVintageId, statements: [] }
@@ -474,21 +472,6 @@ function createLabelExtractionStatements({
       requiresReview: labelExtraction.requiresReview ?? false,
     }),
   );
-}
-
-function assertDrinkWindow(wine: {
-  readonly drinkFromYear?: number | null | undefined;
-  readonly drinkToYear?: number | null | undefined;
-}): void {
-  if (
-    wine.drinkFromYear !== null &&
-    wine.drinkFromYear !== undefined &&
-    wine.drinkToYear !== null &&
-    wine.drinkToYear !== undefined &&
-    wine.drinkFromYear > wine.drinkToYear
-  ) {
-    throw new HTTPException(400, { message: "Drink window must end on or after it starts" });
-  }
 }
 
 async function wineInputForVintage({

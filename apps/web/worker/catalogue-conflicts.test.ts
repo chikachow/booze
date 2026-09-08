@@ -146,6 +146,10 @@ await describe("catalogue preparation conflicts", async () => {
       "FOREIGN KEY constraint failed",
       "Response lost after commit",
       "Failed query: UNIQUE constraint failed: wine_vintages.site_id, wine_vintages.winery_id, wine_vintages.base_name, wine_vintages.vintage_label",
+      ...["CHECK", "FOREIGNKEY", "PRIMARYKEY", "UNKNOWN"].map(
+        (constraint) =>
+          `D1_ERROR: UNIQUE constraint failed: review_sources.site_id, review_sources.name: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_${constraint})`,
+      ),
     ]) {
       let attempts = 0;
       const failure = new Error(message);
@@ -166,6 +170,8 @@ await describe("catalogue preparation conflicts", async () => {
     for (const message of [
       `D1_ERROR: ${constraint}`,
       `D1_ERROR: ${constraint}: SQLITE_CONSTRAINT`,
+      "D1_ERROR: UNIQUE constraint failed: review_sources.site_id, review_sources.name: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)",
+      "UNIQUE constraint failed: review_sources.site_id, review_sources.name: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)",
     ]) {
       let attempts = 0;
       const result = await retryCatalogueTransaction(async () => {
