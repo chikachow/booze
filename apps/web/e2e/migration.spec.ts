@@ -242,6 +242,64 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Browse bottles" })).toBeVisible();
 });
 
+test("toggles capture evidence and full errors with the keyboard", async ({ page }) => {
+  const errorMessage = "Extraction needs review\nThe models disagree on the vintage year.";
+  await page.route("**/api/bottle-captures", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        data: captures.map((capture) => ({
+          ...capture,
+          errorMessage,
+          latestRun: {
+            id: "run-review",
+            status: "needs_review",
+            extractionR2Key: null,
+            extractionContentType: null,
+            extractionSizeBytes: null,
+            importCandidate: {
+              wine: { wineryName: "Rowlee", displayName: "Reserve Shiraz", vintageYear: 2023 },
+              bottle: { volumeMl: 750 },
+            },
+            matchResult: null,
+            importResult: { reviewReasons: ["Check the year against the retained photos."] },
+            errorMessage: null,
+            errorDetailR2Key: null,
+            errorDetailContentType: null,
+            errorDetailSizeBytes: null,
+            createdAt: capture.createdAt,
+            completedAt: null,
+          },
+        })),
+      }),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Capture" }).click();
+
+  const review = page.locator("summary", { hasText: "Review extracted facts" });
+  const reason = page.getByText("Check the year against the retained photos.");
+  await expect(reason).toBeVisible();
+  await review.focus();
+  await review.press("Enter");
+  await expect(reason).toBeHidden();
+  await expect(review).toBeFocused();
+  await review.press("Space");
+  await expect(reason).toBeVisible();
+
+  const issue = page.locator("summary", { hasText: "Extraction needs review" });
+  const fullError = page.getByText(errorMessage, { exact: true });
+  await expect(fullError).toBeHidden();
+  await issue.focus();
+  await issue.press("Enter");
+  await expect(fullError).toBeVisible();
+  await expectNoAxeViolations(page);
+  await issue.press("Space");
+  await expect(fullError).toBeHidden();
+  await expect(issue).toBeFocused();
+});
+
 test("persists navigation and filters while remaining accessible at reduced motion and reflow", async ({
   page,
 }) => {
@@ -606,8 +664,9 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(captureStatus).toHaveText("Showing all 80 captures");
   const firstRevealedCapture = page.locator(".capture-card").nth(50);
   await expect(firstRevealedCapture).toBeFocused();
+  await expect(firstRevealedCapture.getByRole("button", { name: "Create new" })).toBeDisabled();
   await page.keyboard.press("Tab");
-  await expect(firstRevealedCapture.getByRole("button").first()).toBeFocused();
+  await expect(firstRevealedCapture.getByRole("button", { name: "Retry" })).toBeFocused();
 
   await page.getByRole("button", { name: "Storage" }).click();
   const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });

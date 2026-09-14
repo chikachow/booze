@@ -8,40 +8,37 @@ import {
   wineVintages,
   type BoozeDatabase,
 } from "@chikachow/booze-db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql, type SQLWrapper } from "drizzle-orm";
+import { HTTPException } from "hono/http-exception";
 
-import {
-  generatedId,
-  optionalInteger,
-  optionalText,
-  stableId,
-  vintageLabelForYear,
-} from "./ids.ts";
+import { generatedId, optionalInteger, optionalText, vintageLabelForYear } from "./ids.ts";
 
 export type WineInput = {
   readonly wineryName: string;
-  readonly brandName?: string | undefined;
-  readonly baseName?: string | undefined;
-  readonly designation: string;
-  readonly displayName?: string | undefined;
-  readonly vintageYear?: number | undefined;
+  readonly brandName?: string | null | undefined;
+  readonly baseName?: string | null | undefined;
+  readonly designation: string | null;
+  readonly displayName?: string | null | undefined;
+  readonly vintageYear?: number | null | undefined;
   readonly grapeVarieties?: readonly string[] | undefined;
-  readonly country?: string | undefined;
-  readonly region?: string | undefined;
-  readonly appellation?: string | undefined;
-  readonly classification?: string | undefined;
-  readonly wineType?: string | undefined;
-  readonly wineColor?: string | undefined;
-  readonly addressQualification?: string | undefined;
-  readonly alcoholPercent?: number | undefined;
-  readonly drinkFromYear?: number | undefined;
-  readonly drinkToYear?: number | undefined;
-  readonly description?: string | undefined;
-  readonly drinkingAdvice?: string | undefined;
-  readonly labelText?: string | undefined;
-  readonly sourceUrl?: string | undefined;
-  readonly notes?: string | undefined;
+  readonly country?: string | null | undefined;
+  readonly region?: string | null | undefined;
+  readonly appellation?: string | null | undefined;
+  readonly classification?: string | null | undefined;
+  readonly wineType?: string | null | undefined;
+  readonly wineColor?: string | null | undefined;
+  readonly addressQualification?: string | null | undefined;
+  readonly alcoholPercent?: number | null | undefined;
+  readonly drinkFromYear?: number | null | undefined;
+  readonly drinkToYear?: number | null | undefined;
+  readonly description?: string | null | undefined;
+  readonly drinkingAdvice?: string | null | undefined;
+  readonly labelText?: string | null | undefined;
+  readonly sourceUrl?: string | null | undefined;
+  readonly notes?: string | null | undefined;
 };
+
+type WineUpdates = { readonly [Key in keyof WineInput]?: WineInput[Key] | undefined };
 
 export type BottleInput = {
   readonly bottleNumber?: string | undefined;
@@ -56,27 +53,55 @@ export type UpsertVintageResult = {
   readonly wineVintageId: string;
 };
 
-export async function upsertWineVintage({
+export async function prepareWineVintage({
   database,
   siteId,
   wine,
+  overwriteExisting = false,
+  updates = wine,
+  sourceWineVintageId,
 }: {
   readonly database: BoozeDatabase;
   readonly siteId: string;
   readonly wine: WineInput;
-}): Promise<UpsertVintageResult> {
+  readonly overwriteExisting?: boolean;
+  readonly updates?: WineUpdates;
+  readonly sourceWineVintageId?: string;
+}): Promise<
+  UpsertVintageResult & { readonly statements: [CatalogueStatement, ...CatalogueStatement[]] }
+> {
+  if (
+    overwriteExisting &&
+    (updates.drinkFromYear === undefined) !== (updates.drinkToYear === undefined)
+  ) {
+    throw new HTTPException(400, {
+      message: "Edit drinkFromYear and drinkToYear together; use null for an unknown endpoint",
+    });
+  }
+  if (
+    wine.drinkFromYear !== null &&
+    wine.drinkFromYear !== undefined &&
+    wine.drinkToYear !== null &&
+    wine.drinkToYear !== undefined &&
+    wine.drinkFromYear > wine.drinkToYear
+  ) {
+    throw new HTTPException(400, { message: "Drink window must end on or after it starts" });
+  }
+  const statements: CatalogueStatement[] = [];
   const wineryRegion = optionalText(wine.region);
   const baseName = baseNameForWine(wine);
   const displayName = displayNameForWine(wine);
   const vintageLabel = vintageLabelForYear(wine.vintageYear);
   const wineryId = await upsertWinery({
     country: optionalText(wine.country),
+    statements,
     database,
     name: wine.wineryName,
     region: wineryRegion,
     siteId,
   });
-  const wineVintageId = await upsertVintageRow({
+  const vintage = await upsertVintageRow({
+    statements,
     baseName,
     database,
     displayName,
@@ -85,25 +110,62 @@ export async function upsertWineVintage({
     wine,
     wineryId,
     wineryRegion,
+    overwriteExisting,
+    updates,
   });
+  const wineVintageId = vintage.wineVintageId;
 
-  await replaceConstituents({
-    database,
-    siteId,
-    wineVintageId,
-    grapeNames: wine.grapeVarieties ?? [],
-  });
+  if (wine.grapeVarieties !== undefined) {
+    replaceConstituents({
+      statements,
+      database,
+      siteId,
+      wineVintageId,
+      grapeNames: wine.grapeVarieties,
+      replace: overwriteExisting,
+    });
+  }
 
-  return { wineryId, wineVintageId };
+  if (
+    wine.grapeVarieties === undefined &&
+    vintage.isNew &&
+    sourceWineVintageId !== undefined &&
+    sourceWineVintageId !== wineVintageId
+  ) {
+    const constituents = await database
+      .select()
+      .from(wineConstituents)
+      .where(
+        and(
+          eq(wineConstituents.siteId, siteId),
+          eq(wineConstituents.wineVintageId, sourceWineVintageId),
+        ),
+      );
+    for (const constituent of constituents) {
+      statements.push(
+        database
+          .insert(wineConstituents)
+          .values({ ...constituent, wineVintageId })
+          .onConflictDoNothing({
+            target: [wineConstituents.wineVintageId, wineConstituents.grapeVarietyId],
+          }),
+      );
+    }
+  }
+  const [first, ...rest] = statements;
+  if (first === undefined) throw new Error("Wine upsert requires a statement");
+  return { wineryId, wineVintageId, statements: [first, ...rest] };
 }
 
 async function upsertWinery({
+  statements,
   country,
   database,
   name,
   region,
   siteId,
 }: {
+  readonly statements: CatalogueStatement[];
   readonly country: string | null;
   readonly database: BoozeDatabase;
   readonly name: string;
@@ -121,29 +183,50 @@ async function upsertWinery({
       ),
     )
     .limit(1);
-  const existingRow = existing[0];
-  if (existingRow !== undefined) {
-    await database
-      .update(wineries)
-      .set({ country, region, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(wineries.id, existingRow.id));
-    return existingRow.id;
-  }
+  const wineryId = existing[0]?.id ?? (await wineryIdForIdentity({ siteId, name, region }));
 
-  const wineryId = generatedId("winery");
-
-  await database.insert(wineries).values({
-    id: wineryId,
-    siteId,
-    name,
-    country,
-    region,
-  });
+  statements.push(
+    database
+      .insert(wineries)
+      .values({
+        id: wineryId,
+        siteId,
+        name,
+        country,
+        region,
+      })
+      .onConflictDoUpdate({
+        target: wineries.id,
+        set: {
+          country: sql`coalesce(${wineries.country}, ${country})`,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      }),
+  );
 
   return wineryId;
 }
 
+async function wineryIdForIdentity({
+  siteId,
+  name,
+  region,
+}: {
+  readonly siteId: string;
+  readonly name: string;
+  readonly region: string | null;
+}): Promise<string> {
+  // Current writers share this ID before committing dependent vintages, even
+  // when the nullable region bypasses SQLite's natural-key uniqueness check.
+  // Existing IDs are reused above. Older writers using random IDs can still
+  // create duplicates during an overlapping deployment.
+  const identity = new TextEncoder().encode(JSON.stringify([siteId, name, region]));
+  const digest = await crypto.subtle.digest("SHA-256", identity);
+  return `winery_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 async function upsertVintageRow({
+  statements,
   baseName,
   database,
   displayName,
@@ -152,7 +235,12 @@ async function upsertVintageRow({
   wine,
   wineryId,
   wineryRegion,
+  overwriteExisting,
+  updates,
 }: {
+  readonly statements: CatalogueStatement[];
+  readonly overwriteExisting: boolean;
+  readonly updates: WineUpdates;
   readonly baseName: string;
   readonly database: BoozeDatabase;
   readonly displayName: string;
@@ -161,54 +249,7 @@ async function upsertVintageRow({
   readonly wine: WineInput;
   readonly wineryId: string;
   readonly wineryRegion: string | null;
-}): Promise<string> {
-  const wineVintageId = generatedId("vintage");
-
-  await database
-    .insert(wineVintages)
-    .values({
-      id: wineVintageId,
-      siteId,
-      wineryId,
-      brandName: optionalText(wine.brandName),
-      baseName,
-      displayName,
-      designation: optionalText(wine.designation),
-      vintageYear: optionalInteger(wine.vintageYear),
-      vintageLabel,
-      wineType: optionalText(wine.wineType),
-      wineColor: optionalText(wine.wineColor),
-      country: optionalText(wine.country),
-      region: wineryRegion,
-      appellation: optionalText(wine.appellation),
-      classification: optionalText(wine.classification),
-      addressQualification: optionalText(wine.addressQualification),
-      alcoholPercent: wine.alcoholPercent ?? null,
-      drinkFromYear: optionalInteger(wine.drinkFromYear),
-      drinkToYear: optionalInteger(wine.drinkToYear),
-      description: optionalText(wine.description),
-      drinkingAdvice: optionalText(wine.drinkingAdvice),
-      labelText: optionalText(wine.labelText),
-      sourceUrl: optionalText(wine.sourceUrl),
-      notes: optionalText(wine.notes),
-    })
-    .onConflictDoUpdate({
-      target: [
-        wineVintages.siteId,
-        wineVintages.wineryId,
-        wineVintages.baseName,
-        wineVintages.vintageLabel,
-      ],
-      set: wineVintageUpdateSet({
-        baseName,
-        displayName,
-        vintageLabel,
-        wine,
-        wineryId,
-        wineryRegion,
-      }),
-    });
-
+}): Promise<{ readonly wineVintageId: string; readonly isNew: boolean }> {
   const rows = await database
     .select({ id: wineVintages.id })
     .from(wineVintages)
@@ -221,23 +262,47 @@ async function upsertVintageRow({
       ),
     )
     .limit(1);
-  const row = rows[0];
-  if (row === undefined) {
-    throw new Error("Wine vintage upsert did not return a row");
-  }
-  return row.id;
+  const wineVintageId = rows[0]?.id ?? generatedId("vintage");
+
+  statements.push(
+    database
+      .insert(wineVintages)
+      .values({
+        id: wineVintageId,
+        siteId,
+        wineryId,
+        brandName: optionalText(wine.brandName),
+        baseName,
+        displayName,
+        designation: optionalText(wine.designation),
+        vintageYear: optionalInteger(wine.vintageYear),
+        vintageLabel,
+        wineType: optionalText(wine.wineType),
+        wineColor: optionalText(wine.wineColor),
+        country: optionalText(wine.country),
+        region: wineryRegion,
+        appellation: optionalText(wine.appellation),
+        classification: optionalText(wine.classification),
+        addressQualification: optionalText(wine.addressQualification),
+        alcoholPercent: wine.alcoholPercent ?? null,
+        drinkFromYear: optionalInteger(wine.drinkFromYear),
+        drinkToYear: optionalInteger(wine.drinkToYear),
+        description: optionalText(wine.description),
+        drinkingAdvice: optionalText(wine.drinkingAdvice),
+        labelText: optionalText(wine.labelText),
+        sourceUrl: optionalText(wine.sourceUrl),
+        notes: optionalText(wine.notes),
+      })
+      .onConflictDoUpdate({
+        target: wineVintages.id,
+        set: wineVintageUpdateSet({ displayName, wine: updates, overwriteExisting }),
+      }),
+  );
+
+  return { wineVintageId, isNew: rows.length === 0 };
 }
 
-export async function createBottles({
-  bottleIds,
-  database,
-  siteId,
-  wineVintageId,
-  storageLocationId,
-  positionHint,
-  bottle,
-  quantity,
-}: {
+export type BottleCreationInput = {
   readonly bottleIds?: readonly string[] | undefined;
   readonly database: BoozeDatabase;
   readonly siteId: string;
@@ -246,43 +311,77 @@ export async function createBottles({
   readonly positionHint: string | null;
   readonly bottle: BottleInput;
   readonly quantity: number;
-}): Promise<readonly string[]> {
-  const rows = Array.from({ length: quantity }, (_, index) => ({
-    id: bottleIds?.[index] ?? crypto.randomUUID(),
-    siteId,
-    wineVintageId,
-    bottleNumber: optionalText(bottle.bottleNumber),
-    volumeMl: bottle.volumeMl ?? 750,
-    barcode: optionalText(bottle.barcode),
-    lotCode: optionalText(bottle.lotCode),
-    status: "in_stock",
-    notes: optionalText(bottle.notes),
-  }));
+};
 
-  await database.insert(bottles).values(rows).onConflictDoNothing({ target: bottles.id });
+type CatalogueStatement = Parameters<BoozeDatabase["batch"]>[0][number];
 
-  if (storageLocationId !== null) {
-    await database
-      .insert(bottleLocations)
-      .values(
-        rows.map((row) => ({
-          bottleId: row.id,
-          siteId,
-          storageLocationId,
-          positionHint,
-        })),
-      )
-      .onConflictDoNothing({ target: bottleLocations.bottleId });
+export function createBottleStatements({
+  bottleIds,
+  database,
+  siteId,
+  wineVintageId,
+  storageLocationId,
+  positionHint,
+  bottle,
+  quantity,
+}: BottleCreationInput): {
+  readonly bottleIds: readonly string[];
+  readonly statements: [CatalogueStatement, ...CatalogueStatement[]];
+} {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 24) {
+    throw new Error("Bottle quantity must be between 1 and 24");
   }
-
-  return rows.map((row) => row.id);
+  if (bottleIds !== undefined && bottleIds.length !== quantity) {
+    throw new Error("Bottle IDs must match quantity");
+  }
+  const ids = Array.from(
+    { length: quantity },
+    (_, index) => bottleIds?.[index] ?? crypto.randomUUID(),
+  );
+  const statements: CatalogueStatement[] = [];
+  for (const id of ids) {
+    statements.push(
+      database
+        .insert(bottles)
+        .values({
+          id,
+          siteId,
+          wineVintageId,
+          bottleNumber: optionalText(bottle.bottleNumber),
+          volumeMl: bottle.volumeMl ?? 750,
+          barcode: optionalText(bottle.barcode),
+          lotCode: optionalText(bottle.lotCode),
+          status: "in_stock",
+          notes: optionalText(bottle.notes),
+        })
+        .onConflictDoNothing({ target: bottles.id }),
+    );
+    if (storageLocationId !== null) {
+      statements.push(
+        database
+          .insert(bottleLocations)
+          .values({
+            bottleId: id,
+            siteId,
+            storageLocationId,
+            positionHint,
+          })
+          .onConflictDoNothing({ target: bottleLocations.bottleId }),
+      );
+    }
+  }
+  const [first, ...rest] = statements;
+  if (first === undefined) {
+    throw new Error("Bottle creation requires a statement");
+  }
+  return { bottleIds: ids, statements: [first, ...rest] };
 }
 
 export async function upsertStorageLocation({
   database,
   siteId,
   name,
-  locationType = "area",
+  locationType,
   parentId = null,
 }: {
   readonly database: BoozeDatabase;
@@ -310,7 +409,7 @@ export async function upsertStorageLocation({
       siteId,
       parentId,
       name,
-      locationType,
+      locationType: locationType ?? "area",
     });
   } else {
     await database
@@ -331,43 +430,98 @@ function displayNameForWine(wine: WineInput): string {
 }
 
 function wineVintageUpdateSet({
-  baseName,
   displayName,
-  vintageLabel,
   wine,
-  wineryId,
-  wineryRegion,
+  overwriteExisting,
 }: {
-  readonly baseName: string;
+  readonly overwriteExisting: boolean;
   readonly displayName: string;
-  readonly vintageLabel: string;
-  readonly wine: WineInput;
-  readonly wineryId: string;
-  readonly wineryRegion: string | null;
+  readonly wine: WineUpdates;
 }) {
+  const update = <T>(column: SQLWrapper, value: T | undefined) =>
+    value === undefined
+      ? undefined
+      : overwriteExisting
+        ? value
+        : sql`coalesce(${column}, ${value})`;
+  // A drinking window is one fact. Additions may fill a wholly unknown window,
+  // but must not combine endpoints supplied by different records.
+  const updateDrinkYear = (column: SQLWrapper, value: number | null | undefined) =>
+    overwriteExisting
+      ? value
+      : sql`case when ${wineVintages.drinkFromYear} is null and ${wineVintages.drinkToYear} is null
+          then ${value ?? null} else ${column} end`;
   return {
-    wineryId,
-    brandName: optionalText(wine.brandName),
-    baseName,
-    displayName,
-    designation: optionalText(wine.designation),
-    vintageYear: optionalInteger(wine.vintageYear),
-    vintageLabel,
-    wineType: optionalText(wine.wineType),
-    wineColor: optionalText(wine.wineColor),
-    country: optionalText(wine.country),
-    region: wineryRegion,
-    appellation: optionalText(wine.appellation),
-    classification: optionalText(wine.classification),
-    addressQualification: optionalText(wine.addressQualification),
-    alcoholPercent: wine.alcoholPercent ?? null,
-    drinkFromYear: optionalInteger(wine.drinkFromYear),
-    drinkToYear: optionalInteger(wine.drinkToYear),
-    description: optionalText(wine.description),
-    drinkingAdvice: optionalText(wine.drinkingAdvice),
-    labelText: optionalText(wine.labelText),
-    sourceUrl: optionalText(wine.sourceUrl),
-    notes: optionalText(wine.notes),
+    brandName: update(
+      wineVintages.brandName,
+      wine.brandName === undefined ? undefined : optionalText(wine.brandName),
+    ),
+    displayName:
+      overwriteExisting && wine.displayName !== undefined ? displayName : wineVintages.displayName,
+    designation: update(
+      wineVintages.designation,
+      wine.designation === undefined ? undefined : optionalText(wine.designation),
+    ),
+    wineType: update(
+      wineVintages.wineType,
+      wine.wineType === undefined ? undefined : optionalText(wine.wineType),
+    ),
+    wineColor: update(
+      wineVintages.wineColor,
+      wine.wineColor === undefined ? undefined : optionalText(wine.wineColor),
+    ),
+    country: update(
+      wineVintages.country,
+      wine.country === undefined ? undefined : optionalText(wine.country),
+    ),
+    region: update(
+      wineVintages.region,
+      wine.region === undefined ? undefined : optionalText(wine.region),
+    ),
+    appellation: update(
+      wineVintages.appellation,
+      wine.appellation === undefined ? undefined : optionalText(wine.appellation),
+    ),
+    classification: update(
+      wineVintages.classification,
+      wine.classification === undefined ? undefined : optionalText(wine.classification),
+    ),
+    addressQualification: update(
+      wineVintages.addressQualification,
+      wine.addressQualification === undefined ? undefined : optionalText(wine.addressQualification),
+    ),
+    alcoholPercent: update(
+      wineVintages.alcoholPercent,
+      wine.alcoholPercent === undefined ? undefined : wine.alcoholPercent,
+    ),
+    drinkFromYear: updateDrinkYear(
+      wineVintages.drinkFromYear,
+      wine.drinkFromYear === undefined ? undefined : optionalInteger(wine.drinkFromYear),
+    ),
+    drinkToYear: updateDrinkYear(
+      wineVintages.drinkToYear,
+      wine.drinkToYear === undefined ? undefined : optionalInteger(wine.drinkToYear),
+    ),
+    description: update(
+      wineVintages.description,
+      wine.description === undefined ? undefined : optionalText(wine.description),
+    ),
+    drinkingAdvice: update(
+      wineVintages.drinkingAdvice,
+      wine.drinkingAdvice === undefined ? undefined : optionalText(wine.drinkingAdvice),
+    ),
+    labelText: update(
+      wineVintages.labelText,
+      wine.labelText === undefined ? undefined : optionalText(wine.labelText),
+    ),
+    sourceUrl: update(
+      wineVintages.sourceUrl,
+      wine.sourceUrl === undefined ? undefined : optionalText(wine.sourceUrl),
+    ),
+    notes: update(
+      wineVintages.notes,
+      wine.notes === undefined ? undefined : optionalText(wine.notes),
+    ),
     updatedAt: sql`CURRENT_TIMESTAMP`,
   };
 }
@@ -379,39 +533,56 @@ function nullableEq(
   return value === null ? isNull(column) : eq(column, value);
 }
 
-async function replaceConstituents({
+function replaceConstituents({
+  statements,
   database,
   siteId,
   wineVintageId,
   grapeNames,
+  replace,
 }: {
+  readonly statements: CatalogueStatement[];
   readonly database: BoozeDatabase;
   readonly siteId: string;
   readonly wineVintageId: string;
   readonly grapeNames: readonly string[];
-}): Promise<void> {
-  await database
-    .delete(wineConstituents)
-    .where(
-      and(eq(wineConstituents.siteId, siteId), eq(wineConstituents.wineVintageId, wineVintageId)),
-    );
-
+  readonly replace: boolean;
+}): void {
   const uniqueNames = [
     ...new Set(grapeNames.map((name) => name.trim()).filter((name) => name !== "")),
   ];
+  if (replace) {
+    statements.push(
+      database.delete(wineConstituents).where(
+        and(
+          eq(wineConstituents.siteId, siteId),
+          eq(wineConstituents.wineVintageId, wineVintageId),
+          sql`${wineConstituents.grapeVarietyId} not in (
+              select ${grapeVarieties.id} from ${grapeVarieties}
+              where ${grapeVarieties.name} in (select value from json_each(${JSON.stringify(uniqueNames)}))
+            )`,
+        ),
+      ),
+    );
+  }
   for (const grapeName of uniqueNames) {
-    const grapeVarietyId = stableId("grape", grapeName);
-    await database
-      .insert(grapeVarieties)
-      .values({ id: grapeVarietyId, name: grapeName })
-      .onConflictDoNothing({ target: grapeVarieties.name });
-
-    await database.insert(wineConstituents).values({
-      siteId,
-      wineVintageId,
-      grapeVarietyId,
-      blendText: null,
-      percentage: null,
-    });
+    statements.push(
+      database
+        .insert(grapeVarieties)
+        .values({ id: generatedId("grape"), name: grapeName })
+        .onConflictDoNothing({ target: grapeVarieties.name }),
+      database
+        .insert(wineConstituents)
+        .values({
+          siteId,
+          wineVintageId,
+          grapeVarietyId: sql`(select id from grape_varieties where name = ${grapeName})`,
+          blendText: null,
+          percentage: null,
+        })
+        .onConflictDoNothing({
+          target: [wineConstituents.wineVintageId, wineConstituents.grapeVarietyId],
+        }),
+    );
   }
 }

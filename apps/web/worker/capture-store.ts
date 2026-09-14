@@ -4,12 +4,13 @@ import {
   bottleCaptures,
   createD1Client,
   imageAssets,
+  r2ObjectDeletionQueue,
   siteMemberships,
   sites,
   storageLocations,
   type BoozeDatabase,
 } from "@chikachow/booze-db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql, type SQL } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { isCaptureStatus, type CaptureStatus } from "./capture-state.ts";
@@ -69,6 +70,7 @@ export type CaptureResource = {
   readonly positionHint: string | null;
   readonly quantity: number;
   readonly status: CaptureStatus;
+  readonly workflowInstanceId: string | null;
   readonly importedBottleIds: readonly string[];
   readonly errorMessage: string | null;
   readonly createdAt: string;
@@ -271,9 +273,11 @@ export async function setCaptureWorkflowInstance({
 }
 
 export async function listBottleCaptures({
+  captureId,
   database,
   userId,
 }: {
+  readonly captureId?: string;
   readonly database: BoozeDatabase;
   readonly userId: string;
 }): Promise<readonly CaptureResource[]> {
@@ -287,6 +291,7 @@ export async function listBottleCaptures({
       positionHint: bottleCaptures.positionHint,
       quantity: bottleCaptures.quantity,
       status: bottleCaptures.status,
+      workflowInstanceId: bottleCaptures.workflowInstanceId,
       importedBottleIdsJson: bottleCaptures.importedBottleIdsJson,
       errorMessage: bottleCaptures.errorMessage,
       createdAt: bottleCaptures.createdAt,
@@ -302,18 +307,26 @@ export async function listBottleCaptures({
         eq(bottleCaptures.storageLocationId, storageLocations.id),
       ),
     )
-    .where(eq(siteMemberships.userId, userId))
+    .where(
+      and(
+        eq(siteMemberships.userId, userId),
+        captureId === undefined ? undefined : eq(bottleCaptures.id, captureId),
+      ),
+    )
     .orderBy(desc(bottleCaptures.createdAt));
 
-  return Promise.all(
-    rows.map(async (row) => ({
-      ...row,
-      status: captureStatus(row.status),
-      importedBottleIds: parseStringArray(row.importedBottleIdsJson),
-      images: await listCaptureImages({ database, captureId: row.id }),
-      latestRun: await getLatestRun({ database, captureId: row.id }),
-    })),
-  );
+  if (rows.length === 0) return [];
+  const [imagesByCapture, runsByCapture] = await Promise.all([
+    listCaptureImages({ database, userId, captureId }),
+    listLatestRuns({ database, userId, captureId }),
+  ]);
+  return rows.map((row) => ({
+    ...row,
+    status: captureStatus(row.status),
+    importedBottleIds: parseStringArray(row.importedBottleIdsJson),
+    images: imagesByCapture.get(row.id) ?? [],
+    latestRun: runsByCapture.get(row.id) ?? null,
+  }));
 }
 
 export async function getBottleCapture({
@@ -325,7 +338,7 @@ export async function getBottleCapture({
   readonly database: BoozeDatabase;
   readonly userId: string;
 }): Promise<CaptureResource> {
-  const rows = await listBottleCaptures({ database, userId });
+  const rows = await listBottleCaptures({ captureId, database, userId });
   const capture = rows.find((row) => row.id === captureId);
   if (capture === undefined) {
     throw new HTTPException(404, { message: "Capture not found" });
@@ -376,25 +389,33 @@ export async function getCaptureImageObject({
   captureId,
   database,
   imageAssetId,
+  original = false,
   userId,
 }: {
   readonly captureId: string;
   readonly database: BoozeDatabase;
   readonly imageAssetId: string;
+  readonly original?: boolean;
   readonly userId: string;
 }): Promise<{ readonly r2Key: string; readonly contentType: string }> {
-  await getBottleCapture({ captureId, database, userId });
   const rows = await database
     .select({
-      r2Key: sql<string>`coalesce(${imageAssets.thumbnailR2Key}, ${imageAssets.r2Key})`,
-      contentType: sql<string>`coalesce(${imageAssets.thumbnailContentType}, ${imageAssets.contentType})`,
+      r2Key: original
+        ? imageAssets.r2Key
+        : sql<string>`coalesce(${imageAssets.thumbnailR2Key}, ${imageAssets.r2Key})`,
+      contentType: original
+        ? imageAssets.contentType
+        : sql<string>`coalesce(${imageAssets.thumbnailContentType}, ${imageAssets.contentType})`,
     })
     .from(bottleCaptureImages)
     .innerJoin(imageAssets, eq(bottleCaptureImages.imageAssetId, imageAssets.id))
+    .innerJoin(bottleCaptures, eq(bottleCaptureImages.captureId, bottleCaptures.id))
+    .innerJoin(siteMemberships, eq(bottleCaptures.siteId, siteMemberships.siteId))
     .where(
       and(
         eq(bottleCaptureImages.captureId, captureId),
         eq(bottleCaptureImages.imageAssetId, imageAssetId),
+        eq(siteMemberships.userId, userId),
       ),
     )
     .limit(1);
@@ -408,10 +429,12 @@ export async function getCaptureImageObject({
 export async function createCaptureRun({
   captureId,
   database,
+  runId = crypto.randomUUID(),
   status,
 }: {
   readonly captureId: string;
   readonly database: BoozeDatabase;
+  readonly runId?: string;
   readonly status: string;
 }): Promise<{ readonly runId: string; readonly attemptNumber: number }> {
   const previousRuns = await database
@@ -419,17 +442,19 @@ export async function createCaptureRun({
     .from(bottleCaptureRuns)
     .where(eq(bottleCaptureRuns.captureId, captureId));
   const attemptNumber = previousRuns.length + 1;
-  const runId = crypto.randomUUID();
-  await database.insert(bottleCaptureRuns).values({
-    id: runId,
-    captureId,
-    status,
-    extractorVersion: "bottle-ocr-v1",
-    promptVersion: "capture-v1",
-    schemaVersion: "wine-vintage-v1",
-    attemptNumber,
-    startedAt: new Date().toISOString(),
-  });
+  await database
+    .insert(bottleCaptureRuns)
+    .values({
+      id: runId,
+      captureId,
+      status,
+      extractorVersion: "bottle-ocr-v1",
+      promptVersion: "capture-v1",
+      schemaVersion: "wine-vintage-v1",
+      attemptNumber,
+      startedAt: new Date().toISOString(),
+    })
+    .onConflictDoNothing({ target: bottleCaptureRuns.id });
   return { runId, attemptNumber };
 }
 
@@ -440,6 +465,9 @@ export async function updateCaptureStatus({
   errorMessage,
   importedBottleIds,
   status,
+  workflowInstanceId,
+  expectedStatus,
+  runId,
 }: {
   readonly captureId: string;
   readonly database: BoozeDatabase;
@@ -447,6 +475,9 @@ export async function updateCaptureStatus({
   readonly errorMessage?: string | null;
   readonly importedBottleIds?: readonly string[];
   readonly status: CaptureStatus;
+  readonly workflowInstanceId?: string | null | undefined;
+  readonly expectedStatus?: CaptureStatus;
+  readonly runId?: string;
 }): Promise<void> {
   await database
     .update(bottleCaptures)
@@ -461,23 +492,104 @@ export async function updateCaptureStatus({
         : { importedBottleIdsJson: JSON.stringify(importedBottleIds) }),
       updatedAt: sql`CURRENT_TIMESTAMP`,
     })
-    .where(eq(bottleCaptures.id, captureId));
+    .where(
+      and(
+        eq(bottleCaptures.id, captureId),
+        status === "imported" ? undefined : ne(bottleCaptures.status, "imported"),
+        workflowInstanceId === undefined
+          ? undefined
+          : sql`${bottleCaptures.workflowInstanceId} IS ${workflowInstanceId}`,
+        expectedStatus === undefined ? undefined : eq(bottleCaptures.status, expectedStatus),
+        runId === undefined ? undefined : eq(latestCaptureRunId(captureId), runId),
+      ),
+    );
 }
+
+export async function reserveCaptureRetry({
+  captureId,
+  database,
+  workflowInstanceId,
+}: {
+  readonly captureId: string;
+  readonly database: BoozeDatabase;
+  readonly workflowInstanceId: string;
+}): Promise<boolean> {
+  const result = await database.run(sql`UPDATE ${bottleCaptures}
+    SET status = 'queued', workflow_instance_id = ${workflowInstanceId},
+        error_message = NULL, error_detail_json = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ${captureId} AND status IN ('failed', 'needs_review')`);
+  return result.meta.changes === 1;
+}
+
+export async function beginCaptureWorkflow({
+  captureId,
+  database,
+  workflowInstanceId,
+}: {
+  readonly captureId: string;
+  readonly database: BoozeDatabase;
+  readonly workflowInstanceId: string;
+}): Promise<boolean> {
+  const result = await database.run(sql`UPDATE ${bottleCaptures}
+    SET status = 'extracting', error_message = NULL, error_detail_json = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ${captureId} AND workflow_instance_id = ${workflowInstanceId}
+      AND status IN ('queued', 'extracting', 'importing', 'failed', 'needs_review')`);
+  return result.meta.changes === 1;
+}
+
+export type CaptureImportClaim = {
+  readonly captureId: string;
+  readonly runId: string;
+  readonly siteId: string;
+  readonly workflowInstanceId: string | null;
+};
 
 export async function claimCaptureForImport({
   captureId,
   database,
+  runId,
+  siteId,
+  resume = false,
+  workflowInstanceId,
 }: {
   readonly captureId: string;
   readonly database: BoozeDatabase;
-}): Promise<boolean> {
-  const result = await database.run(
-    sql`UPDATE ${bottleCaptures}
-        SET status = 'importing', updated_at = CURRENT_TIMESTAMP
-        WHERE id = ${captureId}
-          AND status IN ('extracting', 'needs_review')`,
-  );
-  return result.meta.changes === 1;
+  readonly runId: string;
+  readonly siteId: string;
+  readonly resume?: boolean;
+  readonly workflowInstanceId?: string | null | undefined;
+}): Promise<CaptureImportClaim | null> {
+  const [claim] = await database
+    .update(bottleCaptures)
+    .set({ status: "importing", updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(
+      and(
+        eq(bottleCaptures.id, captureId),
+        eq(bottleCaptures.siteId, siteId),
+        eq(latestCaptureRunId(captureId), runId),
+        resume
+          ? sql`${bottleCaptures.status} IN ('extracting', 'importing')`
+          : eq(bottleCaptures.status, "needs_review"),
+        // Historical captures without a Workflow ID have a NULL owner; omission
+        // must not bypass ownership for automatic imports.
+        workflowInstanceId === undefined && !resume
+          ? undefined
+          : sql`${bottleCaptures.workflowInstanceId} IS ${workflowInstanceId ?? null}`,
+      ),
+    )
+    .returning({
+      captureId: bottleCaptures.id,
+      siteId: bottleCaptures.siteId,
+      workflowInstanceId: bottleCaptures.workflowInstanceId,
+    });
+  return claim === undefined ? null : { ...claim, runId };
+}
+
+export function latestCaptureRunId(captureId: string | typeof bottleCaptures.id): SQL<string> {
+  return sql<string>`(SELECT latest.id FROM bottle_capture_runs AS latest
+    WHERE latest.capture_id = ${captureId}
+    ORDER BY latest.attempt_number DESC, latest.created_at DESC, latest.id DESC LIMIT 1)`;
 }
 
 export async function updateCaptureRun({
@@ -542,9 +654,16 @@ export async function updateCaptureRun({
             errorDetailContentType: errorDetailArtifact.contentType,
             errorDetailSizeBytes: errorDetailArtifact.sizeBytes,
           }),
-      completedAt: new Date().toISOString(),
+      completedAt: ["imported", "failed", "needs_review", "skipped"].includes(status)
+        ? new Date().toISOString()
+        : null,
     })
-    .where(eq(bottleCaptureRuns.id, runId));
+    .where(
+      and(
+        eq(bottleCaptureRuns.id, runId),
+        status === "imported" ? undefined : ne(bottleCaptureRuns.status, "imported"),
+      ),
+    );
 }
 
 async function upsertImageAsset({
@@ -581,7 +700,6 @@ async function upsertImageAsset({
         database,
         imageAssetId: existingImage.id,
         images,
-        sha256,
         siteId,
       });
     }
@@ -589,24 +707,47 @@ async function upsertImageAsset({
   }
 
   const imageAssetId = crypto.randomUUID();
-  const r2Key = `sites/${siteId}/images/${sha256}${extensionForContentType(file.type)}`;
+  // Keys belong to one asset lifetime. Re-uploading identical bytes after deletion
+  // must not reuse a key that the durable deletion queue may still contain.
+  const r2Key = `sites/${siteId}/images/${imageAssetId}${extensionForContentType(file.type)}`;
   await bucket.put(r2Key, bytes, { httpMetadata: { contentType: file.type } });
-  await database.insert(imageAssets).values({
-    id: imageAssetId,
-    siteId,
-    sha256,
-    r2Key,
-    contentType: file.type,
-    sizeBytes: file.size,
-    uploadedByUserId: userId,
-  });
+  await database
+    .insert(imageAssets)
+    .values({
+      id: imageAssetId,
+      siteId,
+      sha256,
+      r2Key,
+      contentType: file.type,
+      sizeBytes: file.size,
+      uploadedByUserId: userId,
+    })
+    .onConflictDoNothing({ target: [imageAssets.siteId, imageAssets.sha256] });
+  const [stored] = await database
+    .select({ id: imageAssets.id })
+    .from(imageAssets)
+    .where(and(eq(imageAssets.siteId, siteId), eq(imageAssets.sha256, sha256)))
+    .limit(1);
+  if (stored === undefined) {
+    throw new Error("Uploaded image asset was not persisted");
+  }
+  if (stored.id !== imageAssetId) {
+    await database
+      .insert(r2ObjectDeletionQueue)
+      .values({
+        r2Key,
+        sourceKind: "image_asset",
+        sourceId: imageAssetId,
+      })
+      .onConflictDoNothing();
+    return stored.id;
+  }
   await createImageThumbnail({
     bucket,
     bytes,
     database,
     imageAssetId,
     images,
-    sha256,
     siteId,
   });
   return imageAssetId;
@@ -618,7 +759,6 @@ async function createImageThumbnail({
   database,
   imageAssetId,
   images,
-  sha256,
   siteId,
 }: {
   readonly bucket: R2Bucket;
@@ -626,7 +766,6 @@ async function createImageThumbnail({
   readonly database: BoozeDatabase;
   readonly imageAssetId: string;
   readonly images: ImagesBinding | undefined;
-  readonly sha256: string;
   readonly siteId: string;
 }): Promise<void> {
   if (images === undefined) {
@@ -651,7 +790,7 @@ async function createImageThumbnail({
       })
       .output({ format: thumbnailContentType, quality: thumbnailQuality });
     const thumbnailBytes = await new Response(result.image()).arrayBuffer();
-    const thumbnailR2Key = `sites/${siteId}/thumbnails/${sha256}${thumbnailExtension}`;
+    const thumbnailR2Key = `sites/${siteId}/thumbnails/${imageAssetId}${thumbnailExtension}`;
     await bucket.put(thumbnailR2Key, thumbnailBytes, {
       httpMetadata: { contentType: result.contentType() },
     });
@@ -678,12 +817,15 @@ async function createImageThumbnail({
 async function listCaptureImages({
   captureId,
   database,
+  userId,
 }: {
-  readonly captureId: string;
+  readonly captureId: string | undefined;
   readonly database: BoozeDatabase;
-}): Promise<readonly CaptureImageResource[]> {
+  readonly userId: string;
+}): Promise<ReadonlyMap<string, readonly CaptureImageResource[]>> {
   const rows = await database
     .select({
+      captureId: bottleCaptureImages.captureId,
       imageAssetId: imageAssets.id,
       originalFilename: bottleCaptureImages.originalFilename,
       sortOrder: bottleCaptureImages.sortOrder,
@@ -692,24 +834,40 @@ async function listCaptureImages({
     })
     .from(bottleCaptureImages)
     .innerJoin(imageAssets, eq(bottleCaptureImages.imageAssetId, imageAssets.id))
-    .where(eq(bottleCaptureImages.captureId, captureId))
+    .innerJoin(bottleCaptures, eq(bottleCaptureImages.captureId, bottleCaptures.id))
+    .innerJoin(siteMemberships, eq(bottleCaptures.siteId, siteMemberships.siteId))
+    .where(
+      and(
+        eq(siteMemberships.userId, userId),
+        captureId === undefined ? undefined : eq(bottleCaptures.id, captureId),
+      ),
+    )
     .orderBy(bottleCaptureImages.sortOrder);
 
-  return rows.map((row) => ({
-    ...row,
-    imageUrl: `/api/bottle-captures/${captureId}/images/${row.imageAssetId}`,
-  }));
+  const imagesByCapture = new Map<string, CaptureImageResource[]>();
+  for (const { captureId: rowCaptureId, ...image } of rows) {
+    const images = imagesByCapture.get(rowCaptureId) ?? [];
+    images.push({
+      ...image,
+      imageUrl: `/api/bottle-captures/${rowCaptureId}/images/${image.imageAssetId}`,
+    });
+    imagesByCapture.set(rowCaptureId, images);
+  }
+  return imagesByCapture;
 }
 
-async function getLatestRun({
+async function listLatestRuns({
   captureId,
   database,
+  userId,
 }: {
-  readonly captureId: string;
+  readonly captureId: string | undefined;
   readonly database: BoozeDatabase;
-}): Promise<CaptureRunResource | null> {
+  readonly userId: string;
+}): Promise<ReadonlyMap<string, CaptureRunResource>> {
   const rows = await database
     .select({
+      captureId: bottleCaptureRuns.captureId,
       id: bottleCaptureRuns.id,
       status: bottleCaptureRuns.status,
       extractionR2Key: bottleCaptureRuns.extractionR2Key,
@@ -726,29 +884,36 @@ async function getLatestRun({
       completedAt: bottleCaptureRuns.completedAt,
     })
     .from(bottleCaptureRuns)
-    .where(eq(bottleCaptureRuns.captureId, captureId))
-    .orderBy(desc(bottleCaptureRuns.createdAt))
-    .limit(1);
-  const row = rows[0];
-  if (row === undefined) {
-    return null;
-  }
-  return {
-    id: row.id,
-    status: row.status,
-    extractionR2Key: row.extractionR2Key,
-    extractionContentType: row.extractionContentType,
-    extractionSizeBytes: row.extractionSizeBytes,
-    importCandidate: parseJson(row.importCandidateJson),
-    matchResult: parseJson(row.matchResultJson),
-    importResult: parseJson(row.importResultJson),
-    errorMessage: row.errorMessage,
-    errorDetailR2Key: row.errorDetailR2Key,
-    errorDetailContentType: row.errorDetailContentType,
-    errorDetailSizeBytes: row.errorDetailSizeBytes,
-    createdAt: row.createdAt,
-    completedAt: row.completedAt,
-  };
+    .innerJoin(bottleCaptures, eq(bottleCaptureRuns.captureId, bottleCaptures.id))
+    .innerJoin(siteMemberships, eq(bottleCaptures.siteId, siteMemberships.siteId))
+    .where(
+      and(
+        eq(siteMemberships.userId, userId),
+        captureId === undefined ? undefined : eq(bottleCaptures.id, captureId),
+        eq(bottleCaptureRuns.id, latestCaptureRunId(bottleCaptures.id)),
+      ),
+    );
+  return new Map(
+    rows.map((row) => [
+      row.captureId,
+      {
+        id: row.id,
+        status: row.status,
+        extractionR2Key: row.extractionR2Key,
+        extractionContentType: row.extractionContentType,
+        extractionSizeBytes: row.extractionSizeBytes,
+        importCandidate: parseJson(row.importCandidateJson),
+        matchResult: parseJson(row.matchResultJson),
+        importResult: parseJson(row.importResultJson),
+        errorMessage: row.errorMessage,
+        errorDetailR2Key: row.errorDetailR2Key,
+        errorDetailContentType: row.errorDetailContentType,
+        errorDetailSizeBytes: row.errorDetailSizeBytes,
+        createdAt: row.createdAt,
+        completedAt: row.completedAt,
+      },
+    ]),
+  );
 }
 
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {

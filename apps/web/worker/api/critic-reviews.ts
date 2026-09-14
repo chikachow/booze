@@ -10,7 +10,14 @@ import { and, asc, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { requireSitePermission } from "./auth.ts";
-import { generatedId, optionalText, stableId } from "./ids.ts";
+import { retryCatalogueTransaction } from "./catalogue-transaction.ts";
+import { generatedId, optionalText } from "./ids.ts";
+
+type ReviewStatement = Parameters<BoozeDatabase["batch"]>[0][number];
+type ReviewMutationAudit<Resource> = (change: {
+  readonly before: Resource | undefined;
+  readonly after: Resource;
+}) => ReviewStatement;
 
 export type ReviewSourceInput = {
   readonly siteId: string;
@@ -62,6 +69,8 @@ export type CriticReviewResource = {
   readonly updatedAt: string;
 };
 
+export type CriticReviewFact = Omit<CriticReviewResource, "createdAt" | "updatedAt">;
+
 export async function listReviewSources({
   database,
   siteId,
@@ -100,10 +109,12 @@ export async function listReviewSources({
 
 export async function createOrUpdateReviewSource({
   database,
+  audit,
   input,
   userId,
 }: {
   readonly database: BoozeDatabase;
+  readonly audit?: ReviewMutationAudit<ReviewSourceResource> | undefined;
   readonly input: ReviewSourceInput;
   readonly userId: string;
 }): Promise<ReviewSourceResource> {
@@ -114,29 +125,41 @@ export async function createOrUpdateReviewSource({
     userId,
   });
 
-  const reviewSourceId = reviewSourceIdForInput(input);
-  await createReviewSourceUpsert({ database, input, reviewSourceId }).run();
-
-  const rows = await listReviewSources({ database, siteId: input.siteId, userId });
-  const source = rows.find((candidate) => candidate.id === reviewSourceId);
-  if (source === undefined) {
-    throw new Error("Review source upsert did not return a row");
-  }
-  return source;
+  const site = await database
+    .select({ name: sites.name })
+    .from(sites)
+    .where(eq(sites.id, input.siteId))
+    .limit(1);
+  if (site[0] === undefined) throw new HTTPException(404, { message: "Site not found" });
+  const siteName = site[0].name;
+  return retryCatalogueTransaction(async () => {
+    const before = (await listReviewSources({ database, siteId: input.siteId, userId })).find(
+      (source) => source.siteId === input.siteId && source.name === input.name.trim(),
+    );
+    const after: ReviewSourceResource = {
+      id: before?.id ?? generatedId("review-source"),
+      siteId: input.siteId,
+      siteName,
+      name: input.name.trim(),
+      sourceType: optionalText(input.sourceType) ?? "critic",
+      url: optionalText(input.url),
+      notes: optionalText(input.notes),
+      isActive: input.isActive ?? true,
+    };
+    const write = createReviewSourceUpsert({ database, input, reviewSourceId: after.id });
+    await database.batch([write, ...(audit === undefined ? [] : [audit({ before, after })])]);
+    return after;
+  });
 }
 
-export function reviewSourceIdForInput(input: ReviewSourceInput): string {
-  return stableId("review-source", `${input.siteId}:${input.name.trim()}`);
-}
-
-export function createReviewSourceUpsert({
+function createReviewSourceUpsert({
   database,
   input,
-  reviewSourceId = reviewSourceIdForInput(input),
+  reviewSourceId,
 }: {
   readonly database: BoozeDatabase;
   readonly input: ReviewSourceInput;
-  readonly reviewSourceId?: string | undefined;
+  readonly reviewSourceId: string;
 }): ReturnType<ReturnType<BoozeDatabase["insert"]>["values"]> {
   const name = input.name.trim();
   return database
@@ -151,7 +174,9 @@ export function createReviewSourceUpsert({
       isActive: input.isActive ?? true,
     })
     .onConflictDoUpdate({
-      target: [reviewSources.siteId, reviewSources.name],
+      // New natural-key conflicts must roll back so every dependent statement
+      // can be rebuilt with the winning stored ID, including audit targets.
+      target: reviewSources.id,
       set: {
         sourceType: optionalText(input.sourceType) ?? "critic",
         url: optionalText(input.url),
@@ -208,60 +233,133 @@ export async function replaceCriticReviewsForWine({
   });
   await assertWineVintageInSite({ database, siteId, wineVintageId });
 
-  const keptReviewIds: string[] = [];
-  for (const review of reviews) {
-    const reviewSourceId = await resolveOrCreateReviewSource({
+  await retryCatalogueTransaction(async () => {
+    const statements = await prepareCriticReviewStatements({
       database,
-      review,
-      siteId,
-      userId,
-    });
-    const existingRows = await database
-      .select({ id: criticReviews.id })
-      .from(criticReviews)
-      .where(
-        and(
-          eq(criticReviews.siteId, siteId),
-          eq(criticReviews.wineVintageId, wineVintageId),
-          eq(criticReviews.reviewSourceId, reviewSourceId),
-        ),
-      )
-      .limit(1);
-    const reviewId = existingRows[0]?.id ?? review.id ?? generatedId("critic-review");
-    keptReviewIds.push(reviewId);
-
-    await createCriticReviewUpsert({
-      database,
-      review,
-      reviewId,
-      reviewSourceId,
+      reviews,
       siteId,
       userId,
       wineVintageId,
-    }).run();
-  }
-
-  if (keptReviewIds.length === 0) {
-    await database
-      .delete(criticReviews)
-      .where(and(eq(criticReviews.siteId, siteId), eq(criticReviews.wineVintageId, wineVintageId)));
-  } else {
-    await database
-      .delete(criticReviews)
-      .where(
-        and(
-          eq(criticReviews.siteId, siteId),
-          eq(criticReviews.wineVintageId, wineVintageId),
-          notInArray(criticReviews.id, keptReviewIds),
-        ),
-      );
-  }
-
+    });
+    const [first, ...rest] = statements;
+    if (first !== undefined) await database.batch([first, ...rest]);
+  });
   return listCriticReviews({ database, userId, wineVintageId });
 }
 
-export function createCriticReviewUpsert({
+export async function prepareCriticReviewStatements(
+  input: Omit<Parameters<typeof prepareCriticReviewChanges>[0], "audit">,
+): Promise<ReviewStatement[]> {
+  return (await prepareCriticReviewChanges(input)).statements;
+}
+
+async function prepareCriticReviewChanges({
+  audit,
   database,
+  reviews,
+  siteId,
+  userId,
+  wineVintageId,
+  removeMissing = true,
+  overwriteExisting = true,
+}: {
+  readonly audit?: ReviewMutationAudit<CriticReviewFact> | undefined;
+  readonly database: BoozeDatabase;
+  readonly reviews: readonly CriticReviewInput[];
+  readonly siteId: string;
+  readonly userId: string;
+  readonly wineVintageId: string;
+  readonly removeMissing?: boolean;
+  readonly overwriteExisting?: boolean;
+}): Promise<{ readonly statements: ReviewStatement[]; readonly facts: CriticReviewFact[] }> {
+  const statements: ReviewStatement[] = [];
+  const facts: CriticReviewFact[] = [];
+  const sources = [...(await listReviewSources({ database, siteId, userId }))];
+  const existing: CriticReviewFact[] = [
+    ...(await listCriticReviews({ database, userId, wineVintageId })),
+  ];
+  const keptReviewSourceIds: string[] = [];
+  for (const review of reviews) {
+    let source =
+      review.reviewSourceId === undefined
+        ? sources.find(
+            (candidate) =>
+              candidate.siteId === siteId && candidate.name === review.reviewSourceName?.trim(),
+          )
+        : sources.find((candidate) => candidate.id === review.reviewSourceId);
+    if (source === undefined) {
+      if (review.reviewSourceId !== undefined || optionalText(review.reviewSourceName) === null) {
+        throw new HTTPException(400, { message: "Review source is not available for this site" });
+      }
+      const name = review.reviewSourceName?.trim() ?? "";
+      source = {
+        id: generatedId("review-source"),
+        siteId,
+        siteName: null,
+        name,
+        sourceType: "critic",
+        url: null,
+        notes: null,
+        isActive: true,
+      };
+      sources.push(source);
+      statements.push(
+        database
+          .insert(reviewSources)
+          .values({ id: source.id, siteId, name, sourceType: "critic", isActive: true }),
+      );
+    }
+    if (!source.isActive)
+      throw new HTTPException(400, { message: "Review source is not available for this site" });
+    keptReviewSourceIds.push(source.id);
+    const previous = existing.find((candidate) => candidate.reviewSourceId === source.id);
+    if (previous !== undefined && !overwriteExisting) continue;
+    const reviewId = previous?.id ?? generatedId("critic-review");
+    const after: CriticReviewFact = {
+      ...criticReviewValues(review),
+      id: reviewId,
+      siteId,
+      wineVintageId,
+      reviewSourceId: source.id,
+      reviewSourceName: source.name,
+    };
+    existing.push(after);
+    facts.push(after);
+    statements.push(
+      createCriticReviewUpsert({
+        database,
+        overwriteExisting,
+        review,
+        reviewId,
+        reviewSourceId: source.id,
+        siteId,
+        userId,
+        wineVintageId,
+      }),
+    );
+    if (audit !== undefined) statements.push(audit({ before: previous, after }));
+  }
+  if (removeMissing) {
+    statements.push(
+      database
+        .delete(criticReviews)
+        .where(
+          and(
+            eq(criticReviews.siteId, siteId),
+            eq(criticReviews.wineVintageId, wineVintageId),
+            keptReviewSourceIds.length === 0
+              ? undefined
+              : notInArray(criticReviews.reviewSourceId, keptReviewSourceIds),
+          ),
+        ),
+    );
+  }
+  return { statements, facts };
+}
+
+function createCriticReviewUpsert({
+  database,
+  overwriteExisting = true,
   review,
   reviewId,
   reviewSourceId,
@@ -270,6 +368,7 @@ export function createCriticReviewUpsert({
   wineVintageId,
 }: {
   readonly database: BoozeDatabase;
+  readonly overwriteExisting?: boolean;
   readonly review: CriticReviewInput;
   readonly reviewId: string;
   readonly reviewSourceId: string;
@@ -277,62 +376,78 @@ export function createCriticReviewUpsert({
   readonly userId: string;
   readonly wineVintageId: string;
 }): ReturnType<ReturnType<BoozeDatabase["insert"]>["values"]> {
-  return database
-    .insert(criticReviews)
-    .values({
-      id: reviewId,
-      siteId,
-      wineVintageId,
-      reviewSourceId,
-      ratingText: review.ratingText.trim(),
-      ratingValue: review.ratingValue ?? null,
-      ratingScale: optionalText(review.ratingScale),
-      sourceUrl: optionalText(review.sourceUrl),
-      reviewedAt: optionalText(review.reviewedAt),
-      provenance: optionalText(review.provenance),
-      notes: optionalText(review.notes),
-      createdByUserId: userId,
-    })
-    .onConflictDoUpdate({
-      target: [criticReviews.siteId, criticReviews.wineVintageId, criticReviews.reviewSourceId],
-      set: {
-        ratingText: review.ratingText.trim(),
-        ratingValue: review.ratingValue ?? null,
-        ratingScale: optionalText(review.ratingScale),
-        sourceUrl: optionalText(review.sourceUrl),
-        reviewedAt: optionalText(review.reviewedAt),
-        provenance: optionalText(review.provenance),
-        notes: optionalText(review.notes),
-        updatedAt: sql`CURRENT_TIMESTAMP`,
-      },
-    });
+  const statement = database.insert(criticReviews).values({
+    id: reviewId,
+    siteId,
+    wineVintageId,
+    reviewSourceId,
+    ...criticReviewValues(review),
+    createdByUserId: userId,
+  });
+  return overwriteExisting
+    ? statement.onConflictDoUpdate({
+        target: criticReviews.id,
+        set: {
+          ...criticReviewValues(review),
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      })
+    : statement.onConflictDoNothing({
+        target: [criticReviews.siteId, criticReviews.wineVintageId, criticReviews.reviewSourceId],
+      });
+}
+
+function criticReviewValues(review: CriticReviewInput) {
+  return {
+    ratingText: review.ratingText.trim(),
+    ratingValue: review.ratingValue ?? null,
+    ratingScale: optionalText(review.ratingScale),
+    sourceUrl: optionalText(review.sourceUrl),
+    reviewedAt: optionalText(review.reviewedAt),
+    provenance: optionalText(review.provenance),
+    notes: optionalText(review.notes),
+  };
 }
 
 export async function upsertCriticReview({
+  audit,
   database,
   review,
   userId,
   wineVintageId,
 }: {
+  readonly audit?: ReviewMutationAudit<CriticReviewFact> | undefined;
   readonly database: BoozeDatabase;
   readonly review: CriticReviewInput;
   readonly userId: string;
   readonly wineVintageId: string;
 }): Promise<CriticReviewResource> {
   const wine = await authorisedWineVintage({ database, userId, wineVintageId });
-  const reviews = await replaceCriticReviewsForWine({
+  await requireSitePermission({
     database,
-    reviews: [review, ...(await reviewsExceptSource({ database, review, userId, wineVintageId }))],
+    permission: "site.content.write",
     siteId: wine.siteId,
     userId,
-    wineVintageId,
   });
-  const result = reviews.find(
-    (candidate) =>
-      candidate.id === review.id ||
-      candidate.reviewSourceId === review.reviewSourceId ||
-      candidate.reviewSourceName === review.reviewSourceName,
-  );
+  const reviewId = await retryCatalogueTransaction(async () => {
+    const { statements, facts } = await prepareCriticReviewChanges({
+      audit,
+      database,
+      reviews: [review],
+      siteId: wine.siteId,
+      userId,
+      wineVintageId,
+      removeMissing: false,
+    });
+    const [first, ...rest] = statements;
+    const fact = facts[0];
+    if (first === undefined || fact === undefined)
+      throw new Error("Critic review requires a write");
+    await database.batch([first, ...rest]);
+    return fact.id;
+  });
+  const reviews = await listCriticReviews({ database, userId, wineVintageId });
+  const result = reviews.find((candidate) => candidate.id === reviewId);
   if (result === undefined) {
     throw new Error("Critic review upsert did not return a row");
   }
@@ -368,62 +483,6 @@ export async function deleteCriticReview({
 
   await database.delete(criticReviews).where(eq(criticReviews.id, reviewId));
   return review;
-}
-
-async function resolveOrCreateReviewSource({
-  database,
-  review,
-  siteId,
-  userId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly review: CriticReviewInput;
-  readonly siteId: string;
-  readonly userId: string;
-}): Promise<string> {
-  if (review.reviewSourceId !== undefined) {
-    await assertReviewSourceUsableForSite({
-      database,
-      reviewSourceId: review.reviewSourceId,
-      siteId,
-      userId,
-    });
-    return review.reviewSourceId;
-  }
-
-  if (review.reviewSourceName === undefined || review.reviewSourceName.trim() === "") {
-    throw new HTTPException(400, { message: "Review source is required" });
-  }
-
-  const source = await createOrUpdateReviewSource({
-    database,
-    input: {
-      siteId,
-      name: review.reviewSourceName,
-      sourceType: "critic",
-      isActive: true,
-    },
-    userId,
-  });
-  return source.id;
-}
-
-async function assertReviewSourceUsableForSite({
-  database,
-  reviewSourceId,
-  siteId,
-  userId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly reviewSourceId: string;
-  readonly siteId: string;
-  readonly userId: string;
-}): Promise<void> {
-  const rows = await listReviewSources({ database, siteId, userId });
-  const source = rows.find((candidate) => candidate.id === reviewSourceId);
-  if (source === undefined || !source.isActive) {
-    throw new HTTPException(400, { message: "Review source is not available for this site" });
-  }
 }
 
 async function assertWineVintageInSite({
@@ -465,38 +524,6 @@ async function authorisedWineVintage({
     throw new HTTPException(404, { message: "Wine vintage not found" });
   }
   return row;
-}
-
-async function reviewsExceptSource({
-  database,
-  review,
-  userId,
-  wineVintageId,
-}: {
-  readonly database: BoozeDatabase;
-  readonly review: CriticReviewInput;
-  readonly userId: string;
-  readonly wineVintageId: string;
-}): Promise<readonly CriticReviewInput[]> {
-  const reviews = await listCriticReviews({ database, userId, wineVintageId });
-  return reviews
-    .filter(
-      (candidate) =>
-        candidate.id !== review.id &&
-        candidate.reviewSourceId !== review.reviewSourceId &&
-        candidate.reviewSourceName !== review.reviewSourceName,
-    )
-    .map((candidate) => ({
-      id: candidate.id,
-      reviewSourceId: candidate.reviewSourceId,
-      ratingText: candidate.ratingText,
-      ratingValue: candidate.ratingValue ?? undefined,
-      ratingScale: candidate.ratingScale ?? undefined,
-      sourceUrl: candidate.sourceUrl ?? undefined,
-      reviewedAt: candidate.reviewedAt ?? undefined,
-      provenance: candidate.provenance ?? undefined,
-      notes: candidate.notes ?? undefined,
-    }));
 }
 
 function criticReviewColumns() {

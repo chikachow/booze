@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
-import { stableId, userIdForClerkUser } from "./ids.ts";
+import { generatedId, userIdForClerkUser } from "./ids.ts";
 import type { AuthenticatedUser } from "./types.ts";
 
 export const siteRoleSchema = z.enum(["owner", "editor", "viewer"]);
@@ -158,19 +158,19 @@ export async function upsertSite({
   readonly site: string;
   readonly userId: string;
 }): Promise<{ readonly siteId: string }> {
-  const legacySiteId = stableId("site", site);
-  const existingMembership = await database
-    .select({ siteId: siteMemberships.siteId })
-    .from(siteMemberships)
-    .where(and(eq(siteMemberships.siteId, legacySiteId), eq(siteMemberships.userId, userId)))
-    .limit(1);
-  if (existingMembership[0] !== undefined) {
-    return { siteId: legacySiteId };
+  const existing = await database
+    .select({ siteId: sites.id })
+    .from(sites)
+    .innerJoin(siteMemberships, eq(sites.id, siteMemberships.siteId))
+    .where(and(eq(sites.name, site), eq(siteMemberships.userId, userId)))
+    .limit(2);
+  if (existing.length > 1) {
+    throw new HTTPException(409, {
+      message: "More than one site has this name; choose a site by ID",
+    });
   }
-
-  // Site names are not globally unique. New IDs include the owner so one user cannot
-  // acquire membership in another user's deterministic legacy site by choosing its name.
-  const siteId = stableId("site", `${userId}:${site}`);
+  if (existing[0] !== undefined) return { siteId: existing[0].siteId };
+  const siteId = generatedId("site");
   await database.batch([
     database.insert(sites).values({ id: siteId, name: site }).onConflictDoNothing({
       target: sites.id,

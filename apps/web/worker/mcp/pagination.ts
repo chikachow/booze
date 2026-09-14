@@ -111,7 +111,13 @@ export function rowsAfterCursor<TItem, TCursor extends Cursor>({
 }
 
 function encodePageToken(token: z.infer<typeof pageTokenSchema>): string {
-  return btoa(JSON.stringify(token));
+  // Escape UTF-16 code units so v1 tokens stay compatible with the existing decoder.
+  const json = JSON.stringify(token).replaceAll(
+    // oxlint-disable-next-line require-unicode-regexp -- Escape both halves of surrogate pairs separately.
+    /[\u0080-\uFFFF]/g,
+    (character) => `\\u${(character.codePointAt(0) ?? 0).toString(16).padStart(4, "0")}`,
+  );
+  return btoa(json);
 }
 
 function cursorsEqual(left: Cursor, right: Cursor): boolean {

@@ -8,19 +8,20 @@ import { z } from "zod";
 
 import { requireAuthenticatedUser, requireSitePermission, upsertSite } from "../api/auth.ts";
 import { upsertStorageLocation } from "../api/catalogue.ts";
+import { CatalogueConflictError } from "../api/catalogue-transaction.ts";
 import { created, noContent } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
 import type { Bindings } from "../api/types.ts";
 import { putCaptureRunArtifact, type CaptureRunArtifact } from "../capture-artifacts.ts";
-import { importReviewedCapture } from "../bottle-importer.ts";
+import { CaptureImportConflictError, importReviewedCapture } from "../bottle-importer.ts";
 import type { ImportCandidate } from "../bottle-extractor.ts";
 import { canImportCapture, canRetryCapture } from "../capture-state.ts";
 import {
   createBottleCapture,
-  claimCaptureForImport,
   getBottleCapture,
   getCaptureImageObject,
   listBottleCaptures,
+  reserveCaptureRetry,
   setCaptureWorkflowInstance,
   updateCaptureRun,
   updateCaptureStatus,
@@ -86,7 +87,6 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       throw new HTTPException(415, { message: "Use multipart/form-data for capture images" });
     }
 
-    const formData = await context.req.formData();
     const database = createD1Client(context.env.DB);
     const authenticatedUser = await requireAuthenticatedUser({
       database,
@@ -94,6 +94,7 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       headers: context.req.raw.headers,
       secretKey: context.env.CLERK_SECRET_KEY,
     });
+    const formData = await readCaptureFormData(context.req.raw);
     const siteId = await siteIdFromForm({ database, formData, userId: authenticatedUser.userId });
     await requireSitePermission({
       database,
@@ -123,16 +124,15 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       });
     }
     try {
+      await setCaptureWorkflowInstance({
+        captureId: capture.captureId,
+        database,
+        workflowInstanceId: capture.captureId,
+      });
       const instance = await context.env.BOTTLE_CAPTURE_WORKFLOW.create({
         id: capture.captureId,
         params: { captureId: capture.captureId },
       });
-      await setCaptureWorkflowInstance({
-        captureId: capture.captureId,
-        database,
-        workflowInstanceId: instance.id,
-      });
-
       return created({ captureId: capture.captureId, workflowInstanceId: instance.id });
     } catch (error) {
       const details = errorDetails(error);
@@ -147,6 +147,8 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         captureId: capture.captureId,
         database,
         status: "failed",
+        workflowInstanceId: capture.captureId,
+        expectedStatus: "queued",
         errorMessage: "Capture was saved, but extraction did not start. Retry the capture.",
         errorDetail: details,
       });
@@ -181,6 +183,7 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       captureId: context.req.param("captureId"),
       database,
       imageAssetId: context.req.param("imageAssetId"),
+      original: context.req.query("original") === "1",
       userId: authenticatedUser.userId,
     });
     const object = await context.env.IMAGE_BUCKET.get(image.r2Key);
@@ -211,23 +214,30 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
     if (!canRetryCapture(capture.status)) {
       throw new HTTPException(409, { message: "Capture is not retryable" });
     }
-    await updateCaptureStatus({
-      captureId: capture.id,
-      database,
-      status: "queued",
-      errorMessage: null,
-      errorDetail: null,
-    });
-    const instance = await context.env.BOTTLE_CAPTURE_WORKFLOW.create({
-      id: `${capture.id}-${crypto.randomUUID()}`,
-      params: { captureId: capture.id },
-    });
-    await setCaptureWorkflowInstance({
-      captureId: capture.id,
-      database,
-      workflowInstanceId: instance.id,
-    });
-    return context.json({ data: { captureId: capture.id, workflowInstanceId: instance.id } });
+    const workflowInstanceId = `${capture.id}-${crypto.randomUUID()}`;
+    if (!(await reserveCaptureRetry({ captureId: capture.id, database, workflowInstanceId }))) {
+      throw new HTTPException(409, { message: "Capture processing is already in progress" });
+    }
+    try {
+      await context.env.BOTTLE_CAPTURE_WORKFLOW.create({
+        id: workflowInstanceId,
+        params: { captureId: capture.id },
+      });
+    } catch (error) {
+      await updateCaptureStatus({
+        captureId: capture.id,
+        database,
+        workflowInstanceId,
+        status: "failed",
+        expectedStatus: "queued",
+        errorMessage: "Capture was saved, but extraction did not start. Retry the capture.",
+        errorDetail: errorDetails(error),
+      });
+      throw new HTTPException(503, {
+        message: "Could not confirm extraction started. Refresh capture status before retrying.",
+      });
+    }
+    return context.json({ data: { captureId: capture.id, workflowInstanceId } });
   })
   .post("/bottle-captures/:captureId/import", async (context) => {
     const payload = manualImportSchema.parse(await context.req.json());
@@ -264,39 +274,39 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         message: "Select an existing wine before importing an incomplete OCR candidate",
       });
     }
-    if (!(await claimCaptureForImport({ captureId: capture.id, database }))) {
-      throw new HTTPException(409, {
-        message: "Capture import is already in progress or complete",
-      });
-    }
     try {
       const imported = await importReviewedCapture({
         candidate: candidate satisfies ImportCandidate,
         captureId: capture.id,
         database,
+        runId: capture.latestRun.id,
+        workflowInstanceId: capture.workflowInstanceId,
         quantity: capture.quantity,
         siteId: capture.siteId,
         storageLocationId: capture.storageLocationId,
         positionHint: capture.positionHint,
         wineVintageId: payload.wineVintageId,
       });
-      await updateCaptureRun({
-        database,
-        runId: capture.latestRun.id,
-        status: "imported",
-        importResult: imported,
-        matchResult: imported.matchResult,
-      });
-      await updateCaptureStatus({
-        captureId: capture.id,
-        database,
-        status: "imported",
-        errorMessage: null,
-        errorDetail: null,
-        importedBottleIds: imported.bottleIds,
-      });
       return context.json({ data: imported });
     } catch (error) {
+      if (error instanceof CaptureImportConflictError) throw error;
+      if (
+        error instanceof CatalogueConflictError ||
+        (error instanceof HTTPException && error.status === 400)
+      ) {
+        // Validation or proven transaction rollback left the catalogue unchanged;
+        // retain the reviewed extraction instead of requiring another OCR run.
+        await updateCaptureStatus({
+          captureId: capture.id,
+          database,
+          status: "needs_review",
+          errorMessage: error.message,
+          workflowInstanceId: capture.workflowInstanceId,
+          runId: capture.latestRun.id,
+          expectedStatus: "importing",
+        });
+        throw error;
+      }
       const message = shortErrorMessage(error);
       const details = errorDetails(error);
       const errorDetailArtifact = await tryPutErrorArtifact({
@@ -319,6 +329,9 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         status: "failed",
         errorMessage: message,
         errorDetail: null,
+        workflowInstanceId: capture.workflowInstanceId,
+        runId: capture.latestRun.id,
+        expectedStatus: "importing",
       });
       throw error;
     }
@@ -348,10 +361,15 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       });
     }
 
-    await deleteBottleCaptureData({
+    const deleted = await deleteBottleCaptureData({
       captureId: capture.id,
       database: context.env.DB,
     });
+    if (!deleted) {
+      throw new HTTPException(409, {
+        message: "Capture processing started before deletion. Wait for it to finish.",
+      });
+    }
     await tryDrainR2ObjectDeletionQueue({
       bucket: context.env.IMAGE_BUCKET,
       database: context.env.DB,
@@ -476,4 +494,33 @@ export function parseCaptureQuantity(value: string | undefined): number {
     throw new HTTPException(400, { message: result.message });
   }
   return result.value;
+}
+
+export async function readCaptureFormData(request: Request): Promise<FormData> {
+  // Four 8 MiB originals plus bounded room for multipart headers and form fields.
+  const maxRequestBytes = 33 * 1024 * 1024;
+  if (Number(request.headers.get("content-length")) > maxRequestBytes) {
+    throw new HTTPException(413, { message: "Capture upload exceeds 33MB" });
+  }
+  let size = 0;
+  const body = request.body?.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        size += chunk.byteLength;
+        if (size > maxRequestBytes) {
+          throw new HTTPException(413, { message: "Capture upload exceeds 33MB" });
+        }
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  try {
+    return await new Response(body, { headers: request.headers }).formData();
+  } catch (error) {
+    if (size > maxRequestBytes) {
+      throw new HTTPException(413, { message: "Capture upload exceeds 33MB" });
+    }
+    if (error instanceof HTTPException) throw error;
+    throw new HTTPException(400, { message: "Invalid capture upload form" });
+  }
 }
