@@ -386,7 +386,7 @@ function SiteArea({
                   <div>
                     <h3>{site.site}</h3>
                     <p>
-                      {site.siteId} · <Badge label={site.role} variant="neutral" />
+                      <Badge label={site.role} variant="neutral" />
                     </p>
                   </div>
                   <dl>

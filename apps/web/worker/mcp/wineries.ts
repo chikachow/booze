@@ -16,6 +16,7 @@ import {
   andAll,
   containsAnyText,
   cursorPredicate,
+  sqliteLower,
   optionalContains,
   optionalEquals,
 } from "./sql.ts";
@@ -155,8 +156,8 @@ export async function listWineries({
 
   const rowPage = pageFromRows({
     cursorForItem: (row) => ({
-      site: row.siteName.toLowerCase(),
-      winery: row.wineryName.toLowerCase(),
+      site: sqliteLower(row.siteName),
+      winery: sqliteLower(row.wineryName),
       wineryId: row.id,
     }),
     input,

@@ -53,6 +53,7 @@ export async function extractCaptureLabelEvidence({
   extractor,
   gatewayToken,
   gatewayUrl,
+  images,
 }: {
   readonly bucket: R2Bucket;
   readonly capture: CaptureWorkflowRecord;
@@ -60,13 +61,14 @@ export async function extractCaptureLabelEvidence({
   readonly extractor: BottleExtractorConfig;
   readonly gatewayToken: string | undefined;
   readonly gatewayUrl: string | undefined;
+  readonly images?: ImagesBinding | undefined;
 }): Promise<Omit<CaptureExtractorResult, "diagnostics">> {
   const extracted = await extractBottleLabelEvidenceWithExtractor({
     diagnostics,
     extractor,
     gatewayToken,
     ...(gatewayUrl === undefined ? {} : { gatewayUrl }),
-    imageContent: await captureImageContent({ bucket, capture }),
+    imageContent: await captureImageContent({ bucket, capture, images }),
   });
   return {
     extractorId: extracted.extractorId,
@@ -183,30 +185,33 @@ export function decideCaptureImport({
       };
 }
 
-async function captureImageContent({
+export async function captureImageContent({
   bucket,
   capture,
+  images,
 }: {
   readonly bucket: R2Bucket;
   readonly capture: CaptureWorkflowRecord;
+  readonly images?: ImagesBinding | undefined;
 }): Promise<readonly BottleOcrImageContent[]> {
-  return Promise.all(
-    capture.images.map(async (image): Promise<BottleOcrImageContent> => {
-      const object = await bucket.get(image.r2Key);
-      if (object === null) {
-        throw new BottleOcrError(503, `Stored image ${image.imageAssetId} is missing`);
-      }
-      return {
-        type: "image_url",
-        image_url: {
-          url: await objectToDataUrl({
-            contentType: image.contentType,
-            object,
-          }),
-        },
-      };
-    }),
-  );
+  const content: BottleOcrImageContent[] = [];
+  for (const image of capture.images) {
+    const object = await bucket.get(image.r2Key);
+    if (object === null) {
+      throw new BottleOcrError(503, `Stored image ${image.imageAssetId} is missing`);
+    }
+    content.push({
+      type: "image_url",
+      image_url: {
+        url: await objectToDataUrl({
+          contentType: image.contentType,
+          images,
+          object,
+        }),
+      },
+    });
+  }
+  return content;
 }
 
 function importCandidateFromSuggestion(suggestion: BottleOcrSuggestion): {
@@ -240,6 +245,7 @@ function candidateFromSuggestion(suggestion: BottleOcrSuggestion): ImportCandida
       classification: text(suggestion.classification) ?? "",
       wineType: text(suggestion.wineType) ?? "",
       wineColor: text(suggestion.wineColor) ?? "",
+      addressQualification: text(suggestion.addressQualification) ?? "",
       alcoholPercent: parseDecimal(suggestion.alcoholPercent),
       drinkFromYear: parseYear(suggestion.drinkFromYear),
       drinkToYear: parseYear(suggestion.drinkToYear),
@@ -260,13 +266,58 @@ function candidateFromSuggestion(suggestion: BottleOcrSuggestion): ImportCandida
 
 async function objectToDataUrl({
   contentType,
+  images,
   object,
 }: {
   readonly contentType: string;
+  readonly images: ImagesBinding | undefined;
   readonly object: R2ObjectBody;
 }): Promise<string> {
-  const bytes = new Uint8Array(await object.arrayBuffer());
-  return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+  const maxInferenceImageBytes = 2 * 1024 * 1024;
+  // oxlint-disable-next-line typescript/no-unsafe-assignment -- R2 guarantees bytes; its declaration leaves the stream chunk type as any.
+  const body: ReadableStream<Uint8Array> = object.body;
+  if (images === undefined) {
+    const bytes = await readImageBytes(body, maxInferenceImageBytes);
+    return `data:${contentType};base64,${bytesToBase64(bytes)}`;
+  }
+  const result = await images
+    .input(body)
+    .transform({ width: 2048, height: 2048, fit: "scale-down" })
+    .output({ format: "image/jpeg", quality: 80 });
+  const bytes = await readImageBytes(result.image(), maxInferenceImageBytes);
+  return `data:${result.contentType()};base64,${bytesToBase64(bytes)}`;
+}
+
+async function readImageBytes(
+  stream: ReadableStream<Uint8Array>,
+  limit: number,
+): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        throw new Error(
+          "Image is too large for label extraction; the original photo remains saved.",
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

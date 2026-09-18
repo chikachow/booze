@@ -1,9 +1,9 @@
 import { siteMemberships, wineAwards, wineVintages, type BoozeDatabase } from "@chikachow/booze-db";
-import { and, asc, eq, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { requireSitePermission } from "./auth.ts";
-import { optionalText, stableId } from "./ids.ts";
+import { generatedId, optionalText } from "./ids.ts";
 
 export type WineAwardInput = {
   readonly id?: string | undefined;
@@ -34,6 +34,8 @@ export type WineAwardResource = {
   readonly createdAt: string;
   readonly updatedAt: string;
 };
+
+type WineAwardIdentity = Pick<WineAwardResource, "awardName" | "awardLevel" | "awardYear">;
 
 export async function listWineAwards({
   database,
@@ -112,7 +114,36 @@ export async function replaceWineAwardsForWine({
   });
   await assertWineVintageInSite({ database, siteId, wineVintageId });
 
-  const keptAwardIds: string[] = [];
+  const [first, ...rest] = await prepareWineAwardStatements({
+    awards,
+    database,
+    siteId,
+    userId,
+    wineVintageId,
+  });
+  if (first !== undefined) await database.batch([first, ...rest]);
+  return listWineAwards({ database, userId, wineVintageId });
+}
+
+export async function prepareWineAwardStatements({
+  awards,
+  database,
+  siteId,
+  userId,
+  wineVintageId,
+  overwriteExisting = true,
+  removeMissing = true,
+}: {
+  readonly overwriteExisting?: boolean;
+  readonly removeMissing?: boolean;
+  readonly awards: readonly WineAwardInput[];
+  readonly database: BoozeDatabase;
+  readonly siteId: string;
+  readonly userId: string;
+  readonly wineVintageId: string;
+}): Promise<Parameters<BoozeDatabase["batch"]>[0][number][]> {
+  const statements: Parameters<BoozeDatabase["batch"]>[0][number][] = [];
+  const keptAwards: WineAwardIdentity[] = [];
   for (const input of awards) {
     const awardName = input.awardName.trim();
     const awardLevel = input.awardLevel.trim();
@@ -120,61 +151,69 @@ export async function replaceWineAwardsForWine({
       continue;
     }
 
-    const awardId = stableId(
-      "wine-award",
-      [siteId, wineVintageId, awardName, awardLevel, input.awardYear?.toString() ?? ""].join(":"),
-    );
-    keptAwardIds.push(awardId);
+    const awardYear = input.awardYear ?? null;
+    keptAwards.push({ awardName, awardLevel, awardYear });
 
-    await database
-      .insert(wineAwards)
-      .values({
-        id: awardId,
-        siteId,
-        wineVintageId,
-        awardName,
-        awardLevel,
-        awardYear: input.awardYear,
-        awardBody: optionalText(input.awardBody),
-        category: optionalText(input.category),
-        points: input.points,
-        sourceUrl: optionalText(input.sourceUrl),
-        provenance: optionalText(input.provenance),
-        notes: optionalText(input.notes),
-        createdByUserId: userId,
-      })
-      .onConflictDoUpdate({
-        target: wineAwards.id,
-        set: {
-          awardName,
-          awardLevel,
-          awardYear: input.awardYear,
-          awardBody: optionalText(input.awardBody),
-          category: optionalText(input.category),
-          points: input.points,
-          sourceUrl: optionalText(input.sourceUrl),
-          provenance: optionalText(input.provenance),
-          notes: optionalText(input.notes),
-          updatedAt: sql`CURRENT_TIMESTAMP`,
-        },
-      });
+    // Resolve the stored ID during the INSERT: nullable years are part of award
+    // identity even though SQLite's natural-key constraint treats NULLs as distinct.
+    const statement = database.insert(wineAwards).values({
+      id: sql`coalesce((
+            select id from wine_awards
+            where site_id = ${siteId} and wine_vintage_id = ${wineVintageId}
+              and award_name = ${awardName} and award_level = ${awardLevel}
+              and award_year is ${awardYear}
+            order by created_at, id limit 1
+          ), ${generatedId("wine-award")})`,
+      siteId,
+      wineVintageId,
+      awardName,
+      awardLevel,
+      awardYear,
+      awardBody: optionalText(input.awardBody),
+      category: optionalText(input.category),
+      points: input.points,
+      sourceUrl: optionalText(input.sourceUrl),
+      provenance: optionalText(input.provenance),
+      notes: optionalText(input.notes),
+      createdByUserId: userId,
+    });
+    statements.push(
+      overwriteExisting
+        ? statement.onConflictDoUpdate({
+            target: wineAwards.id,
+            set: {
+              awardName,
+              awardLevel,
+              awardYear,
+              awardBody: optionalText(input.awardBody),
+              category: optionalText(input.category),
+              points: input.points ?? null,
+              sourceUrl: optionalText(input.sourceUrl),
+              provenance: optionalText(input.provenance),
+              notes: optionalText(input.notes),
+              updatedAt: sql`CURRENT_TIMESTAMP`,
+            },
+          })
+        : statement.onConflictDoNothing({ target: wineAwards.id }),
+    );
   }
 
-  if (keptAwardIds.length === 0) {
-    await database
-      .delete(wineAwards)
-      .where(and(eq(wineAwards.siteId, siteId), eq(wineAwards.wineVintageId, wineVintageId)));
-  } else {
-    await database
-      .delete(wineAwards)
-      .where(
+  if (removeMissing) {
+    statements.push(
+      database.delete(wineAwards).where(
         and(
           eq(wineAwards.siteId, siteId),
           eq(wineAwards.wineVintageId, wineVintageId),
-          notInArray(wineAwards.id, keptAwardIds),
+          sql`not exists (
+              select 1 from json_each(${JSON.stringify(keptAwards)}) retained
+              where ${wineAwards.awardName} = json_extract(retained.value, '$.awardName')
+                and ${wineAwards.awardLevel} = json_extract(retained.value, '$.awardLevel')
+                and ${wineAwards.awardYear} is json_extract(retained.value, '$.awardYear')
+            )`,
         ),
-      );
+      ),
+    );
   }
 
-  return listWineAwards({ database, userId, wineVintageId });
+  return statements;
 }

@@ -1,11 +1,13 @@
 import {
+  bottleCaptures,
   bottleLocations,
+  bottles,
   createD1Client,
   sites,
   storageLocations,
   type BoozeDatabase,
 } from "@chikachow/booze-db";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -69,6 +71,17 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
       userId: authenticatedUser.userId,
     });
 
+    if (payload.parentId !== undefined && payload.parentId !== null) {
+      const parents = await database
+        .select({ id: storageLocations.id })
+        .from(storageLocations)
+        .where(and(eq(storageLocations.id, payload.parentId), eq(storageLocations.siteId, siteId)))
+        .limit(1);
+      if (parents.length === 0) {
+        throw new HTTPException(400, { message: "Parent location must belong to the same site" });
+      }
+    }
+
     const result = await upsertStorageLocation({
       database,
       siteId,
@@ -100,7 +113,7 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
       userId: authenticatedUser.userId,
     });
 
-    await database
+    const updated = await database
       .update(storageLocations)
       .set({
         ...(payload.parentId === undefined ? {} : { parentId: payload.parentId }),
@@ -109,7 +122,24 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
         ...(payload.notes === undefined ? {} : { notes: payload.notes }),
         updatedAt: sql`CURRENT_TIMESTAMP`,
       })
-      .where(eq(storageLocations.id, storageLocationId));
+      .where(
+        and(
+          eq(storageLocations.id, storageLocationId),
+          payload.parentId === undefined || payload.parentId === null
+            ? undefined
+            : validParentCondition({
+                parentId: payload.parentId,
+                siteId: existing.siteId,
+                storageLocationId,
+              }),
+        ),
+      )
+      .returning({ id: storageLocations.id });
+    if (updated.length === 0) {
+      throw new HTTPException(400, {
+        message: "Parent location must belong to the same site and cannot create a cycle",
+      });
+    }
 
     return context.json({ data: { id: storageLocationId } });
   })
@@ -130,17 +160,45 @@ export const storageLocationRoutes = new Hono<{ Bindings: Bindings }>()
       userId: authenticatedUser.userId,
     });
 
-    await database
-      .delete(bottleLocations)
-      .where(eq(bottleLocations.storageLocationId, storageLocationId));
-    await database
-      .update(storageLocations)
-      .set({ parentId: null, updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(storageLocations.parentId, storageLocationId));
-    await database.delete(storageLocations).where(eq(storageLocations.id, storageLocationId));
+    await database.batch([
+      database
+        .delete(bottleLocations)
+        .where(eq(bottleLocations.storageLocationId, storageLocationId)),
+      database
+        .update(bottleCaptures)
+        .set({ storageLocationId: null, positionHint: null, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(bottleCaptures.storageLocationId, storageLocationId)),
+      database
+        .update(storageLocations)
+        .set({ parentId: null, updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(storageLocations.parentId, storageLocationId)),
+      database.delete(storageLocations).where(eq(storageLocations.id, storageLocationId)),
+    ]);
 
     return noContent();
   });
+
+function validParentCondition({
+  parentId,
+  siteId,
+  storageLocationId,
+}: {
+  readonly parentId: string;
+  readonly siteId: string;
+  readonly storageLocationId: string;
+}): SQL {
+  // Keep the ancestry check inside the UPDATE so concurrent moves cannot form a cycle.
+  return sql`exists (select 1 from storage_locations where id = ${parentId} and site_id = ${siteId})
+    and not exists (
+      with recursive ancestors(id, parent_id) as (
+        select id, parent_id from storage_locations where id = ${parentId} and site_id = ${siteId}
+        union
+        select parent.id, parent.parent_id from storage_locations parent
+        join ancestors on parent.id = ancestors.parent_id where parent.site_id = ${siteId}
+      )
+      select 1 from ancestors where id = ${storageLocationId}
+    )`;
+}
 
 type StorageLocationListRow = {
   readonly id: string;
@@ -167,7 +225,7 @@ async function listStorageLocations({
       parentId: storageLocations.parentId,
       name: storageLocations.name,
       locationType: storageLocations.locationType,
-      bottleCount: sql<number>`count(${bottleLocations.bottleId})`,
+      bottleCount: sql<number>`count(${bottles.id})`,
     })
     .from(storageLocations)
     .innerJoin(sites, eq(storageLocations.siteId, sites.id))
@@ -177,6 +235,10 @@ async function listStorageLocations({
         eq(storageLocations.siteId, bottleLocations.siteId),
         eq(storageLocations.id, bottleLocations.storageLocationId),
       ),
+    )
+    .leftJoin(
+      bottles,
+      and(eq(bottleLocations.bottleId, bottles.id), eq(bottles.status, "in_stock")),
     )
     .where(sql`exists (
       select 1 from site_memberships

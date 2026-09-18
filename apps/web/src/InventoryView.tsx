@@ -28,6 +28,8 @@ type InventoryAreaProps = {
   readonly filter: string;
   readonly grouping: InventoryGrouping;
   readonly items: readonly InventoryItem[];
+  readonly isLoading?: boolean;
+  readonly onCreateSite?: (() => void) | undefined;
   readonly editableSiteIds: ReadonlySet<string>;
   readonly locationFilter: string;
   readonly locationOptions: readonly string[];
@@ -62,6 +64,8 @@ export function InventoryArea({
   filter,
   grouping,
   items,
+  isLoading = false,
+  onCreateSite,
   editableSiteIds,
   locationFilter,
   locationOptions,
@@ -162,10 +166,21 @@ export function InventoryArea({
         />
       </div>
 
-      {items.length === 0 ? (
+      {isLoading ? (
+        <p role="status">Loading bottles…</p>
+      ) : items.length === 0 ? (
         <EmptyState
-          description="Catalogue bottles with drink windows and locations, or clear the active filters."
-          title="No matching bottles"
+          actions={
+            onCreateSite === undefined ? undefined : (
+              <Button label="Create your first site" variant="primary" onClick={onCreateSite} />
+            )
+          }
+          description={
+            onCreateSite === undefined
+              ? "Catalogue bottles with drink windows and locations, or clear the active filters."
+              : "Create a site such as Home to start cataloguing your bottles. Storage locations are optional."
+          }
+          title={onCreateSite === undefined ? "No matching bottles" : "Start your cellar"}
         />
       ) : grouping === "winery" ? (
         <WineryInventory
@@ -372,8 +387,35 @@ function WineCard({
           .filter((value) => value !== "")
           .join(" - ")}
       </p>
+      {editable && row.bottleCount > 1 ? (
+        <details className="bottle-options">
+          <summary>Choose a bottle to edit, move, or mark drunk</summary>
+          <ul>
+            {row.bottles.map((bottle, index) => (
+              <li key={bottle.bottleId}>
+                <div>
+                  <p>{`Bottle ${index + 1} · ${storagePathLabel(bottle, locations)}`}</p>
+                  <p className="field-hint">
+                    {[bottleFacts(bottle), bottle.lotCode, bottle.bottleNotes]
+                      .filter((value) => value !== null && value !== "")
+                      .join(" · ")}
+                  </p>
+                </div>
+                <Button
+                  label={`Edit bottle ${index + 1}`}
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    onEditBottle(bottle);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
       <div className="card-actions">
-        {editable ? (
+        {editable && row.bottleCount === 1 ? (
           <Button
             label="Edit"
             size="sm"
