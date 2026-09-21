@@ -45,13 +45,14 @@ await describe("capture resource bounds", async () => {
   await it("resizes inference copies and leaves stored originals untouched", async () => {
     const transforms: unknown[] = [];
     let consumed = 0;
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test double only reads one stored original.
+    // oxlint-disable typescript/no-unsafe-type-assertion -- Test double only reads one stored original.
     const bucket = {
       async get() {
         return { body: byteStream(new Uint8Array(8 * 1024 * 1024)) };
       },
     } as unknown as R2Bucket;
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test double models only the transformation API used by capture inference.
+    // oxlint-enable typescript/no-unsafe-type-assertion
+    // oxlint-disable typescript/no-unsafe-type-assertion -- Test double models only the transformation API used by capture inference.
     const images = {
       input(stream: ReadableStream<Uint8Array>) {
         const transformer = {
@@ -70,6 +71,7 @@ await describe("capture resource bounds", async () => {
         return transformer;
       },
     } as unknown as ImagesBinding;
+    // oxlint-enable typescript/no-unsafe-type-assertion
     const content = await captureImageContent({ bucket, capture: capture(), images });
     assert.equal(consumed, 8 * 1024 * 1024);
     assert.deepEqual(transforms, [{ width: 2048, height: 2048, fit: "scale-down" }]);
@@ -79,12 +81,13 @@ await describe("capture resource bounds", async () => {
   });
 
   await it("rejects inference payloads above the bound instead of encoding them", async () => {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test double only implements reading the original image stream.
+    // oxlint-disable typescript/no-unsafe-type-assertion -- Test double only implements reading the original image stream.
     const bucket = {
       async get() {
         return { body: byteStream(new Uint8Array(2 * 1024 * 1024 + 1)) };
       },
     } as unknown as R2Bucket;
+    // oxlint-enable typescript/no-unsafe-type-assertion
     await assert.rejects(
       captureImageContent({ bucket, capture: capture() }),
       /original photo remains saved/u,

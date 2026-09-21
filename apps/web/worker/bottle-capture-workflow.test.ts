@@ -102,7 +102,7 @@ function setup(status: string) {
     VALUES ('legacy-run', 'capture', ?, 'old-extractor', 'old-prompt', 'old-schema')`)
     .run(status);
   const artifacts = new Map<string, unknown>();
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Persisted model-step fixtures leave only D1 and artifact writes live.
+  // oxlint-disable typescript/no-unsafe-type-assertion -- Persisted model-step fixtures leave only D1 and artifact writes live.
   const bindings = {
     DB: asD1(sqlite),
     IMAGE_BUCKET: {
@@ -111,6 +111,7 @@ function setup(status: string) {
       },
     },
   } as unknown as Bindings;
+  // oxlint-enable typescript/no-unsafe-type-assertion
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The test Workflow base class only uses its environment argument.
   const workflow = new BottleCaptureWorkflow({} as ExecutionContext, bindings);
   return { sqlite, workflow };
