@@ -324,7 +324,7 @@ function bucketThatDeletes({ fail }: { readonly fail: boolean }): {
 } {
   const deleted: string[][] = [];
   return {
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test double only implements delete.
+    /* oxlint-disable typescript/no-unsafe-type-assertion -- Test double only implements delete. */
     bucket: {
       async delete(keys: string | string[]): Promise<void> {
         if (fail) {
@@ -333,6 +333,7 @@ function bucketThatDeletes({ fail }: { readonly fail: boolean }): {
         deleted.push(typeof keys === "string" ? [keys] : [...keys]);
       },
     } as unknown as R2Bucket,
+    /* oxlint-enable typescript/no-unsafe-type-assertion */
     deleted,
   };
 }
