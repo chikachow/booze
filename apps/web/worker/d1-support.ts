@@ -54,12 +54,13 @@ class SqliteD1Statement {
 
   public async run(): Promise<D1Result> {
     const result = this.database.prepare(this.query).run(...this.parameters);
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Minimal test-only D1 metadata.
+    /* oxlint-disable typescript/no-unsafe-type-assertion -- Minimal test-only D1 metadata. */
     return {
       success: true,
       results: [],
       meta: { changes: Number(result.changes) },
     } as unknown as D1Result;
+    /* oxlint-enable typescript/no-unsafe-type-assertion */
   }
 }
 

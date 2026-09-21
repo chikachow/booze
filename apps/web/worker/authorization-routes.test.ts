@@ -166,16 +166,16 @@ function authenticatedRequest(
 }
 
 function testBindings(database: DatabaseSync): Bindings {
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Tests provide only route-used bindings.
+  /* oxlint-disable typescript/no-unsafe-type-assertion -- Tests provide only route-used bindings, including R2 delete. */
   return {
     DB: asD1(database),
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Route test only uses R2 delete.
     IMAGE_BUCKET: {
       async delete(keys: string | string[]): Promise<void> {
         assert.ok(typeof keys === "string" || Array.isArray(keys));
       },
     } as unknown as R2Bucket,
   } as Bindings;
+  /* oxlint-enable typescript/no-unsafe-type-assertion */
 }
 
 function siteName(database: DatabaseSync): string {
