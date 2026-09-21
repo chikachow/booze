@@ -13,7 +13,11 @@ import { created, noContent } from "../api/http.ts";
 import { optionalText } from "../api/ids.ts";
 import type { Bindings } from "../api/types.ts";
 import { putCaptureRunArtifact, type CaptureRunArtifact } from "../capture-artifacts.ts";
-import { CaptureImportConflictError, importReviewedCapture } from "../bottle-importer.ts";
+import {
+  CaptureImportConflictError,
+  getCommittedCaptureImport,
+  importReviewedCapture,
+} from "../bottle-importer.ts";
 import type { ImportCandidate } from "../bottle-extractor.ts";
 import { canImportCapture, canRetryCapture } from "../capture-state.ts";
 import {
@@ -259,6 +263,14 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       siteId: capture.siteId,
       userId: authenticatedUser.userId,
     });
+    if (capture.status === "imported" && capture.latestRun !== null) {
+      const committed = await getCommittedCaptureImport({
+        captureId: capture.id,
+        database,
+        runId: capture.latestRun.id,
+      });
+      if (committed !== null) return context.json({ data: committed });
+    }
     if (!canImportCapture(capture.status)) {
       throw new HTTPException(409, { message: "Capture is not ready for manual import" });
     }

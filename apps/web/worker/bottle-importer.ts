@@ -94,7 +94,7 @@ export async function importBottleCandidate(
 ): Promise<BottleImportResult> {
   const { candidate, captureId, database, runId, siteId, workflowInstanceId } = input;
   return retryCatalogueTransaction(async (): Promise<BottleImportResult> => {
-    const committed = await committedImportResult({ captureId, database, runId });
+    const committed = await getCommittedCaptureImport({ captureId, database, runId });
     if (committed !== null) {
       return committed;
     }
@@ -133,7 +133,7 @@ export async function importBottleCandidate(
       });
     } catch (error) {
       if (!(error instanceof CaptureImportConflictError)) throw error;
-      return (await committedImportResult({ captureId, database, runId })) ?? skipped;
+      return (await getCommittedCaptureImport({ captureId, database, runId })) ?? skipped;
     }
   });
 }
@@ -142,7 +142,7 @@ export async function importReviewedCapture(
   input: CaptureImportInput & { readonly wineVintageId?: string | undefined },
 ): Promise<Extract<BottleImportResult, { readonly kind: "imported" }>> {
   const { captureId, database, runId, siteId, wineVintageId, workflowInstanceId } = input;
-  const committed = await committedImportResult({ captureId, database, runId });
+  const committed = await getCommittedCaptureImport({ captureId, database, runId });
   if (committed !== null) return committed;
   const claim = await claimCaptureForImport({
     captureId,
@@ -166,7 +166,7 @@ export async function importReviewedCapture(
       return await commitCaptureImport({ input, claim, matchResult, wineVintageId });
     } catch (error) {
       if (error instanceof CaptureImportConflictError) {
-        const receipt = await committedImportResult({ captureId, database, runId });
+        const receipt = await getCommittedCaptureImport({ captureId, database, runId });
         if (receipt !== null) return receipt;
       }
       throw error;
@@ -360,7 +360,7 @@ function importCompletionStatements({
   ] as const;
 }
 
-async function committedImportResult({
+export async function getCommittedCaptureImport({
   captureId,
   database,
   runId,

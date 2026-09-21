@@ -24,6 +24,46 @@ const app = new Hono<{ Bindings: Bindings }>()
   .onError(problemResponseForError);
 
 await describe("capture lifecycle recovery", async () => {
+  await it("replays a manually imported capture after a lost HTTP acknowledgement", async () => {
+    const sqlite = setup("needs_review");
+    const d1 = asD1(sqlite);
+    const first = await request(d1, "/bottle-captures/capture/import");
+    assert.equal(first.status, 200);
+    const committed: unknown = await first.json();
+    const replay = await request(d1, "/bottle-captures/capture/import");
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), committed);
+    assert.equal(sqlite.prepare("SELECT count(*) AS count FROM bottles").get()?.["count"], 2);
+    assert.equal(captureStatus(sqlite), "imported");
+  });
+
+  await it("replays only the receipt without parsing old candidates or applying new choices", async () => {
+    const sqlite = setup("needs_review");
+    const d1 = asD1(sqlite);
+    const first = await request(d1, "/bottle-captures/capture/import");
+    assert.equal(first.status, 200);
+    const committed: unknown = await first.json();
+    sqlite.exec("UPDATE bottle_capture_runs SET import_candidate_json = '{}' WHERE id = 'run'");
+    const replay = await request(d1, "/bottle-captures/capture/import", undefined, {
+      wineVintageId: "a-different-choice",
+    });
+    assert.equal(replay.status, 200);
+    assert.deepEqual(await replay.json(), committed);
+    assert.equal(sqlite.prepare("SELECT count(*) AS count FROM bottles").get()?.["count"], 2);
+  });
+
+  await it("retains write authorization and requires a receipt for completed imports", async () => {
+    const sqlite = setup("needs_review");
+    const d1 = asD1(sqlite);
+    assert.equal((await request(d1, "/bottle-captures/capture/import")).status, 200);
+    sqlite.exec("UPDATE site_memberships SET role = 'viewer'");
+    assert.equal((await request(d1, "/bottle-captures/capture/import")).status, 403);
+    sqlite.exec("UPDATE site_memberships SET role = 'owner'");
+    sqlite.exec("UPDATE bottle_capture_runs SET import_result_json = NULL WHERE id = 'run'");
+    assert.equal((await request(d1, "/bottle-captures/capture/import")).status, 409);
+    assert.equal(sqlite.prepare("SELECT count(*) AS count FROM bottles").get()?.["count"], 2);
+  });
+
   await it("restarts only unfinished captures owned by the same Workflow", async () => {
     for (const status of ["queued", "extracting", "importing", "failed", "needs_review"]) {
       const sqlite = setup(status);
