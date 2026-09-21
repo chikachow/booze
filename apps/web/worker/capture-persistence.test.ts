@@ -424,7 +424,7 @@ function seededDatabase() {
 
 function imageBucket() {
   const objects = new Map<string, unknown>();
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Test double implements image storage and cleanup only.
+  // oxlint-disable typescript/no-unsafe-type-assertion -- Test double implements image storage and cleanup only.
   const bucket = {
     async put(key: string, value: unknown) {
       objects.set(key, value);
@@ -433,5 +433,6 @@ function imageBucket() {
       for (const key of typeof keys === "string" ? [keys] : keys) objects.delete(key);
     },
   } as unknown as R2Bucket;
+  // oxlint-enable typescript/no-unsafe-type-assertion
   return { bucket, objects };
 }
