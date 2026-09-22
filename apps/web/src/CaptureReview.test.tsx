@@ -39,7 +39,7 @@ describe("capture review", () => {
   it("shows extracted facts and disagreement reasons before import", () => {
     render(
       <CaptureReview
-        inventoryItems={[]}
+        wines={[]}
         capture={captureFixture({ latestRun: run })}
         canWrite={false}
         disabled={false}
@@ -69,7 +69,7 @@ describe("capture review", () => {
   it("names unavailable evidence instead of presenting an empty review", () => {
     render(
       <CaptureReview
-        inventoryItems={[]}
+        wines={[]}
         capture={captureFixture({ latestRun: null })}
         canWrite={false}
         disabled={false}
@@ -108,13 +108,13 @@ it("preserves unsaved corrections when a newer extraction arrives", async () => 
     ) => ({ ok: true as const, reviewRevision, reviewCandidate }),
   };
   const { rerender } = render(
-    <CaptureReview inventoryItems={[]} {...common} capture={captureFixture({ latestRun: run })} />,
+    <CaptureReview wines={[]} {...common} capture={captureFixture({ latestRun: run })} />,
   );
   await user.clear(screen.getByRole("textbox", { name: "Producer / winery" }));
   await user.type(screen.getByRole("textbox", { name: "Producer / winery" }), "Manual producer");
   rerender(
     <CaptureReview
-      inventoryItems={[]}
+      wines={[]}
       {...common}
       capture={captureFixture({
         latestRun: {
@@ -145,12 +145,12 @@ it("offers explicit recovery from concurrent corrections without silently discar
     ) => ({ ok: true as const, reviewRevision, reviewCandidate }),
   };
   const { rerender } = render(
-    <CaptureReview inventoryItems={[]} {...common} capture={captureFixture({ latestRun: run })} />,
+    <CaptureReview wines={[]} {...common} capture={captureFixture({ latestRun: run })} />,
   );
   await user.type(screen.getByRole("textbox", { name: "Producer / winery" }), " local edit");
   rerender(
     <CaptureReview
-      inventoryItems={[]}
+      wines={[]}
       {...common}
       capture={captureFixture({
         latestRun: run,
@@ -168,4 +168,70 @@ it("offers explicit recovery from concurrent corrections without silently discar
   await user.click(screen.getByRole("button", { name: "Load latest corrections" }));
   expect(screen.getByRole("textbox", { name: "Producer / winery" })).toHaveValue("Other editor");
   expect(screen.getByRole("button", { name: "Save corrections" })).toBeDisabled();
+});
+
+it("adopts newer extraction after local changes are undone instead of importing unseen facts", async () => {
+  const user = userEvent.setup();
+  const common = {
+    wines: [],
+    canWrite: true,
+    disabled: false,
+    onDirtyChange: vi.fn<(dirty: boolean) => void>(),
+    onBusyChange: vi.fn<(busy: boolean) => void>(),
+    onImport: async () => ({ ok: true as const }),
+    onSaveReview: async (
+      _id: string,
+      reviewRevision: number,
+      reviewCandidate: CaptureReviewCandidate,
+    ) => ({ ok: true as const, reviewRevision, reviewCandidate }),
+  };
+  const { rerender } = render(
+    <CaptureReview {...common} capture={captureFixture({ latestRun: run })} />,
+  );
+  await user.type(screen.getByRole("textbox", { name: "Producer / winery" }), " correction");
+  rerender(
+    <CaptureReview
+      {...common}
+      capture={captureFixture({
+        latestRun: {
+          ...run,
+          id: "new-run",
+          importCandidate: {
+            wine: { wineryName: "New evidence", grapeVarieties: ["Shiraz"] },
+            bottle: {},
+          },
+        },
+      })}
+    />,
+  );
+  expect(screen.getByRole("textbox", { name: "Producer / winery" })).toHaveValue(
+    "Rowlee correction",
+  );
+  await user.clear(screen.getByRole("textbox", { name: "Producer / winery" }));
+  await user.type(screen.getByRole("textbox", { name: "Producer / winery" }), "Rowlee");
+  expect(screen.getByRole("textbox", { name: "Producer / winery" })).toHaveValue("New evidence");
+});
+
+it("adopts evidence arriving later for the same run when the draft is clean", () => {
+  const common = {
+    wines: [],
+    canWrite: true,
+    disabled: false,
+    onDirtyChange: vi.fn<(dirty: boolean) => void>(),
+    onBusyChange: vi.fn<(busy: boolean) => void>(),
+    onImport: async () => ({ ok: true as const }),
+    onSaveReview: async (
+      _id: string,
+      reviewRevision: number,
+      reviewCandidate: CaptureReviewCandidate,
+    ) => ({ ok: true as const, reviewRevision, reviewCandidate }),
+  };
+  const { rerender } = render(
+    <CaptureReview
+      {...common}
+      capture={captureFixture({ latestRun: { ...run, importCandidate: null } })}
+    />,
+  );
+  rerender(<CaptureReview {...common} capture={captureFixture({ latestRun: run })} />);
+  expect(screen.getByRole("textbox", { name: "Producer / winery" })).toHaveValue("Rowlee");
 });

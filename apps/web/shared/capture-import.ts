@@ -1,4 +1,5 @@
 import type { CaptureReviewCandidate } from "./capture-review.ts";
+export type { CaptureReviewCandidate } from "./capture-review.ts";
 
 export type CaptureImportResult =
   | { readonly ok: true }

@@ -6,6 +6,7 @@ import { useCatalogue } from "./useCatalogue.ts";
 
 const dataByPath = new Map<string, readonly unknown[]>([
   ["/api/bottles", bottles],
+  ["/api/wines", bottles],
   ["/api/bottle-captures", captures],
   ["/api/storage-locations", locations],
   ["/api/sites", sites],
@@ -22,6 +23,65 @@ afterEach(() => {
 });
 
 describe("useCatalogue", () => {
+  it("loads wine options independently of stock and retains a failed wine refresh until retried", async () => {
+    const wine = { ...bottles[0], wineVintageId: "depleted-wine" };
+    let failWines = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/bottles") return jsonResponse([]);
+        if (path === "/api/wines")
+          return failWines ? new Response(null, { status: 503 }) : jsonResponse([wine]);
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.items).toEqual([]);
+    expect(result.current.wines).toEqual([wine]);
+    failWines = true;
+    await act(async () =>
+      result.current.completeMutation({ refresh: "catalogue", successMessage: "Saved." }),
+    );
+    expect(result.current.refreshIssues).toContainEqual({
+      collection: "wines",
+      message: "Wines could not be refreshed. Try again.",
+    });
+    expect(result.current.wines).toEqual([wine]);
+    await act(async () =>
+      result.current.completeMutation({ refresh: "captures", successMessage: "Capture saved." }),
+    );
+    expect(result.current.refreshIssues).toHaveLength(1);
+    failWines = false;
+    await act(async () => result.current.retryRefresh("wines"));
+    expect(result.current.refreshIssues).toEqual([]);
+  });
+
+  it("rejects an incomplete wine response instead of exposing a silently partial choice list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        return jsonResponse(
+          path === "/api/wines"
+            ? [bottles[0], { wineVintageId: "malformed" }]
+            : (dataByPath.get(path) ?? []),
+        );
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.wines).toEqual([]);
+    expect(result.current.refreshIssues).toEqual([
+      { collection: "wines", message: "Wines could not be refreshed. Try again." },
+    ]);
+  });
+
   it("keeps a newer capture failure after an older catalogue refresh finishes", async () => {
     let inventoryRequests = 0;
     let resolveOldInventory: ((response: Response) => void) | undefined;
@@ -519,6 +579,7 @@ describe("useCatalogue", () => {
         "inventory",
         "locations",
         "sites",
+        "wines",
       ]);
     });
 

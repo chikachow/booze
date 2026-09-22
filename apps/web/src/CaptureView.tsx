@@ -20,7 +20,6 @@ import type {
   CaptureFormState,
   CaptureImageResource,
   CaptureResource,
-  InventoryItem,
   LocationItem,
   SiteItem,
 } from "./inventory-model.ts";
@@ -30,11 +29,12 @@ import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import { ProgressiveListStatus, PROGRESSIVE_PAGE_SIZE } from "./ProgressiveListStatus.tsx";
 import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
 import { captureStatus } from "./capture-status.ts";
+import type { WineOption } from "../shared/wine-options.ts";
 import { CaptureReview } from "./CaptureReview.tsx";
 
 type CaptureAreaProps = {
   readonly captures: readonly CaptureResource[];
-  readonly inventoryItems?: readonly InventoryItem[];
+  readonly wines?: readonly WineOption[];
   readonly form: CaptureFormState;
   readonly isSaving: boolean;
   readonly locations: readonly LocationItem[];
@@ -67,7 +67,7 @@ export type CaptureSubmitResult =
 
 export function CaptureArea({
   captures,
-  inventoryItems = [],
+  wines = [],
   form,
   isSaving,
   locations,
@@ -278,7 +278,7 @@ export function CaptureArea({
 
       <CaptureDashboard
         captures={captures}
-        inventoryItems={inventoryItems}
+        wines={wines}
         locations={locations}
         writableSiteIds={writableSiteIds}
         onDelete={onDelete}
@@ -324,7 +324,7 @@ function SelectedPhoto({
 
 function CaptureDashboard({
   captures,
-  inventoryItems,
+  wines,
   locations,
   writableSiteIds,
   onDelete,
@@ -333,7 +333,7 @@ function CaptureDashboard({
   onRetry,
 }: {
   readonly captures: readonly CaptureResource[];
-  readonly inventoryItems: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly locations: readonly LocationItem[];
   readonly writableSiteIds: ReadonlySet<string>;
   readonly onDelete: (captureId: string) => Promise<boolean>;
@@ -342,6 +342,7 @@ function CaptureDashboard({
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
+  const [dirtyCaptureIds, setDirtyCaptureIds] = useState<ReadonlySet<string>>(new Set());
   const [deletingCapture, setDeletingCapture] = useState<CaptureResource | null>(null);
   const [visibleCount, setVisibleCount] = useState(PROGRESSIVE_PAGE_SIZE);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
@@ -350,8 +351,12 @@ function CaptureDashboard({
   const actionableCaptures = captures.filter((capture) => isActionableCapture(capture));
   const displayedCaptures = showAll
     ? captures
-    : captures.filter((capture) => capture.status !== "imported");
-  const visibleCaptures = displayedCaptures.slice(0, visibleCount);
+    : captures.filter(
+        (capture) => capture.status !== "imported" || dirtyCaptureIds.has(capture.id),
+      );
+  const visibleCaptures = displayedCaptures.filter(
+    (capture, index) => index < visibleCount || dirtyCaptureIds.has(capture.id),
+  );
   const hiddenCaptureCount = captures.filter((capture) => capture.status === "imported").length;
   const processingCaptureCount = captures.length - hiddenCaptureCount - actionableCaptures.length;
 
@@ -397,7 +402,7 @@ function CaptureDashboard({
           {visibleCaptures.map((capture) => (
             <CaptureCard
               capture={capture}
-              inventoryItems={inventoryItems}
+              wines={wines}
               canWrite={writableSiteIds.has(capture.siteId)}
               key={capture.id}
               locations={locations}
@@ -407,20 +412,39 @@ function CaptureDashboard({
                 deleteTriggerRef.current = trigger;
                 setDeletingCapture(target);
               }}
+              onReviewDirtyChange={(dirty) => {
+                setDirtyCaptureIds((current) => {
+                  const next = new Set(current);
+                  if (dirty) next.add(capture.id);
+                  else next.delete(capture.id);
+                  return next;
+                });
+              }}
               onRetry={onRetry}
             />
           ))}
         </div>
       )}
       <ProgressiveListStatus
-        getRevealFocusTarget={(firstRevealedIndex) => {
-          const capture = displayedCaptures[firstRevealedIndex];
+        getRevealFocusTarget={() => {
+          const capture = displayedCaptures
+            .slice(visibleCount)
+            .find((item) => !dirtyCaptureIds.has(item.id));
           return capture === undefined ? null : captureCard(capture.id);
         }}
         itemLabel="captures"
         totalCount={displayedCaptures.length}
         visibleCount={visibleCaptures.length}
-        onReveal={setVisibleCount}
+        onReveal={(count) => {
+          let next = visibleCount;
+          let remaining = count - visibleCaptures.length;
+          for (const capture of displayedCaptures.slice(visibleCount)) {
+            if (remaining === 0) break;
+            next += 1;
+            if (!dirtyCaptureIds.has(capture.id)) remaining -= 1;
+          }
+          setVisibleCount(next);
+        }}
       />
       {deletingCapture === null ? null : (
         <DestructiveActionDialog
@@ -445,21 +469,23 @@ function CaptureDashboard({
 
 function CaptureCard({
   canWrite,
-  inventoryItems,
+  wines,
   capture,
   locations,
   onImport,
   onSaveReview,
   onRequestDelete,
+  onReviewDirtyChange,
   onRetry,
 }: {
   readonly canWrite: boolean;
-  readonly inventoryItems: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly capture: CaptureResource;
   readonly locations: readonly LocationItem[];
   readonly onImport: CaptureImportAction;
   readonly onSaveReview: CaptureReviewSaveAction;
   readonly onRequestDelete: (capture: CaptureResource, trigger: HTMLButtonElement) => void;
+  readonly onReviewDirtyChange: (dirty: boolean) => void;
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [pendingAction, setPendingAction] = useState<CaptureCardAction | null>(null);
@@ -467,6 +493,7 @@ function CaptureCard({
   const [actionError, setActionError] = useState<string | null>(null);
   const [hasUnsavedReview, setHasUnsavedReview] = useState(false);
   const [isReviewBusy, setIsReviewBusy] = useState(false);
+  const canReview = capture.status === "needs_review" || capture.status === "failed";
 
   async function runAction(
     pending: CaptureCardAction,
@@ -537,20 +564,24 @@ function CaptureCard({
           </dd>
         </div>
       </dl>
-      {capture.status === "needs_review" || capture.status === "failed" ? (
+      <ImportedCaptureReviewNotice status={capture.status} hasUnsavedReview={hasUnsavedReview} />
+      {canReview || hasUnsavedReview || isReviewBusy ? (
         <CaptureReview
           capture={capture}
-          inventoryItems={inventoryItems}
+          wines={wines}
           canWrite={canWrite}
-          disabled={pendingAction !== null}
-          onDirtyChange={setHasUnsavedReview}
+          disabled={pendingAction !== null || !canReview}
+          onDirtyChange={(dirty) => {
+            setHasUnsavedReview(dirty);
+            onReviewDirtyChange(dirty);
+          }}
           onBusyChange={setIsReviewBusy}
           onImport={onImport}
           onSaveReview={onSaveReview}
         />
       ) : null}
       <div className="card-actions">
-        {canWrite && (capture.status === "failed" || capture.status === "needs_review") ? (
+        {canWrite && canReview ? (
           <Button
             isDisabled={pendingAction !== null || hasUnsavedReview || isReviewBusy}
             isLoading={isCaptureAction(pendingAction, { kind: "retry" })}
@@ -701,4 +732,18 @@ function candidateProperty(value: unknown, key: string): unknown {
   return value !== null && typeof value === "object"
     ? Object.getOwnPropertyDescriptor(value, key)?.value
     : undefined;
+}
+
+function ImportedCaptureReviewNotice({
+  status,
+  hasUnsavedReview,
+}: {
+  readonly status: CaptureResource["status"];
+  readonly hasUnsavedReview: boolean;
+}): ReactElement | null {
+  return status === "imported" && hasUnsavedReview ? (
+    <p role="status">
+      This capture was imported elsewhere. Your unsaved corrections remain below for reference.
+    </p>
+  ) : null;
 }

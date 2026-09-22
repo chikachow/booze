@@ -102,6 +102,7 @@ async function mockCatalogue(page: Page, fixtures: CatalogueFixtures = {}): Prom
     }
     const responseByPath = new Map<string, readonly unknown[]>([
       ["/api/bottles", bottleData],
+      ["/api/wines", bottles],
       ["/api/storage-locations", locationData],
       ["/api/sites", siteData],
       ["/api/bottle-captures", captureData],
@@ -189,6 +190,7 @@ async function mockCommittedMutationWithStaleRefresh(
     }
     const responseByPath = new Map<string, readonly unknown[]>([
       ["/api/bottles", bottleData],
+      ["/api/wines", bottles],
       ["/api/storage-locations", locations],
       ["/api/sites", sites],
       ["/api/bottle-captures", captures],

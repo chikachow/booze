@@ -440,27 +440,33 @@ describe("BottleModal wine identity", () => {
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ wineEditScope: "shared" }));
   });
 
-  it("offers an explicit existing wine for only this bottle and locks that wine's details", async () => {
+  it("offers a wine option without in-stock inventory and locks that wine's details", async () => {
     const user = userEvent.setup();
     const item = inventoryItemFixture();
-    const target = inventoryItemFixture({
-      bottleId: "bottle-2",
+    const target = {
       wineVintageId: "target-wine",
+      siteId: item.siteId,
+      wineryName: "Producer",
       displayName: "Target Shiraz",
-    });
-    const otherSite = inventoryItemFixture({
-      bottleId: "bottle-3",
+      vintageYear: 2023,
+      vintageStatus: item.vintageStatus,
+      vintageLabel: "2023",
+      grapeVarieties: ["Shiraz"],
+      region: null,
+    };
+    const otherSite = {
+      ...target,
       siteId: "site-editor",
       wineVintageId: "other-site",
       displayName: "Hidden wine",
-    });
+    };
     const onSubmit =
       vi.fn<(submission: BottleModalSubmit) => Promise<BottleModalSubmitResult>>(submitBottle);
     render(
       <BottleModal
         form={formStateForItem(item)}
         item={item}
-        inventoryItems={[item, target, otherSite]}
+        wines={[target, otherSite]}
         isSaving={false}
         locations={locationsFixture}
         sites={sitesFixture}

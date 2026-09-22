@@ -1,3 +1,4 @@
+import type { WineOption } from "../shared/wine-options.ts";
 import { useState, type ReactElement } from "react";
 import axe from "axe-core";
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -13,12 +14,7 @@ import {
   locationsFixture,
   sitesFixture,
 } from "./test/catalogue-fixtures.ts";
-import type {
-  CaptureFormState,
-  CaptureResource,
-  CaptureRunResource,
-  InventoryItem,
-} from "./inventory-model.ts";
+import type { CaptureFormState, CaptureResource, CaptureRunResource } from "./inventory-model.ts";
 
 const captureForm = {
   location: "",
@@ -45,25 +41,25 @@ async function resolvedCapture(): Promise<CaptureSubmitResult> {
   return { kind: "submitted", message: "Capture submitted." };
 }
 
-function renderCapture({
+function captureElement({
   captures = capturesFixture,
-  inventoryItems = [],
+  wines = [],
   onDelete = resolvedTrue,
   onImport = resolvedImport,
   onSaveReview = resolvedReview,
   onRetry = resolvedTrue,
 }: {
   readonly captures?: readonly CaptureResource[];
-  readonly inventoryItems?: readonly InventoryItem[];
+  readonly wines?: readonly WineOption[];
   readonly onDelete?: (captureId: string) => Promise<boolean>;
   readonly onImport?: CaptureImportAction;
   readonly onSaveReview?: CaptureReviewSaveAction;
   readonly onRetry?: (captureId: string) => Promise<boolean>;
 } = {}) {
-  return render(
+  return (
     <CaptureArea
       captures={captures}
-      inventoryItems={inventoryItems}
+      wines={wines}
       form={captureForm}
       isSaving={false}
       locations={locationsFixture}
@@ -77,8 +73,12 @@ function renderCapture({
       setForm={vi.fn((nextForm: CaptureFormState): void => {
         void nextForm;
       })}
-    />,
+    />
   );
+}
+
+function renderCapture(options: Parameters<typeof captureElement>[0] = {}) {
+  return render(captureElement(options));
 }
 
 const incompleteRun = {
@@ -431,7 +431,10 @@ it.each([
         },
       }),
     ],
-    inventoryItems: [first, second, otherSite],
+    wines: [first, second, otherSite].map((item) => ({
+      ...item,
+      grapeVarieties: item.grapeVarieties?.split(",") ?? [],
+    })),
     onImport,
   });
   expect(screen.queryByRole("button", { name: "Use Existing Shiraz" })).not.toBeInTheDocument();
@@ -445,4 +448,113 @@ it.each([
   expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", "second-wine", {
     expectedReviewRevision: 2,
   });
+});
+
+it.each([0, 1])(
+  "retains unsaved corrections through another editor's retry at revision %i",
+  async (reviewRevision) => {
+    const user = userEvent.setup();
+    const capture = captureFixture({
+      status: "failed",
+      reviewRevision,
+      reviewCandidate:
+        reviewRevision === 0
+          ? null
+          : {
+              wine: { wineryName: "Saved producer", designation: "", grapeVarieties: ["Shiraz"] },
+              bottle: {},
+            },
+    });
+    const { rerender } = renderCapture({ captures: [capture] });
+    const producer = screen.getByRole("textbox", { name: "Producer / winery" });
+    await user.clear(producer);
+    await user.type(producer, "My unsaved correction");
+    rerender(captureElement({ captures: [{ ...capture, status: "extracting" }] }));
+    expect(screen.getByRole("textbox", { name: "Producer / winery" })).toHaveValue(
+      "My unsaved correction",
+    );
+    expect(screen.getByRole("textbox", { name: "Producer / winery" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save corrections" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create new" })).toBeDisabled();
+    rerender(
+      captureElement({
+        captures: [{ ...capture, status: "needs_review", latestRun: incompleteRun }],
+      }),
+    );
+    expect(screen.getByRole("textbox", { name: "Producer / winery" })).toHaveValue(
+      "My unsaved correction",
+    );
+    await user.click(screen.getByRole("button", { name: "Save corrections" }));
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+  },
+);
+
+it("can reuse a depleted wine after saving capture corrections", async () => {
+  const user = userEvent.setup();
+  const onImport = vi.fn<CaptureImportAction>(resolvedImport);
+  const depletedWine: WineOption = {
+    wineVintageId: "depleted-wine",
+    siteId: "site-owner",
+    displayName: "Rikard Shiraz",
+    wineryName: "Rikard",
+    grapeVarieties: ["Shiraz"],
+    vintageYear: 2022,
+    vintageStatus: "year",
+    vintageLabel: "2022",
+    region: null,
+  };
+  renderCapture({
+    captures: [captureFixture({ latestRun: incompleteRun })],
+    wines: [depletedWine],
+    onImport,
+  });
+  await user.type(screen.getByRole("textbox", { name: "Bottle notes" }), "Manual bottle note");
+  await user.click(screen.getByRole("button", { name: "Save corrections" }));
+  await user.click(screen.getByRole("combobox", { name: "Existing wine in this site" }));
+  await user.click(screen.getByRole("option", { name: /depleted-wine/u }));
+  await user.click(screen.getByRole("button", { name: "Use selected wine" }));
+  expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", "depleted-wine", {
+    expectedReviewRevision: 1,
+  });
+});
+
+it("retains a local draft for reference when another editor imports the capture", async () => {
+  const user = userEvent.setup();
+  const capture = captureFixture({ latestRun: incompleteRun });
+  const { rerender } = renderCapture({ captures: [capture] });
+  await user.type(
+    screen.getByRole("textbox", { name: "Bottle notes" }),
+    "Unsubmitted bottle correction",
+  );
+  rerender(captureElement({ captures: [{ ...capture, status: "imported" }] }));
+  expect(screen.getByRole("textbox", { name: "Bottle notes" })).toHaveValue(
+    "Unsubmitted bottle correction",
+  );
+  expect(screen.getByRole("textbox", { name: "Bottle notes" })).toBeDisabled();
+  expect(screen.getByText(/was imported elsewhere/u)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Save corrections" })).toBeDisabled();
+});
+
+it("keeps a dirty capture mounted when a new upload pushes it beyond the visible page", async () => {
+  const user = userEvent.setup();
+  const captures = Array.from({ length: 50 }, (_, index) =>
+    captureFixture({ id: `capture-${index}`, status: index === 49 ? "needs_review" : "queued" }),
+  );
+  const { rerender } = renderCapture({ captures });
+  await user.type(screen.getByRole("textbox", { name: "Bottle notes" }), "Keep this draft");
+  rerender(
+    captureElement({
+      captures: [captureFixture({ id: "new-capture", status: "queued" }), ...captures],
+    }),
+  );
+  expect(screen.getByRole("textbox", { name: "Bottle notes" })).toHaveValue("Keep this draft");
+  expect(screen.getByText("Showing all 51 captures")).toBeVisible();
+  const newer = Array.from({ length: 101 }, (_, index) =>
+    captureFixture({ id: `new-${index}`, status: "queued" }),
+  );
+  rerender(captureElement({ captures: [...newer, ...captures] }));
+  expect(screen.getByText("Showing 51 of 151 captures")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Show 50 more" }));
+  expect(screen.getByText("Showing 101 of 151 captures")).toBeVisible();
+  expect(screen.getByRole("textbox", { name: "Bottle notes" })).toHaveValue("Keep this draft");
 });

@@ -107,6 +107,7 @@ function uniqueSorted(values: readonly string[]): readonly string[] {
 export function Catalogue({ authMode, authControl, getAuthHeaders }: CatalogueProps): ReactElement {
   const {
     captures,
+    wines,
     completeMutation,
     items,
     isLoading,
@@ -359,7 +360,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
             ) : area === "captures" ? (
               <CaptureArea
                 captures={captures}
-                inventoryItems={items}
+                wines={wines}
                 form={captureController.captureForm}
                 isSaving={captureController.isSaving}
                 locations={writableLocations}
@@ -388,7 +389,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
 
             {bottleController.isAddOpen ? (
               <BottleModal
-                inventoryItems={items}
+                wines={wines}
                 form={bottleController.addFormDefaults}
                 isSaving={bottleController.isSaving}
                 locations={writableLocations}
@@ -404,7 +405,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
             {bottleController.editingBottle === null ||
             bottleController.editingForm === null ? null : (
               <BottleModal
-                inventoryItems={items}
+                wines={wines}
                 key={bottleController.editingBottle.bottleId}
                 form={bottleController.editingForm}
                 isSaving={bottleController.isSaving}
