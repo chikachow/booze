@@ -1,3 +1,4 @@
+import { useState, type ReactElement } from "react";
 import axe from "axe-core";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
@@ -198,4 +199,54 @@ describe("CaptureArea photo picker", () => {
       expect(deleteAction).toBeEnabled();
     });
   });
+});
+
+function QuantityCaptureHarness({
+  onSubmit,
+}: {
+  readonly onSubmit: (
+    form: CaptureFormState,
+    files: readonly File[],
+  ) => Promise<CaptureSubmitResult>;
+}): ReactElement {
+  const [form, setForm] = useState<CaptureFormState>(captureForm);
+  return (
+    <CaptureArea
+      captures={[]}
+      form={form}
+      setForm={setForm}
+      isSaving={false}
+      locations={locationsFixture}
+      sites={sitesFixture}
+      writableSiteIds={new Set(["site-owner"])}
+      onDelete={resolvedTrue}
+      onImport={resolvedTrue}
+      onRetry={resolvedTrue}
+      onSubmit={onSubmit}
+    />
+  );
+}
+
+it("preserves invalid capture quantity drafts and submits corrected full-width digits", async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn(resolvedCapture);
+  render(<QuantityCaptureHarness onSubmit={onSubmit} />);
+  await user.upload(screen.getByLabelText(/Bottle photos/u), photo("label.jpg"));
+  const input = screen.getByRole("textbox", { name: /quantity/iu });
+  expect(input).toHaveAttribute("inputmode", "numeric");
+  for (const draft of ["25", "1.5", "", "2 bottles"]) {
+    await user.clear(input);
+    if (draft !== "") await user.type(input, draft);
+    await user.click(screen.getByRole("button", { name: "Submit capture" }));
+    expect(input).toHaveValue(draft);
+    expect(onSubmit).not.toHaveBeenCalled();
+  }
+  await user.clear(input);
+  await user.paste("１２");
+  await user.click(screen.getByRole("button", { name: "Submit capture" }));
+  expect(input).toHaveValue("１２");
+  expect(onSubmit).toHaveBeenCalledWith(
+    expect.objectContaining({ quantity: "１２" }),
+    expect.any(Array),
+  );
 });

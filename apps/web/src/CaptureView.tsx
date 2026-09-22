@@ -4,19 +4,12 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Link } from "@astryxdesign/core/Link";
-import { NumberInput } from "@astryxdesign/core/NumberInput";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FocusEvent,
-  type MouseEvent,
-  type ReactElement,
-} from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from "react";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
+import { QuantityInput } from "./QuantityInput.tsx";
 import type {
   CaptureFormState,
   CaptureImageResource,
@@ -82,7 +75,6 @@ export function CaptureArea({
   const [submitResult, setSubmitResult] = useState<CaptureSubmitResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quantityValidation = validateBottleQuantity(form.quantity);
-  const numericQuantity = Number(form.quantity);
 
   useEffect(() => {
     if (form.siteId !== "" || sites.length === 0) {
@@ -171,29 +163,18 @@ export function CaptureArea({
                   setForm({ ...form, position: value });
                 }}
               />
-              <NumberInput
-                hasClear
-                isRequired
-                isIntegerOnly
-                htmlName="quantity"
-                description="Between 1 and 24 bottles."
-                label="Quantity"
+              <QuantityInput
                 status={
                   isQuantityTouched && !quantityValidation.ok
                     ? { message: quantityValidation.message, type: "error" }
                     : undefined
                 }
-                value={
-                  form.quantity.trim() !== "" && Number.isFinite(numericQuantity)
-                    ? numericQuantity
-                    : null
-                }
-                onBlur={(event: FocusEvent<HTMLInputElement>) => {
+                value={form.quantity}
+                onBlur={() => {
                   setIsQuantityTouched(true);
-                  setForm({ ...form, quantity: event.currentTarget.value });
                 }}
-                onChange={(value: number | null) => {
-                  setForm({ ...form, quantity: value === null ? "" : String(value) });
+                onChange={(quantity) => {
+                  setForm({ ...form, quantity });
                 }}
               />
             </div>

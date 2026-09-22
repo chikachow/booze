@@ -79,12 +79,55 @@ describe("ASTRYX react-hook-form fields", () => {
       />,
     );
 
-    const quantity = screen.getByRole("spinbutton", { name: /quantity/iu });
+    const quantity = screen.getByRole("textbox", { name: /quantity/iu });
     fireEvent.change(quantity, { target: { value: "25" } });
     fireEvent.blur(quantity);
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(quantity).not.toHaveValue("1");
+    expect(await screen.findByText("Quantity must be a whole number from 1 to 24.")).toBeVisible();
+  });
+});
+
+describe("quantity drafts", () => {
+  it("preserves pasted full-width digits through form submission", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <Harness
+        defaults={{ ...initialFormState, wineryName: "Rowlee Wines" }}
+        onSubmit={(values) => {
+          onSubmit(values);
+        }}
+      />,
+    );
+    const quantity = screen.getByRole("textbox", { name: /quantity/iu });
+    await user.click(quantity);
+    await user.clear(quantity);
+    await user.paste("１２");
+    await user.tab();
+    expect(quantity).toHaveValue("１２");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ quantity: "１２" }));
+  });
+  it("rejects a fractional draft instead of submitting the old value", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <Harness
+        defaults={{ ...initialFormState, wineryName: "Rowlee Wines" }}
+        onSubmit={(values) => {
+          onSubmit(values);
+        }}
+      />,
+    );
+    const quantity = screen.getByRole("textbox", { name: /quantity/iu });
+    await user.clear(quantity);
+    await user.type(quantity, "1.5");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(quantity).not.toHaveValue("1");
     expect(await screen.findByText("Quantity must be a whole number from 1 to 24.")).toBeVisible();
   });
 });
