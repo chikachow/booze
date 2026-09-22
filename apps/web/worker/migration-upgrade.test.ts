@@ -200,12 +200,31 @@ void it("upgrades the accepted target history on populated local D1 without repl
   const base = Object.fromEntries(
     names.map((name) => [name.slice(migrationPath.length), git("show", `${sha}:${name}`)]),
   );
+  verifyWineUpgrade(base, readCandidateMigrations());
+});
+
+const identityMigration = "20260922034734_wine_identity_and_capture_review/migration.sql";
+
+function readCandidateMigrations(): MigrationFiles {
   const folder = path.join(root, migrationPath);
-  const candidate = Object.fromEntries(
+  return Object.fromEntries(
     readdirSync(folder, { recursive: true, encoding: "utf8" })
       .filter((name) => name.endsWith(".sql"))
       .map((name) => [name, readFileSync(path.join(folder, name), "utf8")]),
   );
+}
+
+void it("transforms legacy wine identity on populated local D1 after the migration reaches main", () => {
+  const candidate = readCandidateMigrations();
+  assert.ok(identityMigration in candidate);
+  const base = Object.fromEntries(
+    Object.entries(candidate).filter(([name]) => name < identityMigration),
+  );
+  verifyWineUpgrade(base, candidate);
+});
+
+function verifyWineUpgrade(base: MigrationFiles, candidate: MigrationFiles) {
+  const identityAlreadyApplied = identityMigration in base;
   verifyUpgrade(base, candidate, {
     seed: `INSERT INTO users (id, clerk_user_id) VALUES ('migration-user', 'migration-clerk');
       INSERT INTO sites (id, name) VALUES ('migration-site', 'Migration fixture');
@@ -214,6 +233,12 @@ void it("upgrades the accepted target history on populated local D1 without repl
       INSERT INTO wine_vintages (id, site_id, winery_id, base_name, display_name, vintage_year, vintage_label, notes)
         VALUES ('known', 'migration-site', 'producer', 'Shiraz', 'RIKARD Shiraz', 2022, '2022', 'Keep facts'),
                ('yearless', 'migration-site', 'producer', 'Blend', 'RIKARD Blend', NULL, 'NV', 'Year was not read');
+      ${
+        identityAlreadyApplied
+          ? `UPDATE wine_vintages SET vintage_status = 'year' WHERE id = 'known';
+             UPDATE wine_vintages SET vintage_label = 'Unknown' WHERE id = 'yearless';`
+          : ""
+      }
       INSERT INTO bottles (id, site_id, wine_vintage_id) VALUES ('bottle-known', 'migration-site', 'known'), ('bottle-yearless', 'migration-site', 'yearless');
       INSERT INTO grape_varieties (id, name) VALUES ('shiraz', 'Shiraz');
       INSERT INTO wine_constituents (site_id, wine_vintage_id, grape_variety_id, percentage, blend_text)
@@ -239,7 +264,7 @@ void it("upgrades the accepted target history on populated local D1 without repl
       },
     ],
   });
-});
+}
 
 void it("the application Wrangler config applies every checked-in SQL migration", () => {
   const state = mkdtempSync(path.join(tmpdir(), "booze-d1-config-"));
