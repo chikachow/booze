@@ -26,6 +26,8 @@ pnpm --filter @chikachow/booze-db exec drizzle-kit export
 
 Export describes the desired schema; it does not export stored data or apply a database change. Wrangler applies the checked-in SQL migrations and tracks their application. See the [Drizzle export documentation](https://orm.drizzle.team/docs/drizzle-kit-export).
 
+`pnpm --filter @chikachow/booze-db test` compares that export with a fresh SQLite database built from every checked-in SQL migration. It checks tables, columns, keys, indexes, and table options while allowing column order and foreign-key numbering to differ. This check also runs in `pnpm check`; it does not read production or validate Drizzle's migration-generator snapshots.
+
 Before a release that adds a migration, compare the remote ledger with the checked-in filenames:
 
 ```sh
