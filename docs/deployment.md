@@ -16,7 +16,7 @@ The health route confirms that the Worker responds; it does not verify Clerk sig
 
 ## D1 migration lineage
 
-Migrations `0000` through `0008` are the current checked-in lineage. Keep every existing SQL file unchanged and in order. Schema changes append a new migration; do not replace history with a generated initial migration, rename old files, or hide mismatches with `IF NOT EXISTS`.
+Migrations `0000` through `0008` establish the original lineage. A comment-only v1 baseline follows them; subsequent generated migrations use timestamped folders. Keep every existing SQL file unchanged and in order. Schema changes append a new migration; do not replace history with a generated initial migration, rename old files, or hide mismatches with `IF NOT EXISTS`.
 
 Drizzle Kit exports the current TypeScript schema as SQL DDL for inspection and database management:
 
@@ -26,7 +26,7 @@ pnpm --filter @chikachow/booze-db exec drizzle-kit export
 
 Export describes the desired schema; it does not export stored data or apply a database change. Wrangler applies the checked-in SQL migrations and tracks their application. See the [Drizzle export documentation](https://orm.drizzle.team/docs/drizzle-kit-export).
 
-`pnpm --filter @chikachow/booze-db test` compares that export with a fresh SQLite database built from every checked-in SQL migration. It checks tables, columns, keys, indexes, and table options while allowing column order and foreign-key numbering to differ. This check also runs in `pnpm check`; it does not read production or validate Drizzle's migration-generator snapshots.
+`pnpm --filter @chikachow/booze-db test` compares that export with a fresh SQLite database built from every checked-in SQL migration. It checks tables, columns, keys, indexes, and table options while allowing column order and foreign-key numbering to differ. The database tests also validate the snapshot graph and no-change generation. `pnpm check` additionally tests upgrade from the accepted target history on populated local D1. These checks do not read production. See [migration authoring, concurrent edits, and D1 rebuilds](drizzle-migrations.md).
 
 Before a release that adds a migration, compare the remote ledger with the checked-in filenames:
 

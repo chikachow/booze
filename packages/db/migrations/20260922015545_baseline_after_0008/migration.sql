@@ -1,0 +1,3 @@
+-- Drizzle v1 baseline after legacy migrations 0000 through 0008.
+-- The schema is created by the unchanged SQL files in the parent directory.
+-- This migration records the baseline without changing application schema or data.

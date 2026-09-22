@@ -19,17 +19,30 @@ const timestampColumns = {
     .$onUpdate(() => currentTimestamp),
 };
 
-export const users = sqliteTable("users", {
-  id: text("id").primaryKey(),
-  clerkUserId: text("clerk_user_id").notNull().unique(),
-  ...timestampColumns,
-});
+// Table-level primary keys preserve explicit NOT NULL in Kit RC4 (#6165).
+// See docs/drizzle-migrations.md before changing these constraint declarations.
+export const users = sqliteTable(
+  "users",
+  {
+    id: text("id").notNull(),
+    clerkUserId: text("clerk_user_id").notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    primaryKey({ columns: [table.id] }),
+    uniqueIndex("users_clerk_user_id_unique").on(table.clerkUserId),
+  ],
+);
 
-export const sites = sqliteTable("sites", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  ...timestampColumns,
-});
+export const sites = sqliteTable(
+  "sites",
+  {
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    ...timestampColumns,
+  },
+  (table) => [primaryKey({ columns: [table.id] })],
+);
 
 export const siteMemberships = sqliteTable(
   "site_memberships",
@@ -55,7 +68,7 @@ export const siteMemberships = sqliteTable(
 export const wineries = sqliteTable(
   "wineries",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -68,6 +81,7 @@ export const wineries = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("wineries_site_id_idx").on(table.siteId),
     uniqueIndex("wineries_site_id_id_unique").on(table.siteId, table.id),
     uniqueIndex("wineries_site_id_name_region_unique").on(table.siteId, table.name, table.region),
@@ -77,7 +91,7 @@ export const wineries = sqliteTable(
 export const wineVintages = sqliteTable(
   "wine_vintages",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -106,6 +120,7 @@ export const wineVintages = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("wine_vintages_site_id_idx").on(table.siteId),
     index("wine_vintages_site_id_winery_id_idx").on(table.siteId, table.wineryId),
     uniqueIndex("wine_vintages_site_id_id_unique").on(table.siteId, table.id),
@@ -123,11 +138,18 @@ export const wineVintages = sqliteTable(
   ],
 );
 
-export const grapeVarieties = sqliteTable("grape_varieties", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  ...timestampColumns,
-});
+export const grapeVarieties = sqliteTable(
+  "grape_varieties",
+  {
+    id: text("id").notNull(),
+    name: text("name").notNull(),
+    ...timestampColumns,
+  },
+  (table) => [
+    primaryKey({ columns: [table.id] }),
+    uniqueIndex("grape_varieties_name_unique").on(table.name),
+  ],
+);
 
 export const wineConstituents = sqliteTable(
   "wine_constituents",
@@ -160,7 +182,7 @@ export const wineConstituents = sqliteTable(
 export const reviewSources = sqliteTable(
   "review_sources",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id").references(() => sites.id),
     name: text("name").notNull(),
     sourceType: text("source_type").notNull().default("critic"),
@@ -170,6 +192,7 @@ export const reviewSources = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("review_sources_site_id_idx").on(table.siteId),
     uniqueIndex("review_sources_site_id_id_unique").on(table.siteId, table.id),
     uniqueIndex("review_sources_site_id_name_unique").on(table.siteId, table.name),
@@ -179,7 +202,7 @@ export const reviewSources = sqliteTable(
 export const criticReviews = sqliteTable(
   "critic_reviews",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -198,6 +221,7 @@ export const criticReviews = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("critic_reviews_site_id_wine_vintage_id_idx").on(table.siteId, table.wineVintageId),
     index("critic_reviews_review_source_id_idx").on(table.reviewSourceId),
     uniqueIndex("critic_reviews_site_wine_source_unique").on(
@@ -216,7 +240,7 @@ export const criticReviews = sqliteTable(
 export const wineAwards = sqliteTable(
   "wine_awards",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -234,6 +258,7 @@ export const wineAwards = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("wine_awards_site_id_wine_vintage_id_idx").on(table.siteId, table.wineVintageId),
     uniqueIndex("wine_awards_site_wine_award_unique").on(
       table.siteId,
@@ -253,7 +278,7 @@ export const wineAwards = sqliteTable(
 export const storageLocations = sqliteTable(
   "storage_locations",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -264,6 +289,7 @@ export const storageLocations = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("storage_locations_site_id_idx").on(table.siteId),
     uniqueIndex("storage_locations_site_id_id_unique").on(table.siteId, table.id),
     uniqueIndex("storage_locations_site_parent_name_unique").on(
@@ -282,7 +308,7 @@ export const storageLocations = sqliteTable(
 export const bottles = sqliteTable(
   "bottles",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -299,6 +325,7 @@ export const bottles = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("bottles_site_id_wine_vintage_id_idx").on(table.siteId, table.wineVintageId),
     foreignKey({
       columns: [table.siteId, table.wineVintageId],
@@ -312,7 +339,7 @@ export const bottleLocations = sqliteTable(
   "bottle_locations",
   {
     bottleId: text("bottle_id")
-      .primaryKey()
+      .notNull()
       .references(() => bottles.id),
     siteId: text("site_id")
       .notNull()
@@ -322,6 +349,7 @@ export const bottleLocations = sqliteTable(
     updatedAt: text("updated_at").notNull().default(currentTimestamp),
   },
   (table) => [
+    primaryKey({ columns: [table.bottleId] }),
     index("bottle_locations_site_id_location_id_idx").on(table.siteId, table.storageLocationId),
     foreignKey({
       columns: [table.siteId, table.storageLocationId],
@@ -334,7 +362,7 @@ export const bottleLocations = sqliteTable(
 export const imageAssets = sqliteTable(
   "image_assets",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -355,6 +383,7 @@ export const imageAssets = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("image_assets_site_id_idx").on(table.siteId),
     uniqueIndex("image_assets_site_id_sha256_unique").on(table.siteId, table.sha256),
     uniqueIndex("image_assets_r2_key_unique").on(table.r2Key),
@@ -364,7 +393,7 @@ export const imageAssets = sqliteTable(
 export const bottleCaptures = sqliteTable(
   "bottle_captures",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
@@ -382,6 +411,7 @@ export const bottleCaptures = sqliteTable(
     ...timestampColumns,
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("bottle_captures_site_id_status_idx").on(table.siteId, table.status),
     index("bottle_captures_user_id_idx").on(table.userId),
     foreignKey({
@@ -417,7 +447,7 @@ export const bottleCaptureImages = sqliteTable(
 export const bottleCaptureRuns = sqliteTable(
   "bottle_capture_runs",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     captureId: text("capture_id")
       .notNull()
       .references(() => bottleCaptures.id),
@@ -442,6 +472,7 @@ export const bottleCaptureRuns = sqliteTable(
     createdAt: text("created_at").notNull().default(currentTimestamp),
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("bottle_capture_runs_capture_id_idx").on(table.captureId),
     index("bottle_capture_runs_status_idx").on(table.status),
   ],
@@ -450,7 +481,7 @@ export const bottleCaptureRuns = sqliteTable(
 export const labelExtractions = sqliteTable(
   "label_extractions",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     bottleId: text("bottle_id").references(() => bottles.id),
     wineVintageId: text("wine_vintage_id").references(() => wineVintages.id),
     captureId: text("capture_id").references(() => bottleCaptures.id),
@@ -464,6 +495,7 @@ export const labelExtractions = sqliteTable(
     createdAt: text("created_at").notNull().default(currentTimestamp),
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("label_extractions_bottle_id_idx").on(table.bottleId),
     index("label_extractions_wine_vintage_id_idx").on(table.wineVintageId),
     index("label_extractions_capture_id_idx").on(table.captureId),
@@ -474,7 +506,7 @@ export const labelExtractions = sqliteTable(
 export const mcpToolAuditEvents = sqliteTable(
   "mcp_tool_audit_events",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
@@ -490,6 +522,7 @@ export const mcpToolAuditEvents = sqliteTable(
     createdAt: text("created_at").notNull().default(currentTimestamp),
   },
   (table) => [
+    primaryKey({ columns: [table.id] }),
     index("mcp_tool_audit_events_user_id_created_at_idx").on(table.userId, table.createdAt),
     index("mcp_tool_audit_events_site_id_created_at_idx").on(table.siteId, table.createdAt),
     index("mcp_tool_audit_events_target_idx").on(table.targetKind, table.targetPersistedId),
@@ -499,7 +532,7 @@ export const mcpToolAuditEvents = sqliteTable(
 export const r2ObjectDeletionQueue = sqliteTable(
   "r2_object_deletion_queue",
   {
-    r2Key: text("r2_key").primaryKey(),
+    r2Key: text("r2_key").notNull(),
     sourceKind: text("source_kind").notNull(),
     sourceId: text("source_id").notNull(),
     attempts: integer("attempts").notNull().default(0),
@@ -508,6 +541,7 @@ export const r2ObjectDeletionQueue = sqliteTable(
     createdAt: text("created_at").notNull().default(currentTimestamp),
   },
   (table) => [
+    primaryKey({ columns: [table.r2Key] }),
     index("r2_object_deletion_queue_attempts_created_at_idx").on(table.attempts, table.createdAt),
   ],
 );
