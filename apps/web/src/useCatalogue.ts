@@ -22,9 +22,17 @@ import {
   type SiteItem,
 } from "./inventory-model.ts";
 
+import { isWineOption, type WineOption } from "../shared/wine-options.ts";
+
 type AuthHeadersProvider = () => Promise<Record<string, string>>;
-type CollectionName = "inventory" | "locations" | "sites" | "captures";
-const collectionNames: readonly CollectionName[] = ["inventory", "locations", "sites", "captures"];
+type CollectionName = "inventory" | "locations" | "sites" | "captures" | "wines";
+const collectionNames: readonly CollectionName[] = [
+  "inventory",
+  "locations",
+  "sites",
+  "captures",
+  "wines",
+];
 type RefreshResult = "refreshed" | "superseded";
 type CollectionRequest<Resource> = {
   readonly isResource: (value: unknown) => value is Resource;
@@ -46,6 +54,7 @@ type CatalogueController = {
   readonly captures: readonly CaptureResource[];
   readonly completeMutation: (completion: MutationCompletion) => Promise<void>;
   readonly items: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly isLoading: boolean;
   readonly loadCaptures: () => Promise<RefreshResult>;
   readonly loadCatalogue: () => Promise<RefreshResult>;
@@ -60,6 +69,7 @@ type CatalogueController = {
 export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueController {
   const [isLoading, setIsLoading] = useState(true);
   const [items, setItems] = useState<readonly InventoryItem[]>([]);
+  const [wines, setWines] = useState<readonly WineOption[]>([]);
   const [captures, setCaptures] = useState<readonly CaptureResource[]>([]);
   const [locations, setLocations] = useState<readonly LocationItem[]>([]);
   const [sites, setSites] = useState<readonly SiteItem[]>([]);
@@ -67,7 +77,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
   const [issuesByCollection, setIssuesByCollection] = useState<
     Partial<Record<CollectionName, RefreshIssue | undefined>>
   >({});
-  const requestVersions = useRef({ inventory: 0, locations: 0, sites: 0, captures: 0 });
+  const requestVersions = useRef({ inventory: 0, locations: 0, sites: 0, captures: 0, wines: 0 });
   const statusVersion = useRef(0);
   const previousCaptures = useRef<readonly CaptureResource[]>([]);
   const hasPendingCaptures = captures.some((capture) => isPendingCapture(capture));
@@ -118,6 +128,17 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     return "refreshed";
   }, [loadLatestCollection]);
 
+  const loadWines = useCallback(async (): Promise<RefreshResult> => {
+    const data = await loadLatestCollection("wines", {
+      isResource: isWineOption,
+      path: "/api/wines",
+      resourceName: "Wines",
+    });
+    if (data === null) return "superseded";
+    setWines(data);
+    return "refreshed";
+  }, [loadLatestCollection]);
+
   const loadLocations = useCallback(async (): Promise<RefreshResult> => {
     const data = await loadLatestCollection("locations", {
       isResource: isStorageLocationResource,
@@ -155,6 +176,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     async (collections: readonly CollectionName[]): Promise<RefreshResult> => {
       const loaders = {
         inventory: loadInventory,
+        wines: loadWines,
         locations: loadLocations,
         sites: loadSites,
         captures: loadCaptures,
@@ -180,7 +202,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
       }
       return superseded ? "superseded" : "refreshed";
     },
-    [loadCaptures, loadInventory, loadLocations, loadSites],
+    [loadCaptures, loadInventory, loadLocations, loadSites, loadWines],
   );
 
   const loadCatalogue = useCallback(
@@ -317,6 +339,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
 
   return {
     captures,
+    wines,
     completeMutation,
     items,
     isLoading,

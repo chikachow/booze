@@ -15,11 +15,14 @@ import { mcpRoutes } from "./routes/mcp.ts";
 import { siteRoutes } from "./routes/sites.ts";
 import { storageLocationRoutes } from "./routes/storage-locations.ts";
 
+import { wineRoutes } from "./routes/wines.ts";
+
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.route("/", healthRoutes);
 app.route("/api", healthRoutes);
 app.route("/api", bottleRoutes);
+app.route("/api", wineRoutes);
 app.route("/api", bottleCaptureRoutes);
 app.route("/api", criticReviewRoutes);
 app.route("/api", siteRoutes);

@@ -114,6 +114,19 @@ export async function prepareWineVintage({
   });
   const wineVintageId = vintage.wineVintageId;
 
+  if (vintage.isNew && sourceWineVintageId !== undefined && sourceWineVintageId !== wineVintageId) {
+    // Read source measurements in the same batch as the new wine. Explicit
+    // grape edits below retain unchanged rows and give new grapes unknown values.
+    statements.push(
+      database.insert(wineConstituents).select(sql`
+        select site_id, ${wineVintageId}, grape_variety_id, blend_text, percentage,
+          created_at, updated_at
+        from wine_constituents
+        where site_id = ${siteId} and wine_vintage_id = ${sourceWineVintageId}
+      `),
+    );
+  }
+
   if (
     wine.grapeVarieties !== undefined &&
     (existingWineVintageId === undefined || updates.grapeVarieties !== undefined)
@@ -128,32 +141,6 @@ export async function prepareWineVintage({
     });
   }
 
-  if (
-    wine.grapeVarieties === undefined &&
-    vintage.isNew &&
-    sourceWineVintageId !== undefined &&
-    sourceWineVintageId !== wineVintageId
-  ) {
-    const constituents = await database
-      .select()
-      .from(wineConstituents)
-      .where(
-        and(
-          eq(wineConstituents.siteId, siteId),
-          eq(wineConstituents.wineVintageId, sourceWineVintageId),
-        ),
-      );
-    for (const constituent of constituents) {
-      statements.push(
-        database
-          .insert(wineConstituents)
-          .values({ ...constituent, wineVintageId })
-          .onConflictDoNothing({
-            target: [wineConstituents.wineVintageId, wineConstituents.grapeVarietyId],
-          }),
-      );
-    }
-  }
   const [first, ...rest] = statements;
   if (first === undefined) throw new Error("Wine upsert requires a statement");
   return { wineryId, wineVintageId, statements: [first, ...rest] };
@@ -290,7 +277,10 @@ function prepareVintageRow({
     vintageStatus: editsVintage ? values.vintageStatus : undefined,
     vintageLabel: editsVintage ? values.vintageLabel : undefined,
     brandName: whenDefined(updates.brandName, values.brandName),
-    baseName: whenDefined(updates.baseName, values.baseName),
+    baseName:
+      updates.designation === undefined
+        ? whenDefined(updates.baseName, values.baseName)
+        : values.baseName,
     designation: whenDefined(updates.designation, values.designation),
     wineType: whenDefined(updates.wineType, values.wineType),
     wineColor: whenDefined(updates.wineColor, values.wineColor),

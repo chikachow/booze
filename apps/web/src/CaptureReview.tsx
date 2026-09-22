@@ -5,10 +5,13 @@ import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
-import type { CaptureImportAction, CaptureReviewSaveAction } from "../shared/capture-import.ts";
-import type { CaptureReviewCandidate } from "../shared/capture-review.ts";
+import type {
+  CaptureImportAction,
+  CaptureReviewSaveAction,
+  CaptureReviewCandidate,
+} from "../shared/capture-import.ts";
 import { hasWineIdentity } from "../shared/wine-identity.ts";
-import { bottleTitle, type InventoryItem } from "./inventory-model.ts";
+import { wineOptionLabel, type WineOption } from "../shared/wine-options.ts";
 import type { CaptureResource } from "./inventory-model.ts";
 
 const wineFields = [
@@ -54,7 +57,7 @@ type ReviewDraft = {
 
 export function CaptureReview({
   capture,
-  inventoryItems,
+  wines,
   canWrite,
   disabled,
   onDirtyChange,
@@ -63,7 +66,7 @@ export function CaptureReview({
   onSaveReview,
 }: {
   readonly capture: CaptureResource;
-  readonly inventoryItems: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly canWrite: boolean;
   readonly disabled: boolean;
   readonly onDirtyChange: (dirty: boolean) => void;
@@ -87,12 +90,16 @@ export function CaptureReview({
     ...draft.wine,
     grapeVarieties: (draft.wine["grapeVarieties"] ?? "").split(","),
   });
-  const sourceVersion = `${capture.latestRun?.id ?? "manual"}:${capture.reviewRevision}`;
+  const sourceVersion = JSON.stringify([
+    capture.latestRun?.id ?? "manual",
+    capture.reviewRevision,
+    initial,
+  ]);
   const observedSourceVersion = useRef(sourceVersion);
   useEffect(() => {
     if (observedSourceVersion.current === sourceVersion) return;
-    observedSourceVersion.current = sourceVersion;
     if (dirty || capture.reviewRevision < revision) return;
+    observedSourceVersion.current = sourceVersion;
     const refreshed = reviewDraft(capture.reviewCandidate ?? capture.latestRun?.importCandidate);
     setDraft(refreshed);
     setSavedDraft(refreshed);
@@ -266,7 +273,7 @@ export function CaptureReview({
           needsSavedCandidate={needsSavedCandidate}
           identified={identified}
           candidates={wineVintageCandidates(capture.latestRun?.matchResult, revision)}
-          inventoryItems={inventoryItems}
+          wines={wines}
           siteId={capture.siteId}
           reviewRevision={revision}
           onSave={save}
@@ -387,7 +394,7 @@ function CaptureReviewActions({
   needsSavedCandidate,
   identified,
   candidates,
-  inventoryItems,
+  wines,
   siteId,
   reviewRevision,
   onSave,
@@ -400,7 +407,7 @@ function CaptureReviewActions({
   readonly needsSavedCandidate: boolean;
   readonly identified: boolean;
   readonly candidates: readonly { readonly id: string; readonly label: string }[];
-  readonly inventoryItems: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly siteId: string;
   readonly reviewRevision: number;
   readonly onSave: () => Promise<void>;
@@ -418,7 +425,7 @@ function CaptureReviewActions({
       />
       <CaptureWineChoice
         key={reviewRevision}
-        inventoryItems={inventoryItems}
+        wines={wines}
         siteId={siteId}
         disabled={blocked || dirty || needsSavedCandidate}
         onImport={onImport}
@@ -501,35 +508,29 @@ function CaptureReviewField({
 }
 
 function CaptureWineChoice({
-  inventoryItems,
+  wines,
   siteId,
   disabled,
   onImport,
 }: {
-  readonly inventoryItems: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly siteId: string;
   readonly disabled: boolean;
   readonly onImport: (wineVintageId: string) => Promise<void>;
 }): ReactElement {
   const [selected, setSelected] = useState("");
-  const wines = [
-    ...new Map(
-      inventoryItems
-        .filter((item) => item.siteId === siteId)
-        .map((item) => [item.wineVintageId, item]),
-    ).values(),
-  ];
+  const siteWines = wines.filter((wine) => wine.siteId === siteId);
   return (
     <div>
       <Selector
         label="Existing wine in this site"
         value={selected}
-        isDisabled={disabled || wines.length === 0}
+        isDisabled={disabled || siteWines.length === 0}
         description="Choose a wine explicitly. Its shared details will stay unchanged."
         placeholder="Choose an existing wine"
-        options={wines.map((item) => ({
+        options={siteWines.map((item) => ({
           value: item.wineVintageId,
-          label: bottleTitle(item),
+          label: wineOptionLabel(item),
           description: item.wineVintageId,
         }))}
         onChange={(value: string) => {
@@ -538,7 +539,7 @@ function CaptureWineChoice({
       />
       <Button
         label="Use selected wine"
-        isDisabled={disabled || !wines.some((item) => item.wineVintageId === selected)}
+        isDisabled={disabled || !siteWines.some((item) => item.wineVintageId === selected)}
         onClick={() => {
           void onImport(selected);
         }}

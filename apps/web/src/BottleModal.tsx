@@ -1,3 +1,4 @@
+import { wineOptionLabel, type WineOption } from "../shared/wine-options.ts";
 /* oxlint-disable import/max-dependencies -- Bottle editing composes ASTRYX fields, dialogs, and domain adapters. */
 import { Button } from "@astryxdesign/core/Button";
 import { Selector } from "@astryxdesign/core/Selector";
@@ -15,7 +16,7 @@ import { useForm, type Control, type UseFormSetValue, type UseFormWatch } from "
 
 import { formatWineLabel, hasWineIdentity } from "../shared/wine-identity.ts";
 import { parseGrapeVarieties } from "./bottle-metadata.ts";
-import { bottleTitle, parseOptionalYear } from "./inventory-model.ts";
+import { parseOptionalYear } from "./inventory-model.ts";
 import { BottleLocationPicker } from "./BottleLocationPicker.tsx";
 import { AwardFields, CriticReviewFields } from "./BottleMetadataFields.tsx";
 import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
@@ -47,7 +48,7 @@ type BottleModalProps = {
   readonly form: FormState;
   readonly isSaving: boolean;
   readonly item?: InventoryItem;
-  readonly inventoryItems?: readonly InventoryItem[];
+  readonly wines?: readonly WineOption[];
   readonly locations: readonly LocationItem[];
   readonly sites: readonly SiteItem[];
   readonly title: string;
@@ -122,7 +123,7 @@ export function BottleModal({
   form,
   isSaving,
   item,
-  inventoryItems = [],
+  wines = [],
   locations,
   sites,
   title,
@@ -304,7 +305,7 @@ export function BottleModal({
           <fieldset className="form-stack bottle-form-fields" disabled={isBusy}>
             <WineEditControls
               item={item}
-              inventoryItems={inventoryItems}
+              wines={wines}
               values={currentValues}
               wineEditMode={wineEditMode}
               wineVintageId={wineVintageId}
@@ -481,15 +482,16 @@ function NewWineEvidenceHint({ mode }: { readonly mode: WineEditMode }): ReactEl
 function SelectedWineSummary({
   item,
 }: {
-  readonly item: InventoryItem | undefined;
+  readonly item: WineOption | undefined;
 }): ReactElement | null {
   if (item === undefined) return null;
   return (
     <section aria-label="Selected wine details">
-      <h3>{bottleTitle(item)}</h3>
+      <h3>{wineOptionLabel(item)}</h3>
       <p>
-        {[item.wineryName, item.grapeVarieties, item.region].filter(Boolean).join(" · ") ||
-          "Unidentified wine"}
+        {[item.wineryName, item.grapeVarieties.join(", "), item.region]
+          .filter(Boolean)
+          .join(" · ") || "Unidentified wine"}
       </p>
       <p>Existing wine details will be used for this bottle.</p>
     </section>
@@ -498,7 +500,7 @@ function SelectedWineSummary({
 
 function WineEditControls({
   item,
-  inventoryItems,
+  wines,
   values,
   wineEditMode,
   wineVintageId,
@@ -506,7 +508,7 @@ function WineEditControls({
   setWineVintageId,
 }: {
   readonly item: InventoryItem | undefined;
-  readonly inventoryItems: readonly InventoryItem[];
+  readonly wines: readonly WineOption[];
   readonly values: FormState;
   readonly wineEditMode: WineEditMode;
   readonly wineVintageId: string;
@@ -518,7 +520,7 @@ function WineEditControls({
   const needsIdentityConfirmation = wineEditable && !hasWineIdentity(wineFacts);
   const selectableWines = [
     ...new Map(
-      inventoryItems
+      wines
         .filter(
           (candidate) =>
             candidate.siteId === values.siteId && candidate.wineVintageId !== item?.wineVintageId,
@@ -559,7 +561,7 @@ function WineEditControls({
             { value: "", label: "Create a separate wine record" },
             ...selectableWines.map((candidate) => ({
               value: candidate.wineVintageId,
-              label: bottleTitle(candidate),
+              label: wineOptionLabel(candidate),
               description: candidate.wineVintageId,
             })),
           ]}

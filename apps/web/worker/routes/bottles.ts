@@ -587,8 +587,8 @@ function wineEditGuardFailed(error: unknown): boolean {
 }
 
 function unchangedWineIdentity(wine: Awaited<ReturnType<typeof wineInputForVintage>>) {
-  // A composed title depends on these facts as a group. Reject a stale title
-  // instead of saving a mixture of two editors' identity corrections.
+  // Titles and cloned composition depend on these facts as a group. Reject
+  // mixed identity snapshots while allowing newer constituent measurements.
   return sql`winery_id is ${wine.wineryId} and brand_name is ${wine.brandName}
     and designation is ${wine.designation} and appellation is ${wine.appellation} and region is ${wine.region}
     and display_name is ${wine.displayName}
@@ -736,8 +736,9 @@ async function prepareEditedWine({
           expectedCount:
             payload.wineEditScope === "shared" ? payload.expectedAffectedBottleCount : undefined,
           expectedIdentity:
-            payload.wineEditScope === "shared" &&
-            (changesWineIdentity(payload.wine) || payload.wine?.region !== undefined)
+            payload.wineEditScope === "bottle" ||
+            changesWineIdentity(payload.wine) ||
+            payload.wine?.region !== undefined
               ? previous
               : undefined,
         }),
