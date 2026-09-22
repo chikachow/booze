@@ -18,6 +18,25 @@ const cli = fileURLToPath(new URL("../node_modules/wrangler/bin/wrangler.js", im
 
 type MigrationFiles = Readonly<Record<string, string>>;
 
+function localD1(config: string, state: string, args: readonly string[]) {
+  const result = spawnSync(
+    "node",
+    [cli, "d1", ...args, "--local", "--persist-to", state, "--config", config],
+    {
+      cwd: path.dirname(config),
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { ...env, CI: "true", WRANGLER_SEND_METRICS: "false", WRANGLER_WRITE_LOGS: "false" },
+    },
+  );
+  assert.equal(
+    result.status,
+    0,
+    `${config}: ${result.error ?? ""}\n${result.stdout}\n${result.stderr}`,
+  );
+  return result.stdout;
+}
+
 function preserveHistory(base: MigrationFiles, candidate: MigrationFiles) {
   for (const [name, sql] of Object.entries(base)) {
     assert.equal(
@@ -72,38 +91,8 @@ function verifyUpgrade(
         }),
       );
     }
-    const run = (layout: string, state: string, args: readonly string[]) => {
-      const result = spawnSync(
-        "node",
-        [
-          cli,
-          "d1",
-          ...args,
-          "--local",
-          "--persist-to",
-          path.join(directory, state),
-          "--config",
-          path.join(directory, layout, "wrangler.json"),
-        ],
-        {
-          cwd: path.join(directory, layout),
-          encoding: "utf8",
-          timeout: 60_000,
-          env: {
-            ...env,
-            CI: "true",
-            WRANGLER_SEND_METRICS: "false",
-            WRANGLER_WRITE_LOGS: "false",
-          },
-        },
-      );
-      assert.equal(
-        result.status,
-        0,
-        `${layout}/${state}: ${result.error ?? ""}\n${result.stdout}\n${result.stderr}`,
-      );
-      return result.stdout;
-    };
+    const run = (layout: string, state: string, args: readonly string[]) =>
+      localD1(path.join(directory, layout, "wrangler.json"), path.join(directory, state), args);
     const query = (layout: string, state: string, sql: string) => {
       return z
         .array(
@@ -218,6 +207,36 @@ void it("upgrades the accepted target history on populated local D1 without repl
       SELECT id, name FROM sites ORDER BY id;
       SELECT site_id, user_id, role FROM site_memberships ORDER BY site_id, user_id;`,
   });
+});
+
+void it("the application Wrangler config applies every checked-in SQL migration", () => {
+  const state = mkdtempSync(path.join(tmpdir(), "booze-d1-config-"));
+  const config = fileURLToPath(new URL("../wrangler.jsonc", import.meta.url));
+  try {
+    localD1(config, state, ["migrations", "apply", "DB"]);
+    const result = z
+      .tuple([z.object({ results: z.array(z.object({ name: z.string() })) })])
+      .parse(
+        JSON.parse(
+          localD1(config, state, [
+            "execute",
+            "DB",
+            "--command",
+            "SELECT name FROM d1_migrations",
+            "--json",
+          ]),
+        ),
+      );
+    assert.deepEqual(
+      result[0].results.map((row) => row.name).toSorted(),
+      readdirSync(path.join(root, migrationPath), { recursive: true, encoding: "utf8" })
+        .filter((name) => name.endsWith(".sql"))
+        .toSorted(),
+      "Application migration discovery differs from the SQL history tested in CI",
+    );
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+  }
 });
 
 void it("rejects removed, renamed, and edited accepted migrations", () => {
