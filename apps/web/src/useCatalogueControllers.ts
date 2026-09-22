@@ -303,7 +303,7 @@ export function useCaptureController({
       }
       const message = captureSubmitErrorMessage(responsePayload);
       if (message !== null) {
-        const statusMessage = `Capture saved but not submitted: ${message}`;
+        const statusMessage = `Capture saved: ${message}`;
         await completeMutation({ refresh: "catalogue", successMessage: statusMessage });
         return { kind: "saved_with_error", message: statusMessage };
       }

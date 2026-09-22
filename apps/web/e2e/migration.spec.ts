@@ -531,7 +531,7 @@ test("treats a committed delete as successful when catalogue refresh fails", asy
   await expect(bottleDialog).not.toBeVisible();
   await expect(
     page.getByRole("alert", {
-      name: "Bottle deleted. Latest data could not be refreshed.",
+      name: "Inventory could not be refreshed. Try again.",
     }),
   ).toBeVisible();
   expect(scenario.mutationCount).toBe(1);
@@ -569,7 +569,7 @@ test("clears submitted capture files without duplicating a committed capture", a
   await expect(page.getByText("0 of 4 selected.", { exact: false })).toBeVisible();
   await expect(
     page.getByRole("alert", {
-      name: "Capture submitted. Extraction will run in the background. Latest data could not be refreshed.",
+      name: "Inventory could not be refreshed. Try again.",
     }),
   ).toBeVisible();
   expect(scenario.mutationCount).toBe(1);

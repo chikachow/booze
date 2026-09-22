@@ -42,9 +42,21 @@ The same review also exposed a pre-existing race when creating a winery without 
 
 Each reproduced failure has a regression test. The complete-window REST contract is a deliberate compatibility change; callers that previously patched one endpoint must include the other endpoint or explicit `null`. It does not add general optimistic locking: concurrent changes to the same fact still use the last committed value.
 
+## Adversarial follow-up on 2026-09-22
+
+The branch was rebased onto `origin/main` at `316fee9`. Independent reviewers reproduced and challenged three remaining failures before implementation. The agreed product contract preserves viewer roles when reusing a unique shared site, keeps saved photos recoverable after definite launch failure, and retains independent refresh warnings.
+
+- **Fixed: concurrent site creation produced duplicates.** Accessible-name lookup, conditional site/membership insertion, and result lookup now share one D1 transaction. Tests cover simultaneous requests, viewer/editor reuse, ambiguity, rollback, unrelated users, and rename/recreate. Eight concurrent HTTP requests against native local D1 returned one ID.
+- **Fixed: a separate Workflow-owner write could strand saved captures.** The initial capture insert now includes the owner. Launch failures retain images and expose a saved-but-startup-unconfirmed response; guarded failure updates preserve any processing that already started. HTTP tests exercise retained image access, retry, deletion, and lost launch acknowledgements.
+- **Fixed: unrelated refresh completion could erase a failed section's recovery action.** Warnings are owned by their collection and clear only after a current success for that collection. Status generations separately prevent older operations from replacing newer feedback. Deferred-response tests cover partial overlap, selected retries, background recovery, and multiple failures.
+
+The concurrent maintenance follow-up also restored completed manual-import replay at the HTTP boundary: authorization precedes receipt lookup, while stale candidate/status validation cannot reject an already committed import. This does not recover a process terminated before the import transaction.
+
+A final cross-check also corrected the browser's saved-capture prefix: it no longer claims submission did not occur when startup acknowledgement is uncertain. A second read-only review challenged aggregate completion after a newer collection request had already settled; the regression passes, and no additional scoped defect was validated. Full verification is recorded in the audit.
+
 ## Preservation and remaining limits
 
-The rebased build initially exceeded the existing total-JavaScript gzip budget. Native capture disclosures and grouping shared UI modules that already load at startup brought it below the unchanged ceiling. After the follow-up fixes, total JavaScript is 219,060 bytes gzipped, compared with 221,286 before optimization; the initial entry plus preloads is 151,138 bytes, compared with 152,467, measured with Node 24. Lazy editor and capture modules remain lazy. Both light and dark browser runs verify disclosure keyboard behavior, focus, and accessibility.
+The rebased build initially exceeded the existing total-JavaScript gzip budget. Native capture disclosures and grouping shared UI modules that already load at startup brought it below the unchanged ceiling. After the follow-up fixes, total JavaScript is 219,609 bytes gzipped, compared with 221,286 before optimization; the initial entry plus preloads is 151,240 bytes, compared with 152,467, measured with Node 24. Lazy editor and capture modules remain lazy. Both light and dark browser runs verify disclosure keyboard behavior, focus, and accessibility.
 
 The review retained the atomic catalogue and import boundaries, unique R2 upload keys, live-reference deletion guards, and unchanged migration lineage. A lost import acknowledgement was tested separately: replay returned the stored receipt and retained the original bottle count.
 

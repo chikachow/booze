@@ -2,7 +2,7 @@
 
 Audit date: 2026-09-08. Starting commit: `5e3d9c6`. Scope: product intent, browser flows, HTTP and MCP contracts, authorization, stored-data integrity, capture processing, deployment, dependencies, and verification.
 
-The changes were subsequently rebased onto `main` at `bb63ad8` and subjected to a [comprehensive self review](self-review.md). Current upstream dependencies and UI-library adaptations were retained.
+The changes were subsequently rebased onto `origin/main` at `316fee9` on 2026-09-22 and subjected to a [comprehensive self review](self-review.md). Current upstream dependencies and UI-library adaptations were retained.
 
 ## Assessment
 
@@ -29,14 +29,14 @@ The main weaknesses were state transitions and data ownership: omitted values we
 | Medium   | Bottle edits overwrote hidden name fields and ignored the edited producer address.                                         | The form emits changed fields, retains hidden identity, and supports explicit numeric clears.                                                             | `src/bottle-payload.test.ts`                                                  |
 | Medium   | Maximum-size photos were prepared simultaneously for multiple models, increasing memory pressure.                          | Upload bytes are bounded, inference uses bounded resized copies, and model steps run sequentially while originals remain stored.                          | Capture upload and extractor regression tests                                 |
 | Medium   | Missing browser authentication configuration or a failed build could be discovered after migrations.                       | Deployment validates the browser key and builds before applying migrations.                                                                               | `.github/workflows/deploy.yml`                                                |
-| Medium   | The starting checkout's runtime dependency audit reported 14 advisories across Hono, fast-uri, ip-address, and qs.         | Retained upstream Hono 4.13.5 and updated the three transitive dependencies within their existing major versions; production audit reports no advisories. | `pnpm audit --prod --json`                                                    |
+| Medium   | The starting checkout's runtime dependency audit reported 14 advisories across Hono, fast-uri, ip-address, and qs.         | Retained upstream Hono 4.13.8 and updated the three transitive dependencies within their existing major versions; production audit reports no advisories. | `pnpm audit --prod --json`                                                    |
 | Low      | Stored location counts included consumed bottles; empty inventory had no first-site action and search omitted the vintage. | Counts reflect available bottles, first setup has a direct action, and vintage search is included.                                                        | Location, inventory, and catalogue tests                                      |
 
 The SQLite test adapter also now preserves positional columns in joined queries. Its previous object-to-array conversion silently dropped duplicate column names, so it was an unreliable oracle for full inventory reads.
 
 Additional fixes cover several boundary cases:
 
-- Site creation no longer derives identity from a truncated name. It reuses an exact authorized match, rejects ambiguity, and otherwise generates a new ID. Renaming a site does not cause a later creation to return the wrong site.
+- Site creation no longer derives identity from a truncated name. It resolves the exact authorized match and creates the site and owner membership in one transaction, so concurrent same-user/name requests converge. Existing shared-site roles are preserved, ambiguity requires an ID, and unmatched names receive a new ID. Renaming a site does not cause a later creation to return the wrong site.
 - Site deletion rejects active capture processing, with the guard inside the transaction. Capture retry reservation and workflow ownership checks prevent competing runs from consuming the same work.
 - Capture lists hydrate images and latest runs in three queries regardless of list length. Image authorization uses one scoped query, and the review screen links to the retained original photo.
 - Capture matching preserves non-Latin text and sends empty normalized identities for review. Conflicting bottles from a historical partial import block completion without overwriting those bottles or issuing a misleading receipt.
@@ -44,6 +44,8 @@ Additional fixes cover several boundary cases:
 - Reassigning a bottle to an existing vintage retains that vintage's blend. Drinking windows are edited as complete pairs, and additions preserve an existing partial window instead of combining endpoints from different records.
 - Award identities, including unknown years, resolve inside the transaction. Review mutations own identity resolution and proven-rollback retries; MCP audit records commit with the corresponding mutation. New wineries with an unknown region use a full hash of their canonical identity, while existing IDs remain valid.
 - Automatic and reviewed capture imports share one commit path. The transaction verifies capture ownership and the latest run before writing inventory or a receipt. Current Workflow owners can restart unfinished processing, cached contexts from older deployments remain usable, and launch errors cannot downgrade processing that already started.
+
+The adversarial follow-up also persists the initial Workflow owner with the capture, removing the separate-write failure that stranded saved photos in a queued state. Failed launches expose the saved result and retain Retry/Delete; lost acknowledgements cannot downgrade started processing. Completed manual HTTP imports replay their stored receipt after authorization. Refresh warnings now belong to individual catalogue sections and survive unrelated successes, with separate ordering for operation feedback.
 
 The authorization review examined browser session and MCP OAuth subject handling, site membership and role checks, image access, and development-auth isolation. No production authorization bypass was validated. Production Clerk configuration still requires hosted verification.
 
@@ -75,11 +77,11 @@ Member invitations, movement history, semantic search, and additional enrichment
 
 The initial checkout passed formatting, lint, TypeScript, 56 Worker/script tests, 78 React tests, 20 Chrome browser tests, and the production build. The regressions above demonstrate gaps in that baseline.
 
-Final local verification passed:
+Final local verification on 2026-09-22 passed:
 
 - `pnpm install --frozen-lockfile`.
-- `pnpm check`: formatting, type-aware lint, both workspace TypeScript checks, 140 Worker/script tests, 106 React tests, generated-theme validation, and 22 Chrome tests across light and dark modes. Browser coverage includes keyboard recovery, native capture disclosures, accessibility, reduced motion, 320px reflow, and large catalogues.
-- `pnpm --filter @chikachow/booze-web build`, including unchanged client bundle budgets. The entry JavaScript is 86,526 bytes gzipped; total JavaScript is 219,060 bytes gzipped. The entry plus its initial preloads totals 151,138 bytes gzipped. The existing initial-JavaScript gate counts only the entry file, so the preload-inclusive measurement is reported separately.
+- `pnpm check`: formatting, type-aware lint, both workspace TypeScript checks, 153 Worker/script tests, 112 React tests, generated-theme validation, and 22 Chrome tests across light and dark modes. Browser coverage includes keyboard recovery, native capture disclosures, accessibility, reduced motion, 320px reflow, and large catalogues.
+- `pnpm --filter @chikachow/booze-web build`, including unchanged client bundle budgets. The entry JavaScript is 86,629 bytes gzipped; total JavaScript is 219,609 bytes gzipped. The entry plus its initial preloads totals 151,240 bytes gzipped. The existing initial-JavaScript gate counts only the entry file, so the preload-inclusive measurement is reported separately.
 - `pnpm audit --prod --json`: zero reported advisories across 126 production dependencies at the time of the audit.
 - `git diff --check`, and no changes under `packages/db`, including its schema and migrations.
 
@@ -88,6 +90,8 @@ Live local-browser verification used a fresh migrated development database: crea
 Production state, remote migration ledgers, hosted authentication, real model calls, and backup restoration are outside this audit's validation boundary.
 
 Concurrent-write regressions use a transactional SQLite adapter and injected interleavings. A running local Worker with native D1 also verified existing-blend and partial-window preservation, complete-window validation, and concurrent awards, review sources, critic reviews, and wineries with unknown regions. The native runtime exposed extended UNIQUE and NOT NULL error suffixes; regression tests now cover those exact formats without broadening retries to unknown failures.
+
+The 2026-09-22 native D1 follow-up sent eight simultaneous site-creation requests for one user/name: every response returned the same site ID and the list contained one site. Renaming preserved its ID, and creating the old name then returned a new ID. The temporary sites and development user were deleted.
 
 A temporary local Worker probe invoked actual `DB.batch` calls: a stale capture guard rolled back preceding fixture inserts, while a valid guard committed a bottle and receipt without changing the existing run's extractor, prompt, or schema metadata. Workflow orchestration tests separately exercise same-owner restarts and cached contexts from older deployments. These checks do not establish hosted Workflow restart behavior. All temporary probe code, fixture records, and development servers were removed.
 
