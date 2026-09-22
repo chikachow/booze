@@ -56,10 +56,15 @@ function verifyUpgrade(
     seed = "",
     retainedRows = "",
     expectedFailure,
+    afterUpgradeChecks = [],
   }: {
     readonly seed?: string;
     readonly retainedRows?: string;
     readonly expectedFailure?: RegExp;
+    readonly afterUpgradeChecks?: readonly {
+      sql: string;
+      expected: readonly (readonly Record<string, string | number | null>[])[];
+    }[];
   } = {},
 ) {
   preserveHistory(base, candidate);
@@ -126,6 +131,8 @@ function verifyUpgrade(
       return;
     }
     apply("candidate", "existing");
+    for (const check of afterUpgradeChecks)
+      assert.deepEqual(query("candidate", "existing", check.sql), check.expected);
     const [afterLedger = []] = query("candidate", "existing", ledger);
     assert.deepEqual(afterLedger.slice(0, beforeLedger.length), beforeLedger);
     assert.deepEqual(
@@ -202,10 +209,35 @@ void it("upgrades the accepted target history on populated local D1 without repl
   verifyUpgrade(base, candidate, {
     seed: `INSERT INTO users (id, clerk_user_id) VALUES ('migration-user', 'migration-clerk');
       INSERT INTO sites (id, name) VALUES ('migration-site', 'Migration fixture');
-      INSERT INTO site_memberships (site_id, user_id, role) VALUES ('migration-site', 'migration-user', 'owner');`,
+      INSERT INTO site_memberships (site_id, user_id, role) VALUES ('migration-site', 'migration-user', 'owner');
+      INSERT INTO wineries (id, site_id, name) VALUES ('producer', 'migration-site', 'RIKARD');
+      INSERT INTO wine_vintages (id, site_id, winery_id, base_name, display_name, vintage_year, vintage_label, notes)
+        VALUES ('known', 'migration-site', 'producer', 'Shiraz', 'RIKARD Shiraz', 2022, '2022', 'Keep facts'),
+               ('yearless', 'migration-site', 'producer', 'Blend', 'RIKARD Blend', NULL, 'NV', 'Year was not read');
+      INSERT INTO bottles (id, site_id, wine_vintage_id) VALUES ('bottle-known', 'migration-site', 'known'), ('bottle-yearless', 'migration-site', 'yearless');
+      INSERT INTO grape_varieties (id, name) VALUES ('shiraz', 'Shiraz');
+      INSERT INTO wine_constituents (site_id, wine_vintage_id, grape_variety_id, percentage, blend_text)
+        VALUES ('migration-site', 'known', 'shiraz', 100, 'Original blend');
+      INSERT INTO label_extractions (id, bottle_id, wine_vintage_id, extracted_fields_json)
+        VALUES ('evidence', 'bottle-known', 'known', '{"label":"RIKARD 2022 SHIRAZ"}');`,
     retainedRows: `SELECT id, clerk_user_id FROM users ORDER BY id;
       SELECT id, name FROM sites ORDER BY id;
-      SELECT site_id, user_id, role FROM site_memberships ORDER BY site_id, user_id;`,
+      SELECT site_id, user_id, role FROM site_memberships ORDER BY site_id, user_id;
+      SELECT id, site_id, winery_id, base_name, display_name, vintage_year, notes FROM wine_vintages ORDER BY id;
+      SELECT * FROM bottles ORDER BY id;
+      SELECT * FROM wine_constituents ORDER BY wine_vintage_id;
+      SELECT * FROM label_extractions ORDER BY id;`,
+    afterUpgradeChecks: [
+      {
+        sql: "SELECT id, vintage_status, vintage_label FROM wine_vintages ORDER BY id",
+        expected: [
+          [
+            { id: "known", vintage_status: "year", vintage_label: "2022" },
+            { id: "yearless", vintage_status: "unknown", vintage_label: "Unknown" },
+          ],
+        ],
+      },
+    ],
   });
 });
 

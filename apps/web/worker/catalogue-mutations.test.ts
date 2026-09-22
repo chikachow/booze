@@ -1,6 +1,8 @@
+// oxlint-disable import/max-dependencies -- Integration cases combine database, route, authentication, and response-validation boundaries.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 
 import { createD1Client } from "@chikachow/booze-db";
 
@@ -21,6 +23,127 @@ const wine = {
 };
 
 await describe("catalogue mutation preservation", async () => {
+  await it("creates distinct unnamed wines without inventing a designation or NV", async () => {
+    const db = setup();
+    const first = await create(db, {
+      wine: {
+        wineryName: "RIKARD Wines",
+        brandName: "RIKARD",
+        grapeVarieties: ["Shiraz"],
+        vintageYear: 2022,
+      },
+    });
+    const second = await create(db, {
+      wine: {
+        wineryName: "RIKARD Wines",
+        brandName: "RIKARD",
+        grapeVarieties: ["Shiraz"],
+        vintageYear: 2022,
+      },
+    });
+    assert.notEqual(vintageIdForBottle(db, first), vintageIdForBottle(db, second));
+    const unknown = await create(db, {
+      wine: { wineryName: "RIKARD", grapeVarieties: ["Shiraz"] },
+    });
+    const nv = await create(db, {
+      wine: { wineryName: "RIKARD", grapeVarieties: ["Shiraz"], vintageStatus: "non_vintage" },
+    });
+    const rows = db
+      .prepare(
+        "SELECT id, designation, display_name, vintage_status, vintage_label FROM wine_vintages",
+      )
+      .all();
+    assert.ok(rows.every((row) => row["designation"] === null));
+    assert.equal(
+      rows.find((row) => row["id"] === vintageIdForBottle(db, first))?.["display_name"],
+      "RIKARD Shiraz",
+    );
+    assert.equal(
+      rows.find((row) => row["id"] === vintageIdForBottle(db, unknown))?.["vintage_label"],
+      "Unknown",
+    );
+    assert.equal(
+      rows.find((row) => row["id"] === vintageIdForBottle(db, nv))?.["vintage_label"],
+      "NV",
+    );
+  });
+
+  await it("requires explicit unidentified saving and returns stock without a fictional producer", async () => {
+    const db = setup();
+    const denied = await request(db, "POST", "/bottles", { siteId, wine: { wineryName: "" } });
+    assert.equal(denied.status, 400);
+    const id = await create(db, { wine: { wineryName: "" }, allowUnidentified: true });
+    assert.equal(count(db, "wineries"), 0);
+    const response = await bottleRoutes.request(
+      "http://localhost/bottles",
+      { headers: { "x-dev-user": "tester" } },
+      { DB: asD1(db) },
+    );
+    const body = z
+      .object({
+        data: z.array(
+          z.object({
+            id: z.string(),
+            wineryId: z.string().nullable(),
+            displayName: z.string(),
+            wineBottleCount: z.number(),
+          }),
+        ),
+      })
+      .parse(await response.json());
+    assert.equal(response.status, 200);
+    assert.equal(body.data[0]?.id, id);
+    assert.equal(body.data[0]?.wineryId, null);
+    assert.equal(body.data[0]?.displayName, "Unidentified wine");
+    assert.equal(body.data[0]?.wineBottleCount, 1);
+  });
+
+  await it("requires explicit scope and keeps shared correction on the same wine ID", async () => {
+    const db = setup();
+    const id = await create(db, { wine, quantity: 2 });
+    const original = vintageIdForBottle(db, id);
+    const denied = await request(db, "PATCH", `/bottles/${id}`, { wine: { vintageYear: 2021 } });
+    assert.equal(denied.status, 400);
+    const changed = await editRequest(db, "PATCH", `/bottles/${id}`, {
+      wine: { vintageYear: 2021, designation: "Corrected" },
+    });
+    assert.equal(changed.status, 200);
+    assert.equal(vintageIdForBottle(db, id), original);
+    assert.equal(count(db, "wine_vintages"), 1);
+    assert.equal(
+      db.prepare("SELECT count(*) AS count FROM bottles WHERE wine_vintage_id = ?").get(original)?.[
+        "count"
+      ],
+      2,
+    );
+    assert.equal(
+      db.prepare("SELECT vintage_year FROM wine_vintages WHERE id = ?").get(original)?.[
+        "vintage_year"
+      ],
+      2021,
+    );
+  });
+
+  await it("rejects stale shared bottle counts atomically", async () => {
+    const db = setup();
+    const id = await create(db, { wine });
+    const wineId = vintageIdForBottle(db, id);
+    const response = await editRequest(
+      db,
+      "PATCH",
+      `/bottles/${id}`,
+      { wine: { notes: "Must not save" }, bottle: { notes: "Must not save" } },
+      () => {
+        db.prepare(
+          "INSERT INTO bottles(id, site_id, wine_vintage_id) VALUES ('concurrent', ?, ?)",
+        ).run(siteId, wineId);
+      },
+    );
+    assert.equal(response.status, 409);
+    assert.equal(db.prepare("SELECT notes FROM wine_vintages").get()?.["notes"], null);
+    assert.equal(db.prepare("SELECT notes FROM bottles WHERE id = ?").get(id)?.["notes"], null);
+  });
+
   await it("resolves site names by current authorised names and preserves legacy IDs", async () => {
     const db = setup();
     const database = createD1Client(asD1(db));
@@ -43,7 +166,7 @@ await describe("catalogue mutation preservation", async () => {
 
   await it("preserves existing wine facts and constituent details when adding more bottles", async () => {
     const db = setup();
-    await create(db, {
+    const first = await create(db, {
       wine: {
         ...wine,
         notes: "Cellar notes",
@@ -55,9 +178,9 @@ await describe("catalogue mutation preservation", async () => {
     });
     db.exec("UPDATE wine_constituents SET percentage = 100, blend_text = 'Estate grown'");
     await create(db, {
-      wine: { ...wine, notes: "Extracted competing notes", grapeVarieties: ["Shiraz", "Syrah!"] },
+      wineVintageId: vintageIdForBottle(db, first),
     });
-    await create(db, { wine });
+    await create(db, { wineVintageId: vintageIdForBottle(db, first) });
     const stored = db
       .prepare("SELECT notes, drink_from_year, drink_to_year, alcohol_percent FROM wine_vintages")
       .get();
@@ -67,7 +190,7 @@ await describe("catalogue mutation preservation", async () => {
     );
     assert.equal(count(db, "bottles"), 3);
     assert.equal(count(db, "wine_vintages"), 1);
-    assert.equal(count(db, "wine_constituents"), 2);
+    assert.equal(count(db, "wine_constituents"), 1);
     assert.equal(
       db
         .prepare("SELECT percentage FROM wine_constituents WHERE blend_text = 'Estate grown'")
@@ -90,7 +213,7 @@ await describe("catalogue mutation preservation", async () => {
     const vintageId = db.prepare("SELECT wine_vintage_id FROM bottles WHERE id = ?").get(id)?.[
       "wine_vintage_id"
     ];
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
       wine: { addressQualification: "New address", alcoholPercent: null },
     });
     assert.equal(response.status, 200);
@@ -112,7 +235,7 @@ await describe("catalogue mutation preservation", async () => {
       },
     );
     assert.equal(count(db, "wine_constituents"), 1);
-    const clear = await request(db, "PATCH", `/bottles/${id}`, {
+    const clear = await editRequest(db, "PATCH", `/bottles/${id}`, {
       wine: { grapeVarieties: [], notes: "" },
     });
     assert.equal(clear.status, 200);
@@ -120,28 +243,18 @@ await describe("catalogue mutation preservation", async () => {
     assert.equal(db.prepare("SELECT notes FROM wine_vintages").get()?.["notes"], null);
   });
 
-  await it("preserves an existing drinking window as a pair when adding bottles", async () => {
+  await it("never changes an existing drinking window when explicitly adding bottles", async () => {
     const db = setup();
-    await create(db, { wine: { ...wine, drinkFromYear: 2030 } });
-    await create(db, { wine: { ...wine, drinkFromYear: 2020, drinkToYear: 2025 } });
+    const first = await create(db, { wine: { ...wine, drinkFromYear: 2030 } });
+    await create(db, {
+      wineVintageId: vintageIdForBottle(db, first),
+      wine: { ...wine, drinkFromYear: 2020, drinkToYear: 2025 },
+    });
     assert.deepEqual(
       { ...db.prepare("SELECT drink_from_year, drink_to_year FROM wine_vintages").get() },
       { drink_from_year: 2030, drink_to_year: null },
     );
-    const other = await create(db, { wine: { ...wine, vintageYear: 2021 } });
-    await create(db, {
-      wine: { ...wine, vintageYear: 2021, drinkFromYear: 2025, drinkToYear: 2035 },
-    });
-    assert.deepEqual(
-      {
-        ...db
-          .prepare(
-            "SELECT v.drink_from_year, v.drink_to_year FROM wine_vintages v JOIN bottles b ON b.wine_vintage_id = v.id WHERE b.id = ?",
-          )
-          .get(other),
-      },
-      { drink_from_year: 2025, drink_to_year: 2035 },
-    );
+    assert.equal(count(db, "wine_vintages"), 1);
   });
 
   await it("requires a complete drinking-window edit and leaves rejected mutations unchanged", async () => {
@@ -153,7 +266,7 @@ await describe("catalogue mutation preservation", async () => {
       { drinkFromYear: null },
       { drinkFromYear: 2035, drinkToYear: 2030 },
     ]) {
-      const response = await request(db, "PATCH", `/bottles/${id}`, {
+      const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
         status: "consumed",
         wine: window,
       });
@@ -163,7 +276,7 @@ await describe("catalogue mutation preservation", async () => {
         "in_stock",
       );
     }
-    const response = await request(
+    const response = await editRequest(
       db,
       "PATCH",
       `/bottles/${id}`,
@@ -184,11 +297,14 @@ await describe("catalogue mutation preservation", async () => {
   await it("preserves the existing target blend when a bottle changes vintage", async () => {
     const db = setup();
     const id = await create(db, { wine: { ...wine, grapeVarieties: ["Shiraz"] } });
-    await create(db, { wine: { ...wine, vintageYear: 2021, grapeVarieties: ["Cabernet"] } });
+    const target = await create(db, {
+      wine: { ...wine, vintageYear: 2021, grapeVarieties: ["Cabernet"] },
+    });
     db.exec("UPDATE wine_constituents SET percentage = 100, blend_text = 'Original blend'");
     const before = db.prepare("SELECT * FROM wine_constituents ORDER BY wine_vintage_id").all();
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
-      wine: { vintageYear: 2021 },
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
+      wineEditScope: "bottle",
+      wineVintageId: vintageIdForBottle(db, target),
     });
     assert.equal(response.status, 200);
     assert.deepEqual(
@@ -208,7 +324,7 @@ await describe("catalogue mutation preservation", async () => {
     db.exec(
       "UPDATE wine_constituents SET percentage = 80, blend_text = 'Old vines' WHERE grape_variety_id = (SELECT id FROM grape_varieties WHERE name = 'Shiraz')",
     );
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
       wine: { grapeVarieties: ["Shiraz", "Cabernet"] },
     });
     assert.equal(response.status, 200);
@@ -232,10 +348,13 @@ await describe("catalogue mutation preservation", async () => {
     db.exec(
       "UPDATE wine_vintages SET designation = NULL; UPDATE wine_constituents SET percentage = 100, blend_text = 'Old vines'",
     );
-    const edit = await request(db, "PATCH", `/bottles/${id}`, { wine: { notes: "Updated" } });
+    const edit = await editRequest(db, "PATCH", `/bottles/${id}`, { wine: { notes: "Updated" } });
     assert.equal(edit.status, 200);
     assert.equal(db.prepare("SELECT designation FROM wine_vintages").get()?.["designation"], null);
-    const move = await request(db, "PATCH", `/bottles/${id}`, { wine: { vintageYear: 2021 } });
+    const move = await editRequest(db, "PATCH", `/bottles/${id}`, {
+      wineEditScope: "bottle",
+      wine: { vintageYear: 2021 },
+    });
     assert.equal(move.status, 200);
     assert.equal(count(db, "wine_vintages"), 2);
     assert.equal(count(db, "wine_constituents"), 2);
@@ -264,10 +383,10 @@ await describe("catalogue mutation preservation", async () => {
         .prepare("SELECT wine_vintage_id FROM bottles WHERE id = ?")
         .get(other)?.["wine_vintage_id"];
       assert.ok(typeof otherVintageId === "string");
-      const response = await request(db, "PATCH", `/bottles/${id}`, patch, () => {
+      const response = await editRequest(db, "PATCH", `/bottles/${id}`, patch, () => {
         db.prepare("UPDATE bottles SET wine_vintage_id = ? WHERE id = ?").run(otherVintageId, id);
       });
-      assert.equal(response.status, 200);
+      assert.equal(response.status, "wine" in patch ? 409 : 200);
       assert.equal(
         db.prepare("SELECT wine_vintage_id FROM bottles WHERE id = ?").get(id)?.["wine_vintage_id"],
         otherVintageId,
@@ -276,32 +395,35 @@ await describe("catalogue mutation preservation", async () => {
     }
   });
 
-  await it("preserves reviews and awards when more bottles are entered with empty evidence", async () => {
+  await it("preserves reviews and awards when explicitly adding stock to an existing wine", async () => {
     const db = setup();
-    await create(db, {
+    const first = await create(db, {
       wine,
       criticReviews: [{ reviewSourceName: "Critic", ratingText: "95 points" }],
       awards: [{ awardName: "Show", awardLevel: "Gold" }],
     });
-    await create(db, { wine, criticReviews: [], awards: [] });
-    await create(db, {
-      wine,
-      criticReviews: [{ reviewSourceName: "Critic", ratingText: "90 points" }],
-      awards: [{ awardName: "Show", awardLevel: "Gold", notes: "Changed" }],
-    });
+    await create(db, { wineVintageId: vintageIdForBottle(db, first) });
     assert.equal(count(db, "critic_reviews"), 1);
     assert.equal(count(db, "wine_awards"), 1);
+    assert.equal(count(db, "wine_vintages"), 1);
+    assert.equal(count(db, "bottles"), 2);
     assert.equal(
       db.prepare("SELECT rating_text FROM critic_reviews").get()?.["rating_text"],
       "95 points",
     );
-    assert.equal(db.prepare("SELECT notes FROM wine_awards").get()?.["notes"], null);
+    const rejected = await request(db, "POST", "/bottles", {
+      siteId,
+      wineVintageId: vintageIdForBottle(db, first),
+      awards: [],
+    });
+    assert.equal(rejected.status, 400);
+    assert.equal(count(db, "wine_awards"), 1);
   });
 
   await it("validates the destination before changing bottle or wine facts", async () => {
     const db = setup();
     const id = await create(db, { wine: { ...wine, notes: "Keep" } });
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
       status: "consumed",
       wine: { notes: "Changed" },
       storageLocationId: "missing-location",
@@ -348,7 +470,7 @@ await describe("catalogue mutation preservation", async () => {
     db.exec(
       "CREATE TRIGGER fail_move BEFORE INSERT ON bottle_locations WHEN NEW.storage_location_id = 'location-2' BEGIN SELECT RAISE(ABORT, 'injected move failure'); END",
     );
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
       storageLocationId: "location-2",
       wine: { notes: "Should roll back" },
     });
@@ -369,7 +491,7 @@ await describe("catalogue mutation preservation", async () => {
     const id = await create(db, { wine, awards });
     const before = db.prepare("SELECT id, award_name FROM wine_awards ORDER BY award_name").all();
     assert.equal(before.length, 2);
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
       awards: awards.map((award) => ({ ...award, notes: "Updated" })),
     });
     assert.equal(response.status, 200);
@@ -382,7 +504,7 @@ await describe("catalogue mutation preservation", async () => {
   await it("rejects unavailable review sources before any bottle mutation", async () => {
     const db = setup();
     const id = await create(db, { wine });
-    const response = await request(db, "PATCH", `/bottles/${id}`, {
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, {
       status: "consumed",
       criticReviews: [{ reviewSourceId: "unavailable", ratingText: "95 points" }],
     });
@@ -395,7 +517,7 @@ await describe("catalogue mutation preservation", async () => {
     const award = { awardName: "Wine show", awardLevel: "Gold", provenance: "2024 results" };
     const id = await create(db, { wine, awards: [{ ...award, points: 95 }] });
     const before = db.prepare("SELECT id FROM wine_awards").get()?.["id"];
-    const response = await request(db, "PATCH", `/bottles/${id}`, { awards: [award] });
+    const response = await editRequest(db, "PATCH", `/bottles/${id}`, { awards: [award] });
     assert.equal(response.status, 200);
     assert.deepEqual(
       { ...db.prepare("SELECT id, points, provenance FROM wine_awards").get() },
@@ -492,4 +614,46 @@ async function request(
 
 function count(db: DatabaseSync, table: string): number {
   return Number(db.prepare(`SELECT count(*) AS count FROM ${table}`).get()?.["count"]);
+}
+
+function vintageIdForBottle(db: DatabaseSync, id: string): string {
+  const value = db.prepare("SELECT wine_vintage_id FROM bottles WHERE id = ?").get(id)?.[
+    "wine_vintage_id"
+  ];
+  assert.equal(typeof value, "string");
+  return String(value);
+}
+
+// These regression scenarios explicitly correct shared facts unless they
+// specify reassignment. Tests for omitted scope use request() directly.
+async function editRequest(
+  db: DatabaseSync,
+  method: string,
+  path: string,
+  payload: Record<string, unknown>,
+  beforeBatch?: () => void,
+) {
+  const wineVintageId = vintageIdForBottle(db, path.split("/").at(-1) ?? "");
+  const affected = db
+    .prepare("SELECT count(*) AS count FROM bottles WHERE wine_vintage_id = ?")
+    .get(wineVintageId)?.["count"];
+  return request(
+    db,
+    method,
+    path,
+    {
+      ...(payload["wine"] !== undefined ||
+      payload["wineVintageId"] !== undefined ||
+      payload["criticReviews"] !== undefined ||
+      payload["awards"] !== undefined
+        ? {
+            wineEditScope: "shared",
+            expectedWineVintageId: wineVintageId,
+            expectedAffectedBottleCount: affected,
+          }
+        : {}),
+      ...payload,
+    },
+    beforeBatch,
+  );
 }

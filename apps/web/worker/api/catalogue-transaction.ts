@@ -2,7 +2,6 @@ import { HTTPException } from "hono/http-exception";
 
 const catalogueUniqueConstraints = new Set([
   "wineries.site_id, wineries.name, wineries.region",
-  "wine_vintages.site_id, wine_vintages.winery_id, wine_vintages.base_name, wine_vintages.vintage_label",
   "grape_varieties.name",
   "review_sources.site_id, review_sources.name",
   "critic_reviews.site_id, critic_reviews.wine_vintage_id, critic_reviews.review_source_id",

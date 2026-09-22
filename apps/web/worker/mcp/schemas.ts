@@ -377,7 +377,7 @@ export const bottleOutputSchema = {
   wineType: nullableStringSchema,
   wineId: wineIdOutputSchema,
   winery: z.string(),
-  wineryId: wineryIdOutputSchema,
+  wineryId: wineryIdOutputSchema.nullable(),
 };
 
 export const bottleSummaryOutputSchema = {
@@ -401,7 +401,7 @@ export const bottleSummaryOutputSchema = {
   wineType: nullableStringSchema,
   wineId: wineIdOutputSchema,
   winery: z.string(),
-  wineryId: wineryIdOutputSchema,
+  wineryId: wineryIdOutputSchema.nullable(),
 };
 
 export const paginationOutputSchema = {
@@ -455,7 +455,7 @@ export const wineVintageSummaryOutputSchema = {
   wineType: nullableStringSchema,
   wineId: wineIdOutputSchema,
   winery: z.string(),
-  wineryId: wineryIdOutputSchema,
+  wineryId: wineryIdOutputSchema.nullable(),
 };
 
 export const wineVintageSummarySchema = z.object(wineVintageSummaryOutputSchema);

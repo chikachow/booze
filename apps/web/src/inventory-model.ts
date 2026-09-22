@@ -1,3 +1,5 @@
+import type { CaptureReviewCandidate } from "../shared/capture-review.ts";
+import type { VintageStatus } from "../shared/wine-identity.ts";
 import { isCaptureStatus, type CaptureStatus } from "../shared/capture-status.ts";
 import { validateBottleQuantity } from "../shared/quantity.ts";
 
@@ -12,6 +14,8 @@ export type ApiEnvelope<T> = {
 export type BottleResource = {
   readonly id: string;
   readonly wineVintageId: string;
+  readonly wineryId: string | null;
+  readonly wineBottleCount: number;
   readonly siteId: string;
   readonly siteName: string;
   readonly storageLocationId: string | null;
@@ -29,6 +33,7 @@ export type BottleResource = {
   readonly designation: string | null;
   readonly displayName: string;
   readonly vintageYear: number | null;
+  readonly vintageStatus: VintageStatus;
   readonly vintageLabel: string;
   readonly grapeVarieties: readonly string[];
   readonly country: string | null;
@@ -144,6 +149,8 @@ export type CaptureResource = {
   readonly updatedAt: string;
   readonly images: readonly CaptureImageResource[];
   readonly latestRun: CaptureRunResource | null;
+  readonly reviewCandidate: CaptureReviewCandidate | null;
+  readonly reviewRevision: number;
 };
 
 export type CaptureFormState = {
@@ -164,12 +171,15 @@ export type InventoryItem = {
   readonly position: string | null;
   readonly status: string;
   readonly wineVintageId: string;
+  readonly wineryId: string | null;
+  readonly wineBottleCount: number;
   readonly wineryName: string;
   readonly brandName: string | null;
   readonly baseName: string;
   readonly designation: string | null;
   readonly displayName: string;
   readonly vintageYear: number | null;
+  readonly vintageStatus: VintageStatus;
   readonly vintageLabel: string;
   readonly grapeVarieties: string | null;
   readonly country: string | null;
@@ -237,7 +247,8 @@ export type FormState = {
   quantity: string;
   wineryName: string;
   brandName: string;
-  displayName: string;
+  designation: string;
+  vintageStatus: VintageStatus;
   vintageYear: string;
   grapeVarieties: string;
   country: string;
@@ -274,6 +285,11 @@ export type SiteFormState = {
 };
 
 export type BottlePatch = {
+  readonly wineEditScope?: "shared" | "bottle" | undefined;
+  readonly wineVintageId?: string | undefined;
+  readonly expectedWineVintageId?: string | undefined;
+  readonly expectedAffectedBottleCount?: number | undefined;
+  readonly allowUnidentified?: boolean | undefined;
   readonly status?: "in_stock" | "consumed";
   readonly storageLocationId?: string | null | undefined;
   readonly positionHint?: string | undefined;
@@ -293,6 +309,7 @@ export type BottlePatch = {
         readonly designation?: string | undefined;
         readonly displayName?: string | undefined;
         readonly vintageYear?: number | null | undefined;
+        readonly vintageStatus?: VintageStatus | undefined;
         readonly grapeVarieties?: readonly string[] | undefined;
         readonly country?: string | undefined;
         readonly region?: string | undefined;
@@ -355,7 +372,8 @@ export const initialFormState: FormState = {
   quantity: "1",
   wineryName: "",
   brandName: "",
-  displayName: "",
+  designation: "",
+  vintageStatus: "unknown",
   vintageYear: "",
   grapeVarieties: "",
   country: "",
@@ -618,7 +636,8 @@ export function formStateForItem(item: InventoryItem): FormState {
     quantity: "1",
     wineryName: item.wineryName,
     brandName: formText(item.brandName),
-    displayName: item.displayName,
+    designation: formText(item.designation),
+    vintageStatus: item.vintageStatus,
     vintageYear: formYear(item.vintageYear),
     grapeVarieties: formText(item.grapeVarieties),
     country: formText(item.country),
@@ -733,12 +752,15 @@ export function apiBottleToInventoryItem(resource: BottleResource): InventoryIte
     position: resource.positionHint,
     status: resource.status,
     wineVintageId: resource.wineVintageId,
+    wineryId: resource.wineryId,
+    wineBottleCount: resource.wineBottleCount,
     wineryName: resource.wineryName,
     brandName: resource.brandName,
     baseName: resource.baseName,
     designation: resource.designation,
     displayName: resource.displayName,
     vintageYear: resource.vintageYear,
+    vintageStatus: resource.vintageStatus,
     vintageLabel: resource.vintageLabel,
     grapeVarieties: grapeText === "" ? null : grapeText,
     country: resource.country,

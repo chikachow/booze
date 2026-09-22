@@ -1035,7 +1035,7 @@ function arrayFieldValue(field: { readonly value: readonly string[] }): string {
 
 function vintageValue(value: string): string {
   const match = /\b(18|19|20|21|22)\d{2}\b/u.exec(value);
-  return match?.[0] ?? "";
+  return match?.[0] ?? (/^(?:n[.\s]?v[.]?|non[ -]?vintage)$/iu.test(value.trim()) ? "NV" : "");
 }
 
 function structuredWineNotes({

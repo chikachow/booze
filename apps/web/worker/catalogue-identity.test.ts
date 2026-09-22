@@ -8,7 +8,7 @@ import { retryCatalogueTransaction } from "./api/catalogue-transaction.ts";
 import { asD1, migratedDatabase } from "./d1-support.ts";
 
 await describe("catalogue identity at commit", async () => {
-  await it("preserves the winning target blend when concurrent vintage creation requires a retry", async () => {
+  await it("keeps a concurrently created descriptive match distinct and preserves the source blend", async () => {
     const { database, sqlite } = setup();
     sqlite.exec(`
       INSERT INTO wineries (id, site_id, name) VALUES ('winery', 'site', 'Producer');
@@ -45,8 +45,9 @@ await describe("catalogue identity at commit", async () => {
       await database.batch(prepared.statements);
       return prepared.wineVintageId;
     });
-    assert.equal(attempts, 2);
-    assert.equal(result, "winner");
+    assert.equal(attempts, 1);
+    assert.notEqual(result, "winner");
+    assert.notEqual(result, "source");
     assert.deepEqual(
       sqlite
         .prepare(
@@ -57,6 +58,12 @@ await describe("catalogue identity at commit", async () => {
       [
         {
           wine_vintage_id: "source",
+          grape_variety_id: "source-grape",
+          percentage: 100,
+          blend_text: "Original source blend",
+        },
+        {
+          wine_vintage_id: result,
           grape_variety_id: "source-grape",
           percentage: 100,
           blend_text: "Original source blend",

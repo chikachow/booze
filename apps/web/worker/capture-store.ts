@@ -13,6 +13,10 @@ import {
 import { and, desc, eq, ne, sql, type SQL } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
+import {
+  captureReviewCandidateSchema,
+  type CaptureReviewCandidate,
+} from "../shared/capture-review.ts";
 import { isCaptureStatus, type CaptureStatus } from "./capture-state.ts";
 import { errorDetails, logError } from "./observability.ts";
 
@@ -71,6 +75,8 @@ export type CaptureResource = {
   readonly quantity: number;
   readonly status: CaptureStatus;
   readonly workflowInstanceId: string | null;
+  readonly reviewCandidate: CaptureReviewCandidate | null;
+  readonly reviewRevision: number;
   readonly importedBottleIds: readonly string[];
   readonly errorMessage: string | null;
   readonly createdAt: string;
@@ -279,6 +285,8 @@ export async function listBottleCaptures({
       status: bottleCaptures.status,
       workflowInstanceId: bottleCaptures.workflowInstanceId,
       importedBottleIdsJson: bottleCaptures.importedBottleIdsJson,
+      reviewCandidateJson: bottleCaptures.reviewCandidateJson,
+      reviewRevision: bottleCaptures.reviewRevision,
       errorMessage: bottleCaptures.errorMessage,
       createdAt: bottleCaptures.createdAt,
       updatedAt: bottleCaptures.updatedAt,
@@ -310,6 +318,10 @@ export async function listBottleCaptures({
     ...row,
     status: captureStatus(row.status),
     importedBottleIds: parseStringArray(row.importedBottleIdsJson),
+    reviewCandidate:
+      row.reviewCandidateJson === null
+        ? null
+        : captureReviewCandidateSchema.parse(parseJson(row.reviewCandidateJson)),
     images: imagesByCapture.get(row.id) ?? [],
     latestRun: runsByCapture.get(row.id) ?? null,
   }));
@@ -491,6 +503,62 @@ export async function updateCaptureStatus({
     );
 }
 
+export async function saveCaptureReview({
+  captureId,
+  database,
+  candidate,
+  expectedRevision,
+}: {
+  readonly captureId: string;
+  readonly database: BoozeDatabase;
+  readonly candidate: CaptureReviewCandidate;
+  readonly expectedRevision: number;
+}): Promise<number> {
+  const [saved] = await database
+    .update(bottleCaptures)
+    .set({
+      reviewCandidateJson: JSON.stringify(candidate),
+      reviewRevision: sql`${bottleCaptures.reviewRevision} + 1`,
+      status: "needs_review",
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(
+      and(
+        eq(bottleCaptures.id, captureId),
+        eq(bottleCaptures.reviewRevision, expectedRevision),
+        sql`${bottleCaptures.status} IN ('failed', 'needs_review')`,
+      ),
+    )
+    .returning({ revision: bottleCaptures.reviewRevision });
+  if (saved === undefined)
+    throw new HTTPException(409, {
+      message:
+        "Capture processing or saved corrections changed. Refresh before saving your corrections again.",
+    });
+  return saved.revision;
+}
+
+export async function ensureManualCaptureRun({
+  captureId,
+  database,
+  expectedReviewRevision,
+}: {
+  readonly captureId: string;
+  readonly database: BoozeDatabase;
+  readonly expectedReviewRevision: number;
+}): Promise<string> {
+  const runId = `manual_${captureId}`;
+  await database.run(sql`INSERT INTO bottle_capture_runs
+    (id, capture_id, status, extractor_version, prompt_version, schema_version, attempt_number)
+    SELECT ${runId}, id, 'needs_review', 'manual-review', 'manual-review', 'wine-vintage-v2', 1
+    FROM ${bottleCaptures} WHERE id = ${captureId}
+      AND status = 'needs_review' AND review_revision = ${expectedReviewRevision}
+      AND review_candidate_json IS NOT NULL
+      AND ${latestCaptureRunId(captureId)} IS NULL
+    ON CONFLICT(id) DO NOTHING`);
+  return runId;
+}
+
 export async function reserveCaptureRetry({
   captureId,
   database,
@@ -537,6 +605,7 @@ export async function claimCaptureForImport({
   runId,
   siteId,
   resume = false,
+  expectedReviewRevision,
   workflowInstanceId,
 }: {
   readonly captureId: string;
@@ -544,6 +613,7 @@ export async function claimCaptureForImport({
   readonly runId: string;
   readonly siteId: string;
   readonly resume?: boolean;
+  readonly expectedReviewRevision?: number | undefined;
   readonly workflowInstanceId?: string | null | undefined;
 }): Promise<CaptureImportClaim | null> {
   const [claim] = await database
@@ -554,6 +624,10 @@ export async function claimCaptureForImport({
         eq(bottleCaptures.id, captureId),
         eq(bottleCaptures.siteId, siteId),
         eq(latestCaptureRunId(captureId), runId),
+        expectedReviewRevision === undefined
+          ? undefined
+          : eq(bottleCaptures.reviewRevision, expectedReviewRevision),
+        resume ? sql`${bottleCaptures.reviewCandidateJson} IS NULL` : undefined,
         resume
           ? sql`${bottleCaptures.status} IN ('extracting', 'importing')`
           : eq(bottleCaptures.status, "needs_review"),

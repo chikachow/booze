@@ -1,5 +1,5 @@
 import { HTTPException } from "hono/http-exception";
-import { ZodError } from "zod";
+import { $ZodError } from "zod/v4/core";
 
 export function created(data: unknown, headers?: HeadersInit): Response {
   return Response.json({ data }, { ...(headers === undefined ? {} : { headers }), status: 201 });
@@ -37,9 +37,14 @@ export function problemResponse({
 }
 
 export function problemResponseForError(error: unknown): Response {
-  if (error instanceof ZodError) {
+  if (error instanceof $ZodError) {
     return problemResponse({
-      detail: error.issues.map((issue) => issue.message).join("; "),
+      detail: error.issues
+        .map(
+          (issue) =>
+            `${issue.path.length === 0 ? "" : `${issue.path.join(".")}: `}${issue.message}`,
+        )
+        .join("; "),
       status: 400,
       title: "Invalid request body",
     });

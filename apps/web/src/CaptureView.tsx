@@ -8,12 +8,19 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from "react";
 
+import type {
+  CaptureImportAction,
+  CaptureImportResult,
+  CaptureReviewSaveAction,
+} from "../shared/capture-import.ts";
+import { formatWineLabel } from "../shared/wine-identity.ts";
 import { validateBottleQuantity } from "../shared/quantity.ts";
 import { QuantityInput } from "./QuantityInput.tsx";
 import type {
   CaptureFormState,
   CaptureImageResource,
   CaptureResource,
+  InventoryItem,
   LocationItem,
   SiteItem,
 } from "./inventory-model.ts";
@@ -23,10 +30,11 @@ import { DestructiveActionDialog } from "./DestructiveActionDialog.tsx";
 import { ProgressiveListStatus, PROGRESSIVE_PAGE_SIZE } from "./ProgressiveListStatus.tsx";
 import { MAX_CAPTURE_FILES, mergeCaptureFiles } from "./capture-files.ts";
 import { captureStatus } from "./capture-status.ts";
-import { CaptureReview, hasCaptureCandidate } from "./CaptureReview.tsx";
+import { CaptureReview } from "./CaptureReview.tsx";
 
 type CaptureAreaProps = {
   readonly captures: readonly CaptureResource[];
+  readonly inventoryItems?: readonly InventoryItem[];
   readonly form: CaptureFormState;
   readonly isSaving: boolean;
   readonly locations: readonly LocationItem[];
@@ -34,7 +42,8 @@ type CaptureAreaProps = {
   readonly writableSiteIds: ReadonlySet<string>;
   readonly setForm: (form: CaptureFormState) => void;
   readonly onDelete: (captureId: string) => Promise<boolean>;
-  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onImport: CaptureImportAction;
+  readonly onSaveReview: CaptureReviewSaveAction;
   readonly onRetry: (captureId: string) => Promise<boolean>;
   readonly onSubmit: (
     form: CaptureFormState,
@@ -58,6 +67,7 @@ export type CaptureSubmitResult =
 
 export function CaptureArea({
   captures,
+  inventoryItems = [],
   form,
   isSaving,
   locations,
@@ -66,6 +76,7 @@ export function CaptureArea({
   setForm,
   onDelete,
   onImport,
+  onSaveReview,
   onRetry,
   onSubmit,
 }: CaptureAreaProps): ReactElement {
@@ -267,10 +278,12 @@ export function CaptureArea({
 
       <CaptureDashboard
         captures={captures}
+        inventoryItems={inventoryItems}
         locations={locations}
         writableSiteIds={writableSiteIds}
         onDelete={onDelete}
         onImport={onImport}
+        onSaveReview={onSaveReview}
         onRetry={onRetry}
       />
     </section>
@@ -311,17 +324,21 @@ function SelectedPhoto({
 
 function CaptureDashboard({
   captures,
+  inventoryItems,
   locations,
   writableSiteIds,
   onDelete,
   onImport,
+  onSaveReview,
   onRetry,
 }: {
   readonly captures: readonly CaptureResource[];
+  readonly inventoryItems: readonly InventoryItem[];
   readonly locations: readonly LocationItem[];
   readonly writableSiteIds: ReadonlySet<string>;
   readonly onDelete: (captureId: string) => Promise<boolean>;
-  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onImport: CaptureImportAction;
+  readonly onSaveReview: CaptureReviewSaveAction;
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
@@ -380,10 +397,12 @@ function CaptureDashboard({
           {visibleCaptures.map((capture) => (
             <CaptureCard
               capture={capture}
+              inventoryItems={inventoryItems}
               canWrite={writableSiteIds.has(capture.siteId)}
               key={capture.id}
               locations={locations}
               onImport={onImport}
+              onSaveReview={onSaveReview}
               onRequestDelete={(target, trigger) => {
                 deleteTriggerRef.current = trigger;
                 setDeletingCapture(target);
@@ -426,26 +445,32 @@ function CaptureDashboard({
 
 function CaptureCard({
   canWrite,
+  inventoryItems,
   capture,
   locations,
   onImport,
+  onSaveReview,
   onRequestDelete,
   onRetry,
 }: {
   readonly canWrite: boolean;
+  readonly inventoryItems: readonly InventoryItem[];
   readonly capture: CaptureResource;
   readonly locations: readonly LocationItem[];
-  readonly onImport: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onImport: CaptureImportAction;
+  readonly onSaveReview: CaptureReviewSaveAction;
   readonly onRequestDelete: (capture: CaptureResource, trigger: HTMLButtonElement) => void;
   readonly onRetry: (captureId: string) => Promise<boolean>;
 }): ReactElement {
   const [pendingAction, setPendingAction] = useState<CaptureCardAction | null>(null);
   const pendingActionRef = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [hasUnsavedReview, setHasUnsavedReview] = useState(false);
+  const [isReviewBusy, setIsReviewBusy] = useState(false);
 
   async function runAction(
     pending: CaptureCardAction,
-    action: () => Promise<boolean>,
+    action: () => Promise<boolean | CaptureImportResult>,
   ): Promise<boolean> {
     if (pendingActionRef.current) {
       return false;
@@ -454,9 +479,14 @@ function CaptureCard({
     setPendingAction(pending);
     setActionError(null);
     try {
-      const succeeded = await action();
+      const result = await action();
+      const succeeded = typeof result === "boolean" ? result : result.ok;
       if (!succeeded) {
-        setActionError(`${captureActionLabel(pending)} failed. Try again.`);
+        setActionError(
+          typeof result === "object" && !result.ok
+            ? result.message
+            : `${captureActionLabel(pending)} failed. Try again.`,
+        );
       }
       return succeeded;
     } catch {
@@ -496,7 +526,7 @@ function CaptureCard({
         </div>
         <div>
           <dt>Candidate</dt>
-          <dd>{candidateLabel(capture.latestRun?.importCandidate)}</dd>
+          <dd>{candidateLabel(capture.reviewCandidate ?? capture.latestRun?.importCandidate)}</dd>
         </div>
         <div>
           <dt>Issue</dt>
@@ -507,41 +537,22 @@ function CaptureCard({
           </dd>
         </div>
       </dl>
-      {capture.status === "needs_review" ? <CaptureReview run={capture.latestRun} /> : null}
+      {capture.status === "needs_review" || capture.status === "failed" ? (
+        <CaptureReview
+          capture={capture}
+          inventoryItems={inventoryItems}
+          canWrite={canWrite}
+          disabled={pendingAction !== null}
+          onDirtyChange={setHasUnsavedReview}
+          onBusyChange={setIsReviewBusy}
+          onImport={onImport}
+          onSaveReview={onSaveReview}
+        />
+      ) : null}
       <div className="card-actions">
-        {canWrite && capture.status === "needs_review"
-          ? wineVintageCandidates(capture.latestRun?.matchResult).map((candidate) => (
-              <Button
-                isDisabled={pendingAction !== null || !hasCaptureCandidate(capture.latestRun)}
-                isLoading={isCaptureAction(pendingAction, {
-                  kind: "import",
-                  wineVintageId: candidate.id,
-                })}
-                label={`Use ${candidate.label}`}
-                size="sm"
-                key={candidate.id}
-                onClick={() => {
-                  void runAction({ kind: "import", wineVintageId: candidate.id }, async () =>
-                    onImport(capture.id, candidate.id),
-                  );
-                }}
-              />
-            ))
-          : null}
-        {canWrite && capture.status === "needs_review" ? (
-          <Button
-            isDisabled={pendingAction !== null || !hasCaptureCandidate(capture.latestRun)}
-            isLoading={isCaptureAction(pendingAction, { kind: "create" })}
-            label="Create new"
-            size="sm"
-            onClick={() => {
-              void runAction({ kind: "create" }, async () => onImport(capture.id));
-            }}
-          />
-        ) : null}
         {canWrite && (capture.status === "failed" || capture.status === "needs_review") ? (
           <Button
-            isDisabled={pendingAction !== null}
+            isDisabled={pendingAction !== null || hasUnsavedReview || isReviewBusy}
             isLoading={isCaptureAction(pendingAction, { kind: "retry" })}
             label="Retry"
             size="sm"
@@ -552,7 +563,7 @@ function CaptureCard({
         ) : null}
         {canWrite && isCaptureDeletable(capture) ? (
           <Button
-            isDisabled={pendingAction !== null}
+            isDisabled={pendingAction !== null || isReviewBusy}
             label="Delete capture"
             size="sm"
             variant="destructive"
@@ -658,42 +669,36 @@ function CaptureThumbnail({ image }: { readonly image: CaptureImageResource }): 
 }
 
 function captureTitle(capture: CaptureResource): string {
-  const candidate = candidateLabel(capture.latestRun?.importCandidate);
+  const candidate = candidateLabel(capture.reviewCandidate ?? capture.latestRun?.importCandidate);
   return candidate === "No candidate yet" ? `Capture ${capture.id.slice(0, 8)}` : candidate;
 }
 
 function candidateLabel(value: unknown): string {
-  const wine = objectField(value, "wine");
-  const displayName = stringField(wine, "displayName") ?? stringField(wine, "designation");
-  const wineryName = stringField(wine, "wineryName");
-  return (
-    [wineryName, displayName].filter((part) => part !== undefined && part !== "").join(" / ") ||
-    "No candidate yet"
-  );
-}
-
-function wineVintageCandidates(
-  value: unknown,
-): readonly { readonly id: string; readonly label: string }[] {
-  const candidates = objectField(value, "wineVintageCandidates");
-  if (!Array.isArray(candidates)) {
-    return [];
-  }
-  return candidates.flatMap((candidate) => {
-    const id = stringField(candidate, "id");
-    const label = stringField(candidate, "label");
-    return id === undefined || label === undefined ? [] : [{ id, label }];
+  const wine = candidateProperty(value, "wine");
+  if (wine === null || typeof wine !== "object") return "No candidate yet";
+  const text = (key: string) => {
+    const field = candidateProperty(wine, key);
+    return typeof field === "string" ? field : undefined;
+  };
+  const grapes = candidateProperty(wine, "grapeVarieties");
+  const year = candidateProperty(wine, "vintageYear");
+  const status = text("vintageStatus");
+  return formatWineLabel({
+    wineryName: text("wineryName"),
+    brandName: text("brandName"),
+    designation: text("designation"),
+    appellation: text("appellation"),
+    grapeVarieties: Array.isArray(grapes)
+      ? grapes.filter((grape): grape is string => typeof grape === "string")
+      : [],
+    vintageYear: typeof year === "number" && Number.isFinite(year) ? year : undefined,
+    vintageStatus:
+      status === "year" || status === "non_vintage" || status === "unknown" ? status : undefined,
   });
 }
 
-function objectField(value: unknown, field: string): unknown {
-  if (typeof value !== "object" || value === null) {
-    return undefined;
-  }
-  return Object.getOwnPropertyDescriptor(value, field)?.value;
-}
-
-function stringField(value: unknown, field: string): string | undefined {
-  const fieldValue = objectField(value, field);
-  return typeof fieldValue === "string" ? fieldValue : undefined;
+function candidateProperty(value: unknown, key: string): unknown {
+  return value !== null && typeof value === "object"
+    ? Object.getOwnPropertyDescriptor(value, key)?.value
+    : undefined;
 }

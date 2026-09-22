@@ -1,5 +1,13 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 
+import type {
+  CaptureImportAction,
+  CaptureImportResult,
+  CaptureImportOptions,
+  CaptureReviewSaveAction,
+  CaptureReviewSaveResult,
+} from "../shared/capture-import.ts";
+import type { CaptureReviewCandidate } from "../shared/capture-review.ts";
 import { validateBottleQuantity } from "../shared/quantity.ts";
 import { bottleCreatePayload, bottleEditPayload } from "./bottle-payload.ts";
 import type { BottleModalSubmit, BottleModalSubmitResult } from "./BottleModal.tsx";
@@ -51,7 +59,8 @@ export type BottleController = {
 export type CaptureController = {
   readonly captureForm: CaptureFormState;
   readonly deleteCapture: (captureId: string) => Promise<boolean>;
-  readonly importCapture: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly importCapture: CaptureImportAction;
+  readonly saveCaptureReview: CaptureReviewSaveAction;
   readonly isSaving: boolean;
   readonly retryCapture: (captureId: string) => Promise<boolean>;
   readonly setCaptureForm: Dispatch<SetStateAction<CaptureFormState>>;
@@ -93,11 +102,8 @@ export function useBottleController({
 
   useDefaultSite(writableSites, setAddFormDefaults);
 
-  async function saveBottle({
-    awards,
-    criticReviews,
-    form,
-  }: BottleModalSubmit): Promise<BottleModalSubmitResult> {
+  async function saveBottle(submission: BottleModalSubmit): Promise<BottleModalSubmitResult> {
+    const { form } = submission;
     if (form.siteId === "") {
       const message = "Choose a site before saving the bottle.";
       setStatus(message);
@@ -111,7 +117,7 @@ export function useBottleController({
     setIsSaving(true);
     setStatus("Saving bottle...");
     try {
-      const payload = bottleCreatePayload({ awards, criticReviews, form });
+      const payload = bottleCreatePayload(submission);
       const response = await fetch("/api/bottles", {
         method: "POST",
         headers: jsonHeaders(await getAuthHeaders()),
@@ -122,7 +128,9 @@ export function useBottleController({
         }),
       });
       if (!response.ok) {
-        const message = "Bottle was not saved. Check required fields.";
+        const message =
+          (await responseErrorMessage(response)) ??
+          "Bottle was not saved. Check the entered details.";
         setStatus(message);
         return { message, ok: false };
       }
@@ -146,13 +154,13 @@ export function useBottleController({
     }
   }
 
-  async function updateBottle({
+  async function patchBottle({
     bottleId,
     payload,
   }: {
     readonly bottleId: string;
     readonly payload: BottlePatch;
-  }): Promise<boolean> {
+  }): Promise<BottleModalSubmitResult> {
     setStatus("Updating bottle...");
     const response = await fetch(`/api/bottles/${bottleId}`, {
       method: "PATCH",
@@ -160,11 +168,21 @@ export function useBottleController({
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      setStatus("Bottle was not updated.");
-      return false;
+      const message =
+        (await responseErrorMessage(response)) ??
+        "Bottle was not updated. Refresh inventory and try again.";
+      setStatus(message);
+      return { ok: false, message };
     }
     await completeMutation({ refresh: "catalogue", successMessage: "Inventory updated." });
-    return true;
+    return { ok: true };
+  }
+
+  async function updateBottle(input: {
+    readonly bottleId: string;
+    readonly payload: BottlePatch;
+  }): Promise<boolean> {
+    return (await patchBottle(input)).ok;
   }
 
   async function deleteBottle(bottleId: string): Promise<boolean> {
@@ -187,15 +205,15 @@ export function useBottleController({
     }
     setIsSaving(true);
     try {
-      const updated = await updateBottle({
+      const updated = await patchBottle({
         bottleId: editingBottle.bottleId,
         payload: bottleEditPayload(submission, editingBottle),
       });
-      if (updated) {
+      if (updated.ok) {
         setEditingBottle(null);
         return { ok: true };
       }
-      return { message: "Bottle was not updated.", ok: false };
+      return updated;
     } catch {
       const message = "Bottle was not updated. Check your connection and try again.";
       setStatus(message);
@@ -333,20 +351,83 @@ export function useCaptureController({
     return true;
   }
 
-  async function importCapture(captureId: string, wineVintageId?: string): Promise<boolean> {
+  async function importCapture(
+    captureId: string,
+    wineVintageId?: string,
+    options?: CaptureImportOptions,
+  ): Promise<CaptureImportResult> {
     setStatus("Importing capture...");
-    const response = await fetch(`/api/bottle-captures/${captureId}/import`, {
-      method: "POST",
-      headers: jsonHeaders(await getAuthHeaders()),
-      body: JSON.stringify(wineVintageId === undefined ? {} : { wineVintageId }),
-    });
-    if (!response.ok) {
-      const message = await responseErrorMessage(response);
-      setStatus(message === null ? "Capture was not imported." : `Import failed: ${message}`);
-      return false;
+    try {
+      const response = await fetch(`/api/bottle-captures/${captureId}/import`, {
+        method: "POST",
+        headers: jsonHeaders(await getAuthHeaders()),
+        body: JSON.stringify({
+          ...options,
+          ...(wineVintageId === undefined ? {} : { wineVintageId }),
+        }),
+      });
+      if (!response.ok) {
+        const message =
+          (await responseErrorMessage(response)) ??
+          "The server could not complete the import. Refresh capture status before trying again.";
+        setStatus(`Import failed: ${message}`);
+        return { ok: false, message };
+      }
+    } catch {
+      const message =
+        "The import result could not be confirmed. Check your connection and refresh capture status before trying again.";
+      setStatus(message);
+      return { ok: false, message };
     }
     await completeMutation({ refresh: "catalogue", successMessage: "Capture imported." });
-    return true;
+    return { ok: true };
+  }
+
+  async function saveCaptureReview(
+    captureId: string,
+    expectedRevision: number,
+    candidate: CaptureReviewCandidate,
+  ): Promise<CaptureReviewSaveResult> {
+    setStatus("Saving capture corrections...");
+    let reviewRevision: number;
+    try {
+      const response = await fetch(`/api/bottle-captures/${captureId}/review`, {
+        method: "PATCH",
+        headers: jsonHeaders(await getAuthHeaders()),
+        body: JSON.stringify({ expectedRevision, candidate }),
+      });
+      if (!response.ok) {
+        const message =
+          (await responseErrorMessage(response)) ??
+          "Corrections were not saved. Refresh the capture and try again.";
+        setStatus(message);
+        if (response.status === 409) {
+          await completeMutation({ refresh: "captures", successMessage: message });
+        }
+        return { ok: false, message };
+      }
+      const result: unknown = await response.json();
+      const data = objectProperty(result, "data");
+      const revision = objectProperty(data, "reviewRevision");
+      if (
+        typeof revision !== "number" ||
+        !Number.isSafeInteger(revision) ||
+        revision !== expectedRevision + 1
+      ) {
+        throw new Error("Unconfirmed review response");
+      }
+      reviewRevision = revision;
+    } catch {
+      const message =
+        "The correction save could not be confirmed. Your edits are still here; refresh capture status before saving again.";
+      setStatus(message);
+      return { ok: false, message };
+    }
+    await completeMutation({
+      refresh: "captures",
+      successMessage: "Corrections saved. Review and explicitly add the bottles when ready.",
+    });
+    return { ok: true, reviewRevision, reviewCandidate: candidate };
   }
 
   async function deleteCapture(captureId: string): Promise<boolean> {
@@ -370,6 +451,7 @@ export function useCaptureController({
     importCapture,
     isSaving,
     retryCapture,
+    saveCaptureReview,
     setCaptureForm,
     submitCapture,
   };
@@ -505,18 +587,24 @@ function jsonHeaders(authHeaders: Record<string, string>): Record<string, string
 
 async function responseErrorMessage(response: Response): Promise<string | null> {
   const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().includes("application/json")) {
+  if (!/^application\/(?:json|problem\+json)(?:\s*;|$)/iu.test(contentType.trim())) {
     return null;
   }
   try {
     const value: unknown = await response.json();
     return typeof value === "object" &&
       value !== null &&
-      "message" in value &&
-      typeof value.message === "string" &&
-      value.message !== ""
-      ? value.message
-      : null;
+      "detail" in value &&
+      typeof value.detail === "string" &&
+      value.detail.trim() !== ""
+      ? value.detail
+      : typeof value === "object" &&
+          value !== null &&
+          "message" in value &&
+          typeof value.message === "string" &&
+          value.message.trim() !== ""
+        ? value.message
+        : null;
   } catch {
     return null;
   }
@@ -536,4 +624,10 @@ function captureSubmitErrorMessage(value: unknown): string | null {
     return value.data.errorMessage;
   }
   return null;
+}
+
+function objectProperty(value: unknown, name: string): unknown {
+  return typeof value === "object" && value !== null
+    ? Object.getOwnPropertyDescriptor(value, name)?.value
+    : undefined;
 }
