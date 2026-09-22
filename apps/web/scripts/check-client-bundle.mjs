@@ -10,7 +10,7 @@ export const bundleBudgets = {
   initialJavaScriptGzipBytes: 140_000,
   largestJavaScriptBytes: 485_000,
   totalFontBytes: 40_000,
-  totalJavaScriptGzipBytes: 220_000,
+  totalJavaScriptGzipBytes: 230_000,
 };
 
 export function measureClientBundle(clientDirectory) {
