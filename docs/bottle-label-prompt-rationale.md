@@ -48,6 +48,7 @@ The app now stores the structured fields that the extractors and reconciler prod
 - Reconciliation `max_tokens` is `5000` because it returns a canonical structured record plus conflicts and review reasons, but does not need to repeat every extractor's raw text.
 - `response_format` uses strict JSON schema where the selected model/provider supports it.
 - `provider.require_parameters: true` stays enabled for OpenRouter calls that require schema support, so routing fails fast rather than silently selecting a provider that ignores `response_format`.
+- Extractor notes are arrays of strings without a separate local item-count cap, matching the provider schema. A ninth image note or seventeenth field note must not fail a capture or be silently discarded. The existing model output-token budget remains in place; note types and confidence ranges are still validated.
 - Application Zod validation remains mandatory because provider docs distinguish syntactic schema compliance from semantic correctness.
 
 ## Known Tradeoffs
