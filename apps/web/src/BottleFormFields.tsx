@@ -1,10 +1,10 @@
-import { NumberInput } from "@astryxdesign/core/NumberInput";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import type { FocusEvent, ReactElement } from "react";
+import type { ReactElement } from "react";
 import { useController, type Control, type FieldPath, type RegisterOptions } from "react-hook-form";
 
 import { validateBottleQuantity } from "../shared/quantity.ts";
+import { QuantityInput } from "./QuantityInput.tsx";
 import {
   parseOptionalDecimal,
   parseOptionalVolumeMl,
@@ -147,30 +147,18 @@ export function BottleQuantityInput({
       },
     },
   });
-  const numericQuantity = Number(field.value);
 
   return (
-    <NumberInput
+    <QuantityInput
       ref={field.ref}
-      hasClear
-      isIntegerOnly
-      isRequired
-      htmlName={field.name}
-      description="Between 1 and 24 bottles."
-      label="Quantity"
       status={
         fieldState.error === undefined
           ? undefined
           : { message: fieldState.error.message, type: "error" }
       }
-      value={field.value.trim() !== "" && Number.isFinite(numericQuantity) ? numericQuantity : null}
-      onBlur={(event: FocusEvent<HTMLInputElement>) => {
-        field.onChange(event.currentTarget.value);
-        field.onBlur();
-      }}
-      onChange={(value: number | null) => {
-        field.onChange(value === null ? "" : String(value));
-      }}
+      value={field.value}
+      onChange={field.onChange}
+      onBlur={field.onBlur}
     />
   );
 }

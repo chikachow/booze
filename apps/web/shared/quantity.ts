@@ -7,11 +7,18 @@ export type QuantityResult =
   | { readonly ok: false; readonly message: string };
 
 export function validateBottleQuantity(value: unknown): QuantityResult {
-  const candidate =
-    typeof value === "number"
+  // Normalize full-width decimal digits only; do not coerce fractions or numeric prefixes.
+  const normalized =
+    typeof value === "string"
       ? value
-      : typeof value === "string" && /^\d+$/u.test(value.trim())
-        ? Number(value.trim())
+          .replaceAll(/[０-９]/gu, (digit) => String("０１２３４５６７８９".indexOf(digit)))
+          .trim()
+      : value;
+  const candidate =
+    typeof normalized === "number"
+      ? normalized
+      : typeof normalized === "string" && /^\d+$/u.test(normalized)
+        ? Number(normalized)
         : Number.NaN;
 
   return Number.isInteger(candidate) &&

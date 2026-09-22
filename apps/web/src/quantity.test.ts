@@ -8,18 +8,38 @@ describe("bottle quantity validation", () => {
     expect(validateBottleQuantity(value)).toEqual({ ok: true, value: Number(value) });
   });
 
-  it.each(["", "0", "25", "1.5", "2 bottles", undefined, null])(
-    "rejects invalid value %s without coercion",
-    (value) => {
-      expect(validateBottleQuantity(value)).toEqual({
-        ok: false,
-        message: BOTTLE_QUANTITY_ERROR,
-      });
-    },
-  );
+  it.each([
+    "",
+    "0",
+    "25",
+    "1.5",
+    "１.５",
+    "１２ bottles",
+    "1e1",
+    "+2",
+    "²",
+    "1,2",
+    "2 bottles",
+    undefined,
+    null,
+  ])("rejects invalid value %s without coercion", (value) => {
+    expect(validateBottleQuantity(value)).toEqual({
+      ok: false,
+      message: BOTTLE_QUANTITY_ERROR,
+    });
+  });
 
   it("throws rather than silently defaulting or clamping", () => {
     expect(() => parseQuantity("bad")).toThrow(BOTTLE_QUANTITY_ERROR);
     expect(() => parseQuantity("99")).toThrow(BOTTLE_QUANTITY_ERROR);
   });
+});
+
+it.each([
+  ["１２", 12],
+  [" ２４ ", 24],
+  ["0１", 1],
+])("normalizes decimal digits in %s only after validating", (draft, expected) => {
+  expect(validateBottleQuantity(draft)).toEqual({ ok: true, value: expected });
+  expect(parseQuantity(draft)).toBe(expected);
 });

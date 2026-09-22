@@ -323,7 +323,7 @@ test("persists navigation and filters while remaining accessible at reduced moti
   await page.getByRole("button", { name: "Capture" }).click();
   await expect(page.getByRole("heading", { name: "Photograph bottles" })).toBeVisible();
   await expect(page).toHaveURL(/area=captures/u);
-  await expect(page.locator("[name='capturePosition']")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Position note" })).toBeVisible();
   await expectNoAxeViolations(page);
 
   await page.getByRole("button", { name: "Storage" }).click();
@@ -692,4 +692,42 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(firstRevealedLocation).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(firstRevealedLocation.getByRole("button", { name: "Use for bottle" })).toBeFocused();
+});
+
+test("astryx regression: selector stays closed after trigger light dismiss", async ({ page }) => {
+  const selector = page.getByRole("combobox", { name: "Varietal" });
+  await selector.click();
+  await expect(selector).toHaveAttribute("aria-expanded", "true");
+  await selector.evaluate(async (trigger) => {
+    trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    const popup = document.querySelector("[popover]:popover-open");
+    if (!(popup instanceof HTMLElement)) throw new Error("Missing open selector popup");
+    popup.hidePopover();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    trigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  await expect(selector).toHaveAttribute("aria-expanded", "false");
+});
+
+test("astryx regression: quantity accepts pasted fullwidth digits", async ({ page }) => {
+  await page.getByRole("button", { name: "Add bottle" }).click();
+  const quantity = page
+    .getByRole("dialog", { name: "Add bottle" })
+    .locator("input[name='quantity']");
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText("１２"));
+  await quantity.focus();
+  await quantity.press("ControlOrMeta+A");
+  await quantity.press("ControlOrMeta+V");
+  await quantity.press("Tab");
+  await expect(quantity).toHaveValue("１２");
+});
+
+test("astryx regression: in-place navigation is marked current item", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "Inventory", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
 });
