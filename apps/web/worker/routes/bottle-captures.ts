@@ -3,6 +3,7 @@ import { createD1Client, storageLocations } from "@chikachow/booze-db";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { captureReviewCandidateSchema, isIdentifiedCapture } from "../../shared/capture-review.ts";
 import { validateBottleQuantity } from "../../shared/quantity.ts";
 import { z } from "zod";
 
@@ -22,6 +23,8 @@ import type { ImportCandidate } from "../bottle-extractor.ts";
 import { canImportCapture, canRetryCapture } from "../capture-state.ts";
 import {
   createBottleCapture,
+  ensureManualCaptureRun,
+  saveCaptureReview,
   getBottleCapture,
   getCaptureImageObject,
   listBottleCaptures,
@@ -32,43 +35,10 @@ import {
 import { deleteBottleCaptureData, tryDrainR2ObjectDeletionQueue } from "../deletion.ts";
 import { errorDetails, logError } from "../observability.ts";
 
-const importCandidateSchema = z.object({
-  wine: z.object({
-    wineryName: z.string(),
-    brandName: z.string().optional(),
-    baseName: z.string().optional(),
-    designation: z.string(),
-    displayName: z.string().optional(),
-    vintageYear: z.number().optional(),
-    grapeVarieties: z.array(z.string()).optional(),
-    country: z.string().optional(),
-    region: z.string().optional(),
-    appellation: z.string().optional(),
-    classification: z.string().optional(),
-    wineType: z.string().optional(),
-    wineColor: z.string().optional(),
-    addressQualification: z.string().optional(),
-    alcoholPercent: z.number().optional(),
-    drinkFromYear: z.number().optional(),
-    drinkToYear: z.number().optional(),
-    description: z.string().optional(),
-    drinkingAdvice: z.string().optional(),
-    labelText: z.string().optional(),
-    sourceUrl: z.string().optional(),
-    notes: z.string().optional(),
-  }),
-  bottle: z.object({
-    bottleNumber: z.string().optional(),
-    volumeMl: z.number().optional(),
-    barcode: z.string().optional(),
-    lotCode: z.string().optional(),
-    notes: z.string().optional(),
-  }),
-  rawSuggestion: z.record(z.string(), z.unknown()),
-});
-
 const manualImportSchema = z.object({
   wineVintageId: z.string().trim().min(1).optional(),
+  expectedReviewRevision: z.number().int().nonnegative().default(0),
+  allowUnidentified: z.boolean().default(false),
 });
 
 export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
@@ -239,6 +209,39 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
     }
     return context.json({ data: { captureId: capture.id, workflowInstanceId } });
   })
+  .patch("/bottle-captures/:captureId/review", async (context) => {
+    const payload = z
+      .object({
+        expectedRevision: z.number().int().nonnegative(),
+        candidate: captureReviewCandidateSchema,
+      })
+      .parse(await context.req.json());
+    const database = createD1Client(context.env.DB);
+    const user = await requireAuthenticatedUser({
+      database,
+      request: context.req.raw,
+      headers: context.req.raw.headers,
+      secretKey: context.env.CLERK_SECRET_KEY,
+    });
+    const capture = await getBottleCapture({
+      captureId: context.req.param("captureId"),
+      database,
+      userId: user.userId,
+    });
+    await requireSitePermission({
+      database,
+      permission: "site.content.write",
+      siteId: capture.siteId,
+      userId: user.userId,
+    });
+    const reviewRevision = await saveCaptureReview({
+      captureId: capture.id,
+      database,
+      candidate: payload.candidate,
+      expectedRevision: payload.expectedRevision,
+    });
+    return context.json({ data: { reviewRevision, reviewCandidate: payload.candidate } });
+  })
   .post("/bottle-captures/:captureId/import", async (context) => {
     const payload = manualImportSchema.parse(await context.req.json());
     const database = createD1Client(context.env.DB);
@@ -270,30 +273,53 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
     if (!canImportCapture(capture.status)) {
       throw new HTTPException(409, { message: "Capture is not ready for manual import" });
     }
-    if (capture.latestRun === null) {
-      throw new HTTPException(409, { message: "Capture has no extraction run" });
-    }
-    const candidate = importCandidateSchema.parse(capture.latestRun.importCandidate);
-    if (
-      payload.wineVintageId === undefined &&
-      (candidate.wine.wineryName.trim() === "" || candidate.wine.designation.trim() === "")
-    ) {
-      throw new HTTPException(400, {
-        message: "Select an existing wine before importing an incomplete OCR candidate",
+    if (capture.reviewRevision !== payload.expectedReviewRevision) {
+      throw new HTTPException(409, {
+        message: "Saved corrections changed. Refresh the capture before importing.",
       });
     }
+    const source = capture.reviewCandidate ?? capture.latestRun?.importCandidate;
+    // Reusing a selected wine does not apply OCR wine metadata. Validate only
+    // the physical bottle facts, so conflicting OCR wine facts cannot block it.
+    const reviewed =
+      payload.wineVintageId === undefined
+        ? captureReviewCandidateSchema.parse(source)
+        : captureReviewCandidateSchema.parse({
+            wine: {},
+            bottle: z.object({ bottle: captureReviewCandidateSchema.shape.bottle }).parse(source)
+              .bottle,
+          });
+    const candidate: ImportCandidate = { ...reviewed, rawSuggestion: {} };
+    if (
+      payload.wineVintageId === undefined &&
+      !isIdentifiedCapture(reviewed) &&
+      !payload.allowUnidentified
+    ) {
+      throw new HTTPException(400, {
+        message:
+          "Confirm saving as an unidentified wine, or enter a producer and a designation, grape variety, or appellation.",
+      });
+    }
+    const runId =
+      capture.latestRun?.id ??
+      (await ensureManualCaptureRun({
+        captureId: capture.id,
+        database,
+        expectedReviewRevision: payload.expectedReviewRevision,
+      }));
     try {
       const imported = await importReviewedCapture({
         candidate: candidate satisfies ImportCandidate,
         captureId: capture.id,
         database,
-        runId: capture.latestRun.id,
+        runId,
         workflowInstanceId: capture.workflowInstanceId,
         quantity: capture.quantity,
         siteId: capture.siteId,
         storageLocationId: capture.storageLocationId,
         positionHint: capture.positionHint,
         wineVintageId: payload.wineVintageId,
+        expectedReviewRevision: payload.expectedReviewRevision,
       });
       return context.json({ data: imported });
     } catch (error) {
@@ -310,7 +336,7 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
           status: "needs_review",
           errorMessage: error.message,
           workflowInstanceId: capture.workflowInstanceId,
-          runId: capture.latestRun.id,
+          runId,
           expectedStatus: "importing",
         });
         throw error;
@@ -321,12 +347,12 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         bucket: context.env.IMAGE_BUCKET,
         captureId: capture.id,
         details,
-        runId: capture.latestRun.id,
+        runId,
         siteId: capture.siteId,
       });
       await updateCaptureRun({
         database,
-        runId: capture.latestRun.id,
+        runId,
         status: "failed",
         errorMessage: message,
         ...(errorDetailArtifact === null ? {} : { errorDetailArtifact }),
@@ -338,7 +364,7 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         errorMessage: message,
         errorDetail: null,
         workflowInstanceId: capture.workflowInstanceId,
-        runId: capture.latestRun.id,
+        runId,
         expectedStatus: "importing",
       });
       throw error;

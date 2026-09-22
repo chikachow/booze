@@ -32,5 +32,5 @@ export function optionalInteger(value: number | null | undefined): number | null
 }
 
 export function vintageLabelForYear(vintageYear: number | null | undefined): string {
-  return vintageYear === null || vintageYear === undefined ? "NV" : String(vintageYear);
+  return vintageYear === null || vintageYear === undefined ? "Unknown" : String(vintageYear);
 }

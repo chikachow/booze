@@ -15,24 +15,16 @@ import {
   type InventoryItem,
 } from "./inventory-model.ts";
 
-export function bottleCreatePayload({
-  awards,
-  criticReviews,
-  form,
-}: BottleModalSubmit): BottlePatch & {
-  readonly wine: NonNullable<BottlePatch["wine"]>;
-  readonly bottle: NonNullable<BottlePatch["bottle"]>;
-} {
+function formPayload({ awards, criticReviews, form }: BottleModalSubmit) {
   return {
     storageLocationId: form.storageLocationId === "" ? null : form.storageLocationId,
     positionHint: form.position,
     wine: {
       wineryName: form.wineryName,
       brandName: form.brandName,
-      baseName: form.displayName,
-      designation: form.displayName,
-      displayName: form.displayName,
-      vintageYear: parseOptionalYear(form.vintageYear),
+      designation: form.designation,
+      vintageStatus: form.vintageStatus,
+      vintageYear: form.vintageStatus === "year" ? parseOptionalYear(form.vintageYear) : null,
       grapeVarieties: parseGrapeVarieties(form.grapeVarieties),
       country: form.country,
       region: form.region,
@@ -65,6 +57,19 @@ export function bottleCreatePayload({
   };
 }
 
+export function bottleCreatePayload(submission: BottleModalSubmit): BottlePatch {
+  const payload = formPayload(submission);
+  if (submission.wineVintageId !== undefined && submission.wineVintageId !== "") {
+    return {
+      storageLocationId: payload.storageLocationId,
+      positionHint: payload.positionHint,
+      bottle: payload.bottle,
+      wineVintageId: submission.wineVintageId,
+    };
+  }
+  return { ...payload, allowUnidentified: submission.allowUnidentified };
+}
+
 export function bottleEditPayload(submission: BottleModalSubmit, item: InventoryItem): BottlePatch {
   const originalReviews = validateCriticReviews(criticReviewInputsForItem(item));
   const originalAwards = validateAwards(awardInputsForItem(item));
@@ -74,39 +79,98 @@ export function bottleEditPayload(submission: BottleModalSubmit, item: Inventory
     form: formStateForItem(item),
   });
   const current = editablePayload(submission);
-  const wine = {
-    ...changedFields(current.wine, original.wine),
-    ...(current.wine.drinkFromYear !== original.wine.drinkFromYear ||
-    current.wine.drinkToYear !== original.wine.drinkToYear
-      ? {
-          drinkFromYear: current.wine.drinkFromYear,
-          drinkToYear: current.wine.drinkToYear,
-        }
-      : {}),
-  };
+  const changed = changedFields(current, original);
   const bottle = changedFields(current.bottle, original.bottle);
-  return {
-    ...changedFields(current, original),
+  const bottleChanges: BottlePatch = {
     ...(current.storageLocationId === original.storageLocationId
       ? {}
+      : { storageLocationId: current.storageLocationId, positionHint: current.positionHint }),
+    ...(current.positionHint === original.positionHint
+      ? {}
       : { positionHint: current.positionHint }),
-    ...(Object.keys(wine).length === 0 ? { wine: undefined } : { wine }),
-    ...(Object.keys(bottle).length === 0 ? { bottle: undefined } : { bottle }),
+    ...(Object.keys(bottle).length === 0 ? {} : { bottle }),
+  };
+  if (submission.wineEditScope === undefined) {
+    return bottleChanges;
+  }
+  const guard = {
+    wineEditScope: submission.wineEditScope,
+    expectedWineVintageId: item.wineVintageId,
+  };
+  if (
+    submission.wineEditScope === "bottle" &&
+    submission.wineVintageId !== undefined &&
+    submission.wineVintageId !== ""
+  ) {
+    return { ...bottleChanges, ...guard, wineVintageId: submission.wineVintageId };
+  }
+  if (submission.wineEditScope === "bottle") {
+    return {
+      ...bottleChanges,
+      ...guard,
+      wine: current.wine,
+      allowUnidentified: submission.allowUnidentified,
+      ...newWineEvidence(current.criticReviews, current.awards),
+    };
+  }
+  const wine = changedWineFacts(current.wine, original.wine);
+  if (
+    Object.keys(wine).length === 0 &&
+    changed.criticReviews === undefined &&
+    changed.awards === undefined
+  ) {
+    return bottleChanges;
+  }
+  return {
+    ...bottleChanges,
+    ...guard,
+    expectedAffectedBottleCount: item.wineBottleCount,
+    allowUnidentified: submission.allowUnidentified,
+    ...(Object.keys(wine).length === 0 ? {} : { wine }),
+    ...(changed.criticReviews === undefined ? {} : { criticReviews: changed.criticReviews }),
+    ...(changed.awards === undefined ? {} : { awards: changed.awards }),
+  };
+}
+
+function newWineEvidence(
+  reviews: NonNullable<BottlePatch["criticReviews"]>,
+  awards: NonNullable<BottlePatch["awards"]>,
+): BottlePatch {
+  const newReviews = reviews.filter((review) => review.id === undefined);
+  const newAwards = awards.filter((award) => award.id === undefined);
+  return {
+    ...(newReviews.length === 0 ? {} : { criticReviews: newReviews }),
+    ...(newAwards.length === 0 ? {} : { awards: newAwards }),
+  };
+}
+
+function changedWineFacts(
+  current: ReturnType<typeof editablePayload>["wine"],
+  original: ReturnType<typeof editablePayload>["wine"],
+) {
+  return {
+    ...changedFields(current, original),
+    ...(current.vintageYear !== original.vintageYear ||
+    current.vintageStatus !== original.vintageStatus
+      ? { vintageYear: current.vintageYear, vintageStatus: current.vintageStatus }
+      : {}),
+    ...(current.drinkFromYear !== original.drinkFromYear ||
+    current.drinkToYear !== original.drinkToYear
+      ? { drinkFromYear: current.drinkFromYear, drinkToYear: current.drinkToYear }
+      : {}),
   };
 }
 
 function editablePayload(submission: BottleModalSubmit) {
-  const payload = bottleCreatePayload(submission);
-  // The form does not edit the stored base name or designation.
-  const { baseName: _baseName, designation: _designation, ...wine } = payload.wine;
+  const payload = formPayload(submission);
   return {
     ...payload,
     wine: {
-      ...wine,
-      vintageYear: wine.vintageYear ?? null,
-      alcoholPercent: wine.alcoholPercent ?? null,
-      drinkFromYear: wine.drinkFromYear ?? null,
-      drinkToYear: wine.drinkToYear ?? null,
+      ...payload.wine,
+      vintageYear: payload.wine.vintageYear ?? null,
+      alcoholPercent: payload.wine.alcoholPercent ?? null,
+      drinkFromYear: payload.wine.drinkFromYear ?? null,
+      drinkToYear: payload.wine.drinkToYear ?? null,
     },
   };
 }

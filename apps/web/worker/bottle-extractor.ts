@@ -156,16 +156,21 @@ export function decideCaptureImport({
   }
 
   const identityFields = [
-    combined.canonical_fields.vintage,
     combined.canonical_fields.displayName,
     combined.canonical_fields.appellation,
   ];
   if (
+    !(
+      combined.canonical_fields.grapeVarieties.value.length > 0 &&
+      combined.canonical_fields.grapeVarieties.confidence >= 0.75
+    ) &&
     !identityFields.some(
       (field) => field.value !== null && field.value.trim() !== "" && field.confidence >= 0.75,
     )
   ) {
-    reasons.push("No vintage, wine name or cuvee, or appellation has confidence of at least 0.75.");
+    reasons.push(
+      "No grape variety, wine designation, or appellation has confidence of at least 0.75.",
+    );
   }
 
   reasons.push(
@@ -238,6 +243,12 @@ function candidateFromSuggestion(suggestion: BottleOcrSuggestion): ImportCandida
       designation: displayName,
       displayName,
       vintageYear: parseYear(suggestion.vintageYear),
+      vintageStatus:
+        parseYear(suggestion.vintageYear) === undefined
+          ? suggestion.vintageYear === "NV"
+            ? "non_vintage"
+            : "unknown"
+          : "year",
       grapeVarieties: grapeVarietiesFromText(suggestion.grapeVarieties),
       country: text(suggestion.country) ?? "",
       region: text(suggestion.region) ?? "",

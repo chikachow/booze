@@ -8,18 +8,25 @@ import {
   wineVintages,
   type BoozeDatabase,
 } from "@chikachow/booze-db";
-import { and, eq, isNull, sql, type SQLWrapper } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
-import { generatedId, optionalInteger, optionalText, vintageLabelForYear } from "./ids.ts";
+import { generatedId, optionalInteger, optionalText } from "./ids.ts";
+import {
+  formatWineDisplayName,
+  vintageLabel,
+  wineVintageStatus,
+  type VintageStatus,
+} from "../../shared/wine-identity.ts";
 
 export type WineInput = {
   readonly wineryName: string;
   readonly brandName?: string | null | undefined;
   readonly baseName?: string | null | undefined;
-  readonly designation: string | null;
+  readonly designation?: string | null | undefined;
   readonly displayName?: string | null | undefined;
   readonly vintageYear?: number | null | undefined;
+  readonly vintageStatus?: VintageStatus | undefined;
   readonly grapeVarieties?: readonly string[] | undefined;
   readonly country?: string | null | undefined;
   readonly region?: string | null | undefined;
@@ -49,7 +56,7 @@ export type BottleInput = {
 };
 
 export type UpsertVintageResult = {
-  readonly wineryId: string;
+  readonly wineryId: string | null;
   readonly wineVintageId: string;
 };
 
@@ -60,6 +67,7 @@ export async function prepareWineVintage({
   overwriteExisting = false,
   updates = wine,
   sourceWineVintageId,
+  existingWineVintageId,
 }: {
   readonly database: BoozeDatabase;
   readonly siteId: string;
@@ -67,55 +75,49 @@ export async function prepareWineVintage({
   readonly overwriteExisting?: boolean;
   readonly updates?: WineUpdates;
   readonly sourceWineVintageId?: string;
+  readonly existingWineVintageId?: string;
 }): Promise<
   UpsertVintageResult & { readonly statements: [CatalogueStatement, ...CatalogueStatement[]] }
 > {
-  if (
-    overwriteExisting &&
-    (updates.drinkFromYear === undefined) !== (updates.drinkToYear === undefined)
-  ) {
-    throw new HTTPException(400, {
-      message: "Edit drinkFromYear and drinkToYear together; use null for an unknown endpoint",
-    });
-  }
-  if (
-    wine.drinkFromYear !== null &&
-    wine.drinkFromYear !== undefined &&
-    wine.drinkToYear !== null &&
-    wine.drinkToYear !== undefined &&
-    wine.drinkFromYear > wine.drinkToYear
-  ) {
-    throw new HTTPException(400, { message: "Drink window must end on or after it starts" });
+  validateWineInput(wine, updates, overwriteExisting);
+  if (existingWineVintageId !== undefined) {
+    const existing = await database
+      .select({ id: wineVintages.id })
+      .from(wineVintages)
+      .where(and(eq(wineVintages.siteId, siteId), eq(wineVintages.id, existingWineVintageId)))
+      .limit(1);
+    if (existing.length === 0)
+      throw new HTTPException(404, { message: "Wine not found in this site" });
   }
   const statements: CatalogueStatement[] = [];
   const wineryRegion = optionalText(wine.region);
-  const baseName = baseNameForWine(wine);
-  const displayName = displayNameForWine(wine);
-  const vintageLabel = vintageLabelForYear(wine.vintageYear);
-  const wineryId = await upsertWinery({
-    country: optionalText(wine.country),
+  const wineryName = optionalText(wine.wineryName);
+  const wineryId =
+    wineryName === null
+      ? null
+      : await upsertWinery({
+          country: optionalText(wine.country),
+          statements,
+          database,
+          name: wineryName,
+          region: wineryRegion,
+          siteId,
+        });
+  const vintage = prepareVintageRow({
     statements,
     database,
-    name: wine.wineryName,
-    region: wineryRegion,
     siteId,
-  });
-  const vintage = await upsertVintageRow({
-    statements,
-    baseName,
-    database,
-    displayName,
-    siteId,
-    vintageLabel,
     wine,
     wineryId,
-    wineryRegion,
-    overwriteExisting,
+    existingWineVintageId,
     updates,
   });
   const wineVintageId = vintage.wineVintageId;
 
-  if (wine.grapeVarieties !== undefined) {
+  if (
+    wine.grapeVarieties !== undefined &&
+    (existingWineVintageId === undefined || updates.grapeVarieties !== undefined)
+  ) {
     replaceConstituents({
       statements,
       database,
@@ -225,81 +227,97 @@ async function wineryIdForIdentity({
   return `winery_${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-async function upsertVintageRow({
+function prepareVintageRow({
   statements,
-  baseName,
   database,
-  displayName,
   siteId,
-  vintageLabel,
   wine,
   wineryId,
-  wineryRegion,
-  overwriteExisting,
+  existingWineVintageId,
   updates,
 }: {
   readonly statements: CatalogueStatement[];
-  readonly overwriteExisting: boolean;
-  readonly updates: WineUpdates;
-  readonly baseName: string;
   readonly database: BoozeDatabase;
-  readonly displayName: string;
   readonly siteId: string;
-  readonly vintageLabel: string;
   readonly wine: WineInput;
-  readonly wineryId: string;
-  readonly wineryRegion: string | null;
-}): Promise<{ readonly wineVintageId: string; readonly isNew: boolean }> {
-  const rows = await database
-    .select({ id: wineVintages.id })
-    .from(wineVintages)
-    .where(
-      and(
-        eq(wineVintages.siteId, siteId),
-        eq(wineVintages.wineryId, wineryId),
-        eq(wineVintages.baseName, baseName),
-        eq(wineVintages.vintageLabel, vintageLabel),
-      ),
-    )
-    .limit(1);
-  const wineVintageId = rows[0]?.id ?? generatedId("vintage");
-
+  readonly wineryId: string | null;
+  readonly existingWineVintageId: string | undefined;
+  readonly updates: WineUpdates;
+}): { readonly wineVintageId: string; readonly isNew: boolean } {
+  const wineVintageId = existingWineVintageId ?? generatedId("vintage");
+  const values = {
+    wineryId,
+    brandName: optionalText(wine.brandName),
+    baseName:
+      optionalText(wine.baseName) ?? optionalText(wine.designation) ?? formatWineDisplayName(wine),
+    displayName: optionalText(wine.displayName) ?? formatWineDisplayName(wine),
+    designation: optionalText(wine.designation),
+    vintageYear: optionalInteger(wine.vintageYear),
+    vintageStatus: wineVintageStatus(wine),
+    vintageLabel: vintageLabel(wine),
+    wineType: optionalText(wine.wineType),
+    wineColor: optionalText(wine.wineColor),
+    country: optionalText(wine.country),
+    region: optionalText(wine.region),
+    appellation: optionalText(wine.appellation),
+    classification: optionalText(wine.classification),
+    addressQualification: optionalText(wine.addressQualification),
+    alcoholPercent: wine.alcoholPercent ?? null,
+    drinkFromYear: optionalInteger(wine.drinkFromYear),
+    drinkToYear: optionalInteger(wine.drinkToYear),
+    description: optionalText(wine.description),
+    drinkingAdvice: optionalText(wine.drinkingAdvice),
+    labelText: optionalText(wine.labelText),
+    sourceUrl: optionalText(wine.sourceUrl),
+    notes: optionalText(wine.notes),
+  };
+  const editsIdentity = [
+    "wineryName",
+    "brandName",
+    "designation",
+    "grapeVarieties",
+    "appellation",
+  ].some((key) => Object.hasOwn(updates, key));
+  const editsVintage = updates.vintageYear !== undefined || updates.vintageStatus !== undefined;
+  const changes = {
+    wineryId:
+      updates.wineryName !== undefined || updates.region !== undefined
+        ? values.wineryId
+        : undefined,
+    displayName:
+      editsIdentity || updates.displayName !== undefined ? values.displayName : undefined,
+    vintageYear: editsVintage ? values.vintageYear : undefined,
+    vintageStatus: editsVintage ? values.vintageStatus : undefined,
+    vintageLabel: editsVintage ? values.vintageLabel : undefined,
+    brandName: whenDefined(updates.brandName, values.brandName),
+    baseName: whenDefined(updates.baseName, values.baseName),
+    designation: whenDefined(updates.designation, values.designation),
+    wineType: whenDefined(updates.wineType, values.wineType),
+    wineColor: whenDefined(updates.wineColor, values.wineColor),
+    country: whenDefined(updates.country, values.country),
+    region: whenDefined(updates.region, values.region),
+    appellation: whenDefined(updates.appellation, values.appellation),
+    classification: whenDefined(updates.classification, values.classification),
+    addressQualification: whenDefined(updates.addressQualification, values.addressQualification),
+    alcoholPercent: whenDefined(updates.alcoholPercent, values.alcoholPercent),
+    drinkFromYear: whenDefined(updates.drinkFromYear, values.drinkFromYear),
+    drinkToYear: whenDefined(updates.drinkToYear, values.drinkToYear),
+    description: whenDefined(updates.description, values.description),
+    drinkingAdvice: whenDefined(updates.drinkingAdvice, values.drinkingAdvice),
+    labelText: whenDefined(updates.labelText, values.labelText),
+    sourceUrl: whenDefined(updates.sourceUrl, values.sourceUrl),
+    notes: whenDefined(updates.notes, values.notes),
+    updatedAt: sql`CURRENT_TIMESTAMP`,
+  };
   statements.push(
-    database
-      .insert(wineVintages)
-      .values({
-        id: wineVintageId,
-        siteId,
-        wineryId,
-        brandName: optionalText(wine.brandName),
-        baseName,
-        displayName,
-        designation: optionalText(wine.designation),
-        vintageYear: optionalInteger(wine.vintageYear),
-        vintageLabel,
-        wineType: optionalText(wine.wineType),
-        wineColor: optionalText(wine.wineColor),
-        country: optionalText(wine.country),
-        region: wineryRegion,
-        appellation: optionalText(wine.appellation),
-        classification: optionalText(wine.classification),
-        addressQualification: optionalText(wine.addressQualification),
-        alcoholPercent: wine.alcoholPercent ?? null,
-        drinkFromYear: optionalInteger(wine.drinkFromYear),
-        drinkToYear: optionalInteger(wine.drinkToYear),
-        description: optionalText(wine.description),
-        drinkingAdvice: optionalText(wine.drinkingAdvice),
-        labelText: optionalText(wine.labelText),
-        sourceUrl: optionalText(wine.sourceUrl),
-        notes: optionalText(wine.notes),
-      })
-      .onConflictDoUpdate({
-        target: wineVintages.id,
-        set: wineVintageUpdateSet({ displayName, wine: updates, overwriteExisting }),
-      }),
+    existingWineVintageId === undefined
+      ? database.insert(wineVintages).values({ id: wineVintageId, siteId, ...values })
+      : database
+          .update(wineVintages)
+          .set(changes)
+          .where(and(eq(wineVintages.siteId, siteId), eq(wineVintages.id, wineVintageId))),
   );
-
-  return { wineVintageId, isNew: rows.length === 0 };
+  return { wineVintageId, isNew: existingWineVintageId === undefined };
 }
 
 export type BottleCreationInput = {
@@ -421,111 +439,6 @@ export async function upsertStorageLocation({
   return { storageLocationId };
 }
 
-function baseNameForWine(wine: WineInput): string {
-  return optionalText(wine.baseName) ?? optionalText(wine.designation) ?? wine.wineryName;
-}
-
-function displayNameForWine(wine: WineInput): string {
-  return optionalText(wine.displayName) ?? optionalText(wine.designation) ?? wine.wineryName;
-}
-
-function wineVintageUpdateSet({
-  displayName,
-  wine,
-  overwriteExisting,
-}: {
-  readonly overwriteExisting: boolean;
-  readonly displayName: string;
-  readonly wine: WineUpdates;
-}) {
-  const update = <T>(column: SQLWrapper, value: T | undefined) =>
-    value === undefined
-      ? undefined
-      : overwriteExisting
-        ? value
-        : sql`coalesce(${column}, ${value})`;
-  // A drinking window is one fact. Additions may fill a wholly unknown window,
-  // but must not combine endpoints supplied by different records.
-  const updateDrinkYear = (column: SQLWrapper, value: number | null | undefined) =>
-    overwriteExisting
-      ? value
-      : sql`case when ${wineVintages.drinkFromYear} is null and ${wineVintages.drinkToYear} is null
-          then ${value ?? null} else ${column} end`;
-  return {
-    brandName: update(
-      wineVintages.brandName,
-      wine.brandName === undefined ? undefined : optionalText(wine.brandName),
-    ),
-    displayName:
-      overwriteExisting && wine.displayName !== undefined ? displayName : wineVintages.displayName,
-    designation: update(
-      wineVintages.designation,
-      wine.designation === undefined ? undefined : optionalText(wine.designation),
-    ),
-    wineType: update(
-      wineVintages.wineType,
-      wine.wineType === undefined ? undefined : optionalText(wine.wineType),
-    ),
-    wineColor: update(
-      wineVintages.wineColor,
-      wine.wineColor === undefined ? undefined : optionalText(wine.wineColor),
-    ),
-    country: update(
-      wineVintages.country,
-      wine.country === undefined ? undefined : optionalText(wine.country),
-    ),
-    region: update(
-      wineVintages.region,
-      wine.region === undefined ? undefined : optionalText(wine.region),
-    ),
-    appellation: update(
-      wineVintages.appellation,
-      wine.appellation === undefined ? undefined : optionalText(wine.appellation),
-    ),
-    classification: update(
-      wineVintages.classification,
-      wine.classification === undefined ? undefined : optionalText(wine.classification),
-    ),
-    addressQualification: update(
-      wineVintages.addressQualification,
-      wine.addressQualification === undefined ? undefined : optionalText(wine.addressQualification),
-    ),
-    alcoholPercent: update(
-      wineVintages.alcoholPercent,
-      wine.alcoholPercent === undefined ? undefined : wine.alcoholPercent,
-    ),
-    drinkFromYear: updateDrinkYear(
-      wineVintages.drinkFromYear,
-      wine.drinkFromYear === undefined ? undefined : optionalInteger(wine.drinkFromYear),
-    ),
-    drinkToYear: updateDrinkYear(
-      wineVintages.drinkToYear,
-      wine.drinkToYear === undefined ? undefined : optionalInteger(wine.drinkToYear),
-    ),
-    description: update(
-      wineVintages.description,
-      wine.description === undefined ? undefined : optionalText(wine.description),
-    ),
-    drinkingAdvice: update(
-      wineVintages.drinkingAdvice,
-      wine.drinkingAdvice === undefined ? undefined : optionalText(wine.drinkingAdvice),
-    ),
-    labelText: update(
-      wineVintages.labelText,
-      wine.labelText === undefined ? undefined : optionalText(wine.labelText),
-    ),
-    sourceUrl: update(
-      wineVintages.sourceUrl,
-      wine.sourceUrl === undefined ? undefined : optionalText(wine.sourceUrl),
-    ),
-    notes: update(
-      wineVintages.notes,
-      wine.notes === undefined ? undefined : optionalText(wine.notes),
-    ),
-    updatedAt: sql`CURRENT_TIMESTAMP`,
-  };
-}
-
 function nullableEq(
   column: typeof wineries.region | typeof storageLocations.parentId,
   value: string | null,
@@ -585,4 +498,34 @@ function replaceConstituents({
         }),
     );
   }
+}
+
+function validateWineInput(wine: WineInput, updates: WineUpdates, overwriteExisting: boolean) {
+  if (
+    overwriteExisting &&
+    (updates.drinkFromYear === undefined) !== (updates.drinkToYear === undefined)
+  ) {
+    throw new HTTPException(400, {
+      message: "Edit drinkFromYear and drinkToYear together; use null for an unknown endpoint",
+    });
+  }
+  if (
+    wine.drinkFromYear !== null &&
+    wine.drinkFromYear !== undefined &&
+    wine.drinkToYear !== null &&
+    wine.drinkToYear !== undefined &&
+    wine.drinkFromYear > wine.drinkToYear
+  ) {
+    throw new HTTPException(400, { message: "Drink window must end on or after it starts" });
+  }
+  const status = wineVintageStatus(wine);
+  if ((status === "year") !== (wine.vintageYear !== null && wine.vintageYear !== undefined)) {
+    throw new HTTPException(400, {
+      message: "Choose a known year, non-vintage, or unknown vintage consistently",
+    });
+  }
+}
+
+function whenDefined<T>(input: unknown, value: T): T | undefined {
+  return input === undefined ? undefined : value;
 }

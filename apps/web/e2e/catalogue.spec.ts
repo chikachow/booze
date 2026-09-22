@@ -278,7 +278,7 @@ test("toggles capture evidence and full errors with the keyboard", async ({ page
   await page.reload();
   await page.getByRole("button", { name: "Capture" }).click();
 
-  const review = page.locator("summary", { hasText: "Review extracted facts" });
+  const review = page.locator("summary", { hasText: "Review wine and bottle details" });
   const reason = page.getByText("Check the year against the retained photos.");
   await expect(reason).toBeVisible();
   await review.focus();
@@ -371,6 +371,8 @@ test("keeps failed editor values and rejects malformed award numbers", async ({ 
   await page.locator(".bottle-card").first().getByRole("button", { name: "Edit" }).click();
   const dialog = page.getByRole("dialog", { name: "Edit bottle" });
   await expectNoAxeViolations(page);
+  await dialog.getByRole("combobox", { name: "What are you editing?" }).click();
+  await page.getByRole("option", { name: "Correct wine details" }).click();
   const winery = dialog.getByRole("textbox", { name: /Winery/u });
   await winery.fill("Unsaved Browser Winery");
   await dialog.getByRole("button", { name: "Add review" }).click();
@@ -385,7 +387,9 @@ test("keeps failed editor values and rejects malformed award numbers", async ({ 
 
   await dialog.locator("[name='awards.0.points']").fill("95");
   await dialog.getByRole("button", { name: "Save bottle" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("Bottle was not updated.");
+  await expect(
+    dialog.getByRole("alert").filter({ hasText: "Bottle was not updated." }),
+  ).toBeVisible();
   await expect(winery).toHaveValue("Unsaved Browser Winery");
   await expect(dialog.locator("[name='criticReviews.0.ratingText']")).toHaveValue("96 points");
   await expect(dialog.locator("[name='awards.0.awardName']")).toHaveValue("Browser show");
@@ -666,7 +670,9 @@ test("bounds capture, site, and location work before progressively revealing it"
   await expect(firstRevealedCapture).toBeFocused();
   await expect(firstRevealedCapture.getByRole("button", { name: "Create new" })).toBeDisabled();
   await page.keyboard.press("Tab");
-  await expect(firstRevealedCapture.getByRole("button", { name: "Retry" })).toBeFocused();
+  await expect(
+    firstRevealedCapture.locator("summary", { hasText: "Review wine and bottle details" }),
+  ).toBeFocused();
 
   await page.getByRole("button", { name: "Storage" }).click();
   const sitesRegion = page.getByRole("region", { exact: true, name: "Sites" });

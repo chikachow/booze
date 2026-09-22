@@ -1,3 +1,4 @@
+import { storedVintageLabel, storedVintageStatus } from "./wine-vintage.ts";
 import {
   bottleLocations,
   bottles,
@@ -32,7 +33,7 @@ export type BottleResource = {
   readonly barcode: string | null;
   readonly lotCode: string | null;
   readonly bottleNotes: string | null;
-  readonly wineryId: string;
+  readonly wineryId: string | null;
   readonly wineryName: string;
   readonly brandName: string | null;
   readonly baseName: string;
@@ -40,6 +41,8 @@ export type BottleResource = {
   readonly displayName: string;
   readonly vintageYear: number | null;
   readonly vintageLabel: string;
+  readonly vintageStatus: "year" | "non_vintage" | "unknown";
+  readonly wineBottleCount: number;
   readonly grapeVarieties: readonly string[];
   readonly country: string | null;
   readonly region: string | null;
@@ -144,7 +147,9 @@ export async function listBottles({
       designation: wineVintages.designation,
       displayName: wineVintages.displayName,
       vintageYear: wineVintages.vintageYear,
-      vintageLabel: wineVintages.vintageLabel,
+      vintageLabel: storedVintageLabel,
+      vintageStatus: storedVintageStatus,
+      wineBottleCount: sql<number>`(select count(*) from bottles as related_bottles where related_bottles.site_id = ${bottles.siteId} and related_bottles.wine_vintage_id = ${bottles.wineVintageId})`,
       grapeVarieties: grapeVarietiesByWine.grapeVarieties,
       country: wineVintages.country,
       region: wineVintages.region,
@@ -170,7 +175,7 @@ export async function listBottles({
       wineVintages,
       and(eq(bottles.siteId, wineVintages.siteId), eq(bottles.wineVintageId, wineVintages.id)),
     )
-    .innerJoin(
+    .leftJoin(
       wineries,
       and(eq(wineVintages.siteId, wineries.siteId), eq(wineVintages.wineryId, wineries.id)),
     )
@@ -196,6 +201,7 @@ export async function listBottles({
 
   return rows.map((row) => ({
     ...row,
+    wineryName: row.wineryName ?? "",
     criticReviews: criticReviewsByWine.get(row.wineVintageId) ?? [],
     awards: awardsByWine.get(row.wineVintageId) ?? [],
     grapeVarieties:

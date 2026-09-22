@@ -26,13 +26,16 @@ function rulesFor({
   label,
   name,
   required,
+  disabled,
 }: {
   readonly label: string;
   readonly name: FieldPath<FormState>;
   readonly required: boolean | undefined;
+  readonly disabled: boolean | undefined;
 }): RegisterOptions<FormState> {
   return {
     validate: (value, values) => {
+      if (disabled === true) return true;
       if (typeof value !== "string" || value.trim() === "") {
         return required === true ? `${label} is required.` : true;
       }
@@ -73,7 +76,7 @@ export function BottleTextInput({
   disabled = false,
   description,
 }: BottleFormFieldProps): ReactElement {
-  const { field, status } = useBottleField({ control, label, name, required });
+  const { field, status } = useBottleField({ control, label, name, required, disabled });
 
   return (
     <TextInput
@@ -99,13 +102,15 @@ export function BottleTextArea({
   name,
   placeholder,
   required = false,
+  disabled = false,
 }: BottleFormFieldProps): ReactElement {
-  const { field, status } = useBottleField({ control, label, name, required });
+  const { field, status } = useBottleField({ control, label, name, required, disabled });
 
   return (
     <TextArea
       ref={field.ref}
       htmlName={field.name}
+      isDisabled={disabled}
       isRequired={required}
       label={label}
       placeholder={placeholder}
@@ -117,11 +122,11 @@ export function BottleTextArea({
   );
 }
 
-function useBottleField({ control, label, name, required }: BottleFormFieldProps) {
+function useBottleField({ control, label, name, required, disabled }: BottleFormFieldProps) {
   const { field, fieldState } = useController({
     control,
     name,
-    rules: rulesFor({ label, name, required }),
+    rules: rulesFor({ label, name, required, disabled }),
   });
   return {
     field,

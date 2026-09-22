@@ -4,14 +4,21 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { CaptureImportAction, CaptureReviewSaveAction } from "../shared/capture-import.ts";
 import { CaptureArea, type CaptureSubmitResult } from "./CaptureView.tsx";
 import {
   captureFixture,
+  inventoryItemFixture,
   capturesFixture,
   locationsFixture,
   sitesFixture,
 } from "./test/catalogue-fixtures.ts";
-import type { CaptureFormState, CaptureResource } from "./inventory-model.ts";
+import type {
+  CaptureFormState,
+  CaptureResource,
+  CaptureRunResource,
+  InventoryItem,
+} from "./inventory-model.ts";
 
 const captureForm = {
   location: "",
@@ -21,6 +28,14 @@ const captureForm = {
   siteId: "site-owner",
   storageLocationId: "",
 } satisfies CaptureFormState;
+
+const resolvedReview: CaptureReviewSaveAction = async (_id, revision, candidate) => ({
+  ok: true,
+  reviewRevision: revision + 1,
+  reviewCandidate: candidate,
+});
+
+const resolvedImport: CaptureImportAction = async () => ({ ok: true });
 
 async function resolvedTrue(): Promise<boolean> {
   return true;
@@ -32,18 +47,23 @@ async function resolvedCapture(): Promise<CaptureSubmitResult> {
 
 function renderCapture({
   captures = capturesFixture,
+  inventoryItems = [],
   onDelete = resolvedTrue,
-  onImport = resolvedTrue,
+  onImport = resolvedImport,
+  onSaveReview = resolvedReview,
   onRetry = resolvedTrue,
 }: {
   readonly captures?: readonly CaptureResource[];
+  readonly inventoryItems?: readonly InventoryItem[];
   readonly onDelete?: (captureId: string) => Promise<boolean>;
-  readonly onImport?: (captureId: string, wineVintageId?: string) => Promise<boolean>;
+  readonly onImport?: CaptureImportAction;
+  readonly onSaveReview?: CaptureReviewSaveAction;
   readonly onRetry?: (captureId: string) => Promise<boolean>;
 } = {}) {
   return render(
     <CaptureArea
       captures={captures}
+      inventoryItems={inventoryItems}
       form={captureForm}
       isSaving={false}
       locations={locationsFixture}
@@ -51,6 +71,7 @@ function renderCapture({
       writableSiteIds={new Set(["site-owner", "site-editor"])}
       onDelete={onDelete}
       onImport={onImport}
+      onSaveReview={onSaveReview}
       onRetry={onRetry}
       onSubmit={resolvedCapture}
       setForm={vi.fn((nextForm: CaptureFormState): void => {
@@ -59,6 +80,56 @@ function renderCapture({
     />,
   );
 }
+
+const incompleteRun = {
+  id: "run-rikard",
+  status: "needs_review",
+  extractionR2Key: null,
+  extractionContentType: null,
+  extractionSizeBytes: null,
+  importCandidate: {
+    wine: {
+      wineryName: "RIKARD Wines",
+      designation: "",
+      displayName: "",
+      vintageYear: 2022,
+      grapeVarieties: ["Shiraz"],
+    },
+    bottle: { volumeMl: 750 },
+    rawSuggestion: {},
+  },
+  matchResult: { wineVintageCandidates: [{ id: "existing", label: "Existing Shiraz" }] },
+  importResult: null,
+  errorMessage: null,
+  errorDetailR2Key: null,
+  errorDetailContentType: null,
+  errorDetailSizeBytes: null,
+  createdAt: "2026-09-22T00:00:00Z",
+  completedAt: null,
+} satisfies CaptureRunResource;
+
+it("shows actionable import errors on the affected capture", async () => {
+  const user = userEvent.setup();
+  const message =
+    "Capture processing changed before import. Refresh the capture before trying again.";
+  const onImport = vi.fn<CaptureImportAction>(async () => ({ ok: false, message }));
+  renderCapture({ captures: [captureFixture({ latestRun: incompleteRun })], onImport });
+  await user.click(screen.getByRole("button", { name: "Create new" }));
+  expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", undefined, {
+    expectedReviewRevision: 0,
+  });
+  expect(await screen.findByText(message)).toBeVisible();
+});
+
+it("passes an existing wine selection through the import action", async () => {
+  const user = userEvent.setup();
+  const onImport = vi.fn<CaptureImportAction>(resolvedImport);
+  renderCapture({ captures: [captureFixture({ latestRun: incompleteRun })], onImport });
+  await user.click(screen.getByRole("button", { name: "Use Existing Shiraz" }));
+  expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", "existing", {
+    expectedReviewRevision: 0,
+  });
+});
 
 function photo(name: string): File {
   return new File([name], name, { lastModified: 1, type: "image/jpeg" });
@@ -220,7 +291,8 @@ function QuantityCaptureHarness({
       sites={sitesFixture}
       writableSiteIds={new Set(["site-owner"])}
       onDelete={resolvedTrue}
-      onImport={resolvedTrue}
+      onImport={resolvedImport}
+      onSaveReview={resolvedReview}
       onRetry={resolvedTrue}
       onSubmit={onSubmit}
     />
@@ -249,4 +321,128 @@ it("preserves invalid capture quantity drafts and submits corrected full-width d
     expect.objectContaining({ quantity: "１２" }),
     expect.any(Array),
   );
+});
+
+it("saves manual corrections separately and requires an explicit revision-aware import", async () => {
+  const user = userEvent.setup();
+  const onSaveReview = vi.fn<CaptureReviewSaveAction>(resolvedReview);
+  const onImport = vi.fn<CaptureImportAction>(resolvedImport);
+  renderCapture({
+    captures: [captureFixture({ latestRun: incompleteRun })],
+    onSaveReview,
+    onImport,
+  });
+  await user.clear(screen.getByRole("textbox", { name: "Producer / winery" }));
+  await user.type(screen.getByRole("textbox", { name: "Producer / winery" }), "RIKARD");
+  expect(screen.getByRole("button", { name: "Create new" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Save corrections" }));
+  expect(onSaveReview).toHaveBeenCalledOnce();
+  expect(onSaveReview.mock.calls[0]?.slice(0, 2)).toEqual(["capture-1", 0]);
+  expect(onSaveReview.mock.calls[0]?.[2].wine).toMatchObject({
+    wineryName: "RIKARD",
+    designation: "",
+    vintageYear: 2022,
+    vintageStatus: "year",
+    grapeVarieties: ["Shiraz"],
+  });
+  expect(onImport).not.toHaveBeenCalled();
+  await user.click(screen.getByText("Original extracted facts"));
+  expect(screen.getByText("RIKARD Wines")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Create new" }));
+  expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", undefined, {
+    expectedReviewRevision: 1,
+  });
+});
+
+it("retains cleared values and edits when saving corrections fails", async () => {
+  const user = userEvent.setup();
+  const onSaveReview = vi.fn<CaptureReviewSaveAction>(async () => ({
+    ok: false,
+    message: "Another editor changed this capture. Refresh before saving.",
+  }));
+  renderCapture({ captures: [captureFixture({ latestRun: incompleteRun })], onSaveReview });
+  await user.clear(screen.getByRole("textbox", { name: "Bottle size (ml)" }));
+  await user.type(screen.getByRole("textbox", { name: "Bottle notes" }), "Check cork");
+  await user.click(screen.getByRole("button", { name: "Save corrections" }));
+  expect(onSaveReview.mock.calls[0]?.[2].bottle).not.toHaveProperty("volumeMl");
+  expect(screen.getByRole("textbox", { name: "Bottle notes" })).toHaveValue("Check cork");
+  expect(screen.getByRole("textbox", { name: "Bottle size (ml)" })).toHaveValue("");
+  expect(
+    screen.getByText("Another editor changed this capture. Refresh before saving."),
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Create new" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeDisabled();
+});
+
+it("requires saving an empty manual review before explicit unidentified import", async () => {
+  const user = userEvent.setup();
+  const onSaveReview = vi.fn<CaptureReviewSaveAction>(resolvedReview);
+  const onImport = vi.fn<CaptureImportAction>(resolvedImport);
+  renderCapture({
+    captures: [captureFixture({ status: "failed", latestRun: null })],
+    onSaveReview,
+    onImport,
+  });
+  expect(screen.getByRole("button", { name: "Save as unidentified wine" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Save corrections" }));
+  expect(onImport).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Save as unidentified wine" }));
+  expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", undefined, {
+    expectedReviewRevision: 1,
+    allowUnidentified: true,
+  });
+});
+
+it.each([
+  { label: "without extraction", latestRun: null },
+  { label: "after corrections", latestRun: incompleteRun },
+])("selects an existing site wine explicitly $label", async ({ latestRun }) => {
+  const user = userEvent.setup();
+  const onImport = vi.fn<CaptureImportAction>(resolvedImport);
+  const duplicateTitle = {
+    displayName: "Same Chardonnay",
+    wineryName: "Producer",
+    grapeVarieties: "Chardonnay",
+  };
+  const first = inventoryItemFixture({ ...duplicateTitle, wineVintageId: "first-wine" });
+  const second = inventoryItemFixture({
+    ...duplicateTitle,
+    bottleId: "second-bottle",
+    wineVintageId: "second-wine",
+  });
+  const otherSite = inventoryItemFixture({
+    siteId: "site-editor",
+    wineVintageId: "other-site-wine",
+    displayName: "Other site wine",
+  });
+  renderCapture({
+    captures: [
+      captureFixture({
+        latestRun,
+        reviewRevision: 2,
+        reviewCandidate: {
+          wine: {
+            wineryName: "Corrected producer",
+            designation: "",
+            grapeVarieties: ["Chardonnay"],
+          },
+          bottle: {},
+        },
+      }),
+    ],
+    inventoryItems: [first, second, otherSite],
+    onImport,
+  });
+  expect(screen.queryByRole("button", { name: "Use Existing Shiraz" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Use selected wine" })).toBeDisabled();
+  await user.click(screen.getByRole("combobox", { name: "Existing wine in this site" }));
+  expect(screen.getByRole("option", { name: /first-wine/u })).toBeVisible();
+  expect(screen.queryByRole("option", { name: /Other site wine/u })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("option", { name: /second-wine/u }));
+  expect(onImport).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Use selected wine" }));
+  expect(onImport).toHaveBeenCalledExactlyOnceWith("capture-1", "second-wine", {
+    expectedReviewRevision: 2,
+  });
 });

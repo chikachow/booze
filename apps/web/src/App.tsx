@@ -359,6 +359,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
             ) : area === "captures" ? (
               <CaptureArea
                 captures={captures}
+                inventoryItems={items}
                 form={captureController.captureForm}
                 isSaving={captureController.isSaving}
                 locations={writableLocations}
@@ -367,6 +368,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
                 setForm={captureController.setCaptureForm}
                 onDelete={captureController.deleteCapture}
                 onImport={captureController.importCapture}
+                onSaveReview={captureController.saveCaptureReview}
                 onRetry={captureController.retryCapture}
                 onSubmit={captureController.submitCapture}
               />
@@ -386,6 +388,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
 
             {bottleController.isAddOpen ? (
               <BottleModal
+                inventoryItems={items}
                 form={bottleController.addFormDefaults}
                 isSaving={bottleController.isSaving}
                 locations={writableLocations}
@@ -401,6 +404,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
             {bottleController.editingBottle === null ||
             bottleController.editingForm === null ? null : (
               <BottleModal
+                inventoryItems={items}
                 key={bottleController.editingBottle.bottleId}
                 form={bottleController.editingForm}
                 isSaving={bottleController.isSaving}

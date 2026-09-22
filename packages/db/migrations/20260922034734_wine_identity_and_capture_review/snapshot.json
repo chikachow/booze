@@ -1,0 +1,3620 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "10ab14fb-fca4-4ad3-ab53-3c8169cc07bf",
+  "prevIds": [
+    "0410194c-0244-4cff-887f-3fa786b93ddb"
+  ],
+  "ddl": [
+    {
+      "name": "bottle_capture_images",
+      "entityType": "tables"
+    },
+    {
+      "name": "bottle_capture_runs",
+      "entityType": "tables"
+    },
+    {
+      "name": "bottle_captures",
+      "entityType": "tables"
+    },
+    {
+      "name": "bottle_locations",
+      "entityType": "tables"
+    },
+    {
+      "name": "bottles",
+      "entityType": "tables"
+    },
+    {
+      "name": "critic_reviews",
+      "entityType": "tables"
+    },
+    {
+      "name": "grape_varieties",
+      "entityType": "tables"
+    },
+    {
+      "name": "image_assets",
+      "entityType": "tables"
+    },
+    {
+      "name": "label_extractions",
+      "entityType": "tables"
+    },
+    {
+      "name": "mcp_tool_audit_events",
+      "entityType": "tables"
+    },
+    {
+      "name": "r2_object_deletion_queue",
+      "entityType": "tables"
+    },
+    {
+      "name": "review_sources",
+      "entityType": "tables"
+    },
+    {
+      "name": "site_memberships",
+      "entityType": "tables"
+    },
+    {
+      "name": "sites",
+      "entityType": "tables"
+    },
+    {
+      "name": "storage_locations",
+      "entityType": "tables"
+    },
+    {
+      "name": "users",
+      "entityType": "tables"
+    },
+    {
+      "name": "wine_awards",
+      "entityType": "tables"
+    },
+    {
+      "name": "wine_constituents",
+      "entityType": "tables"
+    },
+    {
+      "name": "wine_vintages",
+      "entityType": "tables"
+    },
+    {
+      "name": "wineries",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "capture_id",
+      "entityType": "columns",
+      "table": "bottle_capture_images"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "image_asset_id",
+      "entityType": "columns",
+      "table": "bottle_capture_images"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sort_order",
+      "entityType": "columns",
+      "table": "bottle_capture_images"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "original_filename",
+      "entityType": "columns",
+      "table": "bottle_capture_images"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "bottle_capture_images"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "capture_id",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extraction_r2_key",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extraction_content_type",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extraction_size_bytes",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_candidate_json",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "match_result_json",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "import_result_json",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extractor_version",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prompt_version",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "schema_version",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "attempt_number",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_message",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_detail_r2_key",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_detail_content_type",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_detail_size_bytes",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_location_id",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position_hint",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "quantity",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'queued'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workflow_instance_id",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "imported_bottle_ids_json",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "review_candidate_json",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "review_revision",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_message",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "error_detail_json",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "bottle_captures"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bottle_id",
+      "entityType": "columns",
+      "table": "bottle_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "bottle_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "storage_location_id",
+      "entityType": "columns",
+      "table": "bottle_locations"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position_hint",
+      "entityType": "columns",
+      "table": "bottle_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "bottle_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_vintage_id",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bottle_number",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "750",
+      "generated": null,
+      "name": "volume_ml",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "barcode",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lot_code",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'in_stock'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "acquired_at",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "purchase_price",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "purchase_currency",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "bottles"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_vintage_id",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "review_source_id",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rating_text",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rating_value",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "rating_scale",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_url",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reviewed_at",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provenance",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_by_user_id",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "critic_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "grape_varieties"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "grape_varieties"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "grape_varieties"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "grape_varieties"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sha256",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "r2_key",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_type",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "size_bytes",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "thumbnail_r2_key",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "thumbnail_content_type",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "thumbnail_size_bytes",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "thumbnail_width",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "thumbnail_height",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "width",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "height",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "uploaded_by_user_id",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "image_assets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bottle_id",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_vintage_id",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "capture_id",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "capture_run_id",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "raw_text_json",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "extracted_fields_json",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "confidence",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "requires_review",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "label_extractions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tool_name",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_kind",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_mcp_id",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "target_persisted_id",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_json",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "before_json",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "after_json",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "affected_record_count",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "r2_key",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_kind",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_id",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempts",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_attempt_at",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'critic'",
+      "generated": null,
+      "name": "source_type",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "is_active",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "review_sources"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "site_memberships"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "table": "site_memberships"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "role",
+      "entityType": "columns",
+      "table": "site_memberships"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "site_memberships"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "site_memberships"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "sites"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "sites"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "sites"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "sites"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parent_id",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'area'",
+      "generated": null,
+      "name": "location_type",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "storage_locations"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "clerk_user_id",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_vintage_id",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "award_name",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "award_level",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "award_year",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "award_body",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "category",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "points",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_url",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provenance",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_by_user_id",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "wine_awards"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_vintage_id",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "grape_variety_id",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "blend_text",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "percentage",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "wine_constituents"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "winery_id",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "brand_name",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "base_name",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "designation",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vintage_year",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'unknown'",
+      "generated": null,
+      "name": "vintage_status",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "vintage_label",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_type",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "wine_color",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "country",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "region",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "appellation",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "classification",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "address_qualification",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "alcohol_percent",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "drink_from_year",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "drink_to_year",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "description",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "drinking_advice",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "label_text",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_url",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "wine_vintages"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "site_id",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "address_text",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "country",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "region",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "established_year",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "notes",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "CURRENT_TIMESTAMP",
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "wineries"
+    },
+    {
+      "columns": [
+        "capture_id"
+      ],
+      "tableTo": "bottle_captures",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_capture_images_capture_id_bottle_captures_id_fk",
+      "entityType": "fks",
+      "table": "bottle_capture_images"
+    },
+    {
+      "columns": [
+        "image_asset_id"
+      ],
+      "tableTo": "image_assets",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_capture_images_image_asset_id_image_assets_id_fk",
+      "entityType": "fks",
+      "table": "bottle_capture_images"
+    },
+    {
+      "columns": [
+        "capture_id"
+      ],
+      "tableTo": "bottle_captures",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_capture_runs_capture_id_bottle_captures_id_fk",
+      "entityType": "fks",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_captures_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "bottle_captures"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_captures_user_id_users_id_fk",
+      "entityType": "fks",
+      "table": "bottle_captures"
+    },
+    {
+      "columns": [
+        "site_id",
+        "storage_location_id"
+      ],
+      "tableTo": "storage_locations",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "bottle_captures_site_id_storage_location_id_locations_fk",
+      "entityType": "fks",
+      "table": "bottle_captures"
+    },
+    {
+      "columns": [
+        "bottle_id"
+      ],
+      "tableTo": "bottles",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_locations_bottle_id_bottles_id_fk",
+      "entityType": "fks",
+      "table": "bottle_locations"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottle_locations_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "bottle_locations"
+    },
+    {
+      "columns": [
+        "site_id",
+        "storage_location_id"
+      ],
+      "tableTo": "storage_locations",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "bottle_locations_site_id_storage_location_id_locations_fk",
+      "entityType": "fks",
+      "table": "bottle_locations"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_bottles_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "bottles"
+    },
+    {
+      "columns": [
+        "site_id",
+        "wine_vintage_id"
+      ],
+      "tableTo": "wine_vintages",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "bottles_site_id_wine_vintage_id_vintages_fk",
+      "entityType": "fks",
+      "table": "bottles"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_critic_reviews_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        "review_source_id"
+      ],
+      "tableTo": "review_sources",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_critic_reviews_review_source_id_review_sources_id_fk",
+      "entityType": "fks",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        "created_by_user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_critic_reviews_created_by_user_id_users_id_fk",
+      "entityType": "fks",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        "site_id",
+        "wine_vintage_id"
+      ],
+      "tableTo": "wine_vintages",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "critic_reviews_site_id_wine_vintage_id_vintages_fk",
+      "entityType": "fks",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_image_assets_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "image_assets"
+    },
+    {
+      "columns": [
+        "uploaded_by_user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_image_assets_uploaded_by_user_id_users_id_fk",
+      "entityType": "fks",
+      "table": "image_assets"
+    },
+    {
+      "columns": [
+        "bottle_id"
+      ],
+      "tableTo": "bottles",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_label_extractions_bottle_id_bottles_id_fk",
+      "entityType": "fks",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        "wine_vintage_id"
+      ],
+      "tableTo": "wine_vintages",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_label_extractions_wine_vintage_id_wine_vintages_id_fk",
+      "entityType": "fks",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        "capture_id"
+      ],
+      "tableTo": "bottle_captures",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_label_extractions_capture_id_bottle_captures_id_fk",
+      "entityType": "fks",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        "capture_run_id"
+      ],
+      "tableTo": "bottle_capture_runs",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_label_extractions_capture_run_id_bottle_capture_runs_id_fk",
+      "entityType": "fks",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_mcp_tool_audit_events_user_id_users_id_fk",
+      "entityType": "fks",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_review_sources_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "review_sources"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_site_memberships_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "site_memberships"
+    },
+    {
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_site_memberships_user_id_users_id_fk",
+      "entityType": "fks",
+      "table": "site_memberships"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_storage_locations_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "storage_locations"
+    },
+    {
+      "columns": [
+        "site_id",
+        "parent_id"
+      ],
+      "tableTo": "storage_locations",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "storage_locations_site_id_parent_id_self_fk",
+      "entityType": "fks",
+      "table": "storage_locations"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_wine_awards_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "wine_awards"
+    },
+    {
+      "columns": [
+        "created_by_user_id"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_wine_awards_created_by_user_id_users_id_fk",
+      "entityType": "fks",
+      "table": "wine_awards"
+    },
+    {
+      "columns": [
+        "site_id",
+        "wine_vintage_id"
+      ],
+      "tableTo": "wine_vintages",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "wine_awards_site_id_wine_vintage_id_vintages_fk",
+      "entityType": "fks",
+      "table": "wine_awards"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_wine_constituents_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "wine_constituents"
+    },
+    {
+      "columns": [
+        "grape_variety_id"
+      ],
+      "tableTo": "grape_varieties",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_wine_constituents_grape_variety_id_grape_varieties_id_fk",
+      "entityType": "fks",
+      "table": "wine_constituents"
+    },
+    {
+      "columns": [
+        "site_id",
+        "wine_vintage_id"
+      ],
+      "tableTo": "wine_vintages",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "wine_constituents_site_id_wine_vintage_id_vintages_fk",
+      "entityType": "fks",
+      "table": "wine_constituents"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_wine_vintages_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "wine_vintages"
+    },
+    {
+      "columns": [
+        "site_id",
+        "winery_id"
+      ],
+      "tableTo": "wineries",
+      "columnsTo": [
+        "site_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": true,
+      "name": "wine_vintages_site_id_winery_id_wineries_fk",
+      "entityType": "fks",
+      "table": "wine_vintages"
+    },
+    {
+      "columns": [
+        "site_id"
+      ],
+      "tableTo": "sites",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_wineries_site_id_sites_id_fk",
+      "entityType": "fks",
+      "table": "wineries"
+    },
+    {
+      "columns": [
+        "capture_id",
+        "sort_order"
+      ],
+      "nameExplicit": true,
+      "name": "bottle_capture_images_capture_id_sort_order_pk",
+      "entityType": "pks",
+      "table": "bottle_capture_images"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "bottle_capture_runs_pk",
+      "entityType": "pks",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "bottle_captures_pk",
+      "entityType": "pks",
+      "table": "bottle_captures"
+    },
+    {
+      "columns": [
+        "bottle_id"
+      ],
+      "nameExplicit": false,
+      "name": "bottle_locations_pk",
+      "entityType": "pks",
+      "table": "bottle_locations"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "bottles_pk",
+      "entityType": "pks",
+      "table": "bottles"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "critic_reviews_pk",
+      "entityType": "pks",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "grape_varieties_pk",
+      "entityType": "pks",
+      "table": "grape_varieties"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "image_assets_pk",
+      "entityType": "pks",
+      "table": "image_assets"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "label_extractions_pk",
+      "entityType": "pks",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "mcp_tool_audit_events_pk",
+      "entityType": "pks",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "columns": [
+        "r2_key"
+      ],
+      "nameExplicit": false,
+      "name": "r2_object_deletion_queue_pk",
+      "entityType": "pks",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "review_sources_pk",
+      "entityType": "pks",
+      "table": "review_sources"
+    },
+    {
+      "columns": [
+        "site_id",
+        "user_id"
+      ],
+      "nameExplicit": true,
+      "name": "site_memberships_site_id_user_id_pk",
+      "entityType": "pks",
+      "table": "site_memberships"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "sites_pk",
+      "entityType": "pks",
+      "table": "sites"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "storage_locations_pk",
+      "entityType": "pks",
+      "table": "storage_locations"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "users_pk",
+      "entityType": "pks",
+      "table": "users"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "wine_awards_pk",
+      "entityType": "pks",
+      "table": "wine_awards"
+    },
+    {
+      "columns": [
+        "wine_vintage_id",
+        "grape_variety_id"
+      ],
+      "nameExplicit": true,
+      "name": "wine_constituents_wine_vintage_id_grape_variety_id_pk",
+      "entityType": "pks",
+      "table": "wine_constituents"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "wine_vintages_pk",
+      "entityType": "pks",
+      "table": "wine_vintages"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "wineries_pk",
+      "entityType": "pks",
+      "table": "wineries"
+    },
+    {
+      "columns": [
+        {
+          "value": "image_asset_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottle_capture_images_image_asset_id_idx",
+      "entityType": "indexes",
+      "table": "bottle_capture_images"
+    },
+    {
+      "columns": [
+        {
+          "value": "capture_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottle_capture_runs_capture_id_idx",
+      "entityType": "indexes",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottle_capture_runs_status_idx",
+      "entityType": "indexes",
+      "table": "bottle_capture_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottle_captures_site_id_status_idx",
+      "entityType": "indexes",
+      "table": "bottle_captures"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottle_captures_user_id_idx",
+      "entityType": "indexes",
+      "table": "bottle_captures"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "storage_location_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottle_locations_site_id_location_id_idx",
+      "entityType": "indexes",
+      "table": "bottle_locations"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "wine_vintage_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "bottles_site_id_wine_vintage_id_idx",
+      "entityType": "indexes",
+      "table": "bottles"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "wine_vintage_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "critic_reviews_site_id_wine_vintage_id_idx",
+      "entityType": "indexes",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        {
+          "value": "review_source_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "critic_reviews_review_source_id_idx",
+      "entityType": "indexes",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "wine_vintage_id",
+          "isExpression": false
+        },
+        {
+          "value": "review_source_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "critic_reviews_site_wine_source_unique",
+      "entityType": "indexes",
+      "table": "critic_reviews"
+    },
+    {
+      "columns": [
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "grape_varieties_name_unique",
+      "entityType": "indexes",
+      "table": "grape_varieties"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "image_assets_site_id_idx",
+      "entityType": "indexes",
+      "table": "image_assets"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "sha256",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "image_assets_site_id_sha256_unique",
+      "entityType": "indexes",
+      "table": "image_assets"
+    },
+    {
+      "columns": [
+        {
+          "value": "r2_key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "image_assets_r2_key_unique",
+      "entityType": "indexes",
+      "table": "image_assets"
+    },
+    {
+      "columns": [
+        {
+          "value": "bottle_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "label_extractions_bottle_id_idx",
+      "entityType": "indexes",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        {
+          "value": "wine_vintage_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "label_extractions_wine_vintage_id_idx",
+      "entityType": "indexes",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        {
+          "value": "capture_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "label_extractions_capture_id_idx",
+      "entityType": "indexes",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        {
+          "value": "capture_run_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "label_extractions_capture_run_id_idx",
+      "entityType": "indexes",
+      "table": "label_extractions"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "mcp_tool_audit_events_user_id_created_at_idx",
+      "entityType": "indexes",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "mcp_tool_audit_events_site_id_created_at_idx",
+      "entityType": "indexes",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "columns": [
+        {
+          "value": "target_kind",
+          "isExpression": false
+        },
+        {
+          "value": "target_persisted_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "mcp_tool_audit_events_target_idx",
+      "entityType": "indexes",
+      "table": "mcp_tool_audit_events"
+    },
+    {
+      "columns": [
+        {
+          "value": "attempts",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "r2_object_deletion_queue_attempts_created_at_idx",
+      "entityType": "indexes",
+      "table": "r2_object_deletion_queue"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "review_sources_site_id_idx",
+      "entityType": "indexes",
+      "table": "review_sources"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "review_sources_site_id_id_unique",
+      "entityType": "indexes",
+      "table": "review_sources"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "review_sources_site_id_name_unique",
+      "entityType": "indexes",
+      "table": "review_sources"
+    },
+    {
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "site_memberships_user_id_idx",
+      "entityType": "indexes",
+      "table": "site_memberships"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "storage_locations_site_id_idx",
+      "entityType": "indexes",
+      "table": "storage_locations"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "storage_locations_site_id_id_unique",
+      "entityType": "indexes",
+      "table": "storage_locations"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "parent_id",
+          "isExpression": false
+        },
+        {
+          "value": "name",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "storage_locations_site_parent_name_unique",
+      "entityType": "indexes",
+      "table": "storage_locations"
+    },
+    {
+      "columns": [
+        {
+          "value": "clerk_user_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "users_clerk_user_id_unique",
+      "entityType": "indexes",
+      "table": "users"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "wine_vintage_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "wine_awards_site_id_wine_vintage_id_idx",
+      "entityType": "indexes",
+      "table": "wine_awards"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "wine_vintage_id",
+          "isExpression": false
+        },
+        {
+          "value": "award_name",
+          "isExpression": false
+        },
+        {
+          "value": "award_level",
+          "isExpression": false
+        },
+        {
+          "value": "award_year",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "wine_awards_site_wine_award_unique",
+      "entityType": "indexes",
+      "table": "wine_awards"
+    },
+    {
+      "columns": [
+        {
+          "value": "grape_variety_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "wine_constituents_grape_variety_id_idx",
+      "entityType": "indexes",
+      "table": "wine_constituents"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "wine_vintages_site_id_idx",
+      "entityType": "indexes",
+      "table": "wine_vintages"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "winery_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "wine_vintages_site_id_winery_id_idx",
+      "entityType": "indexes",
+      "table": "wine_vintages"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "wine_vintages_site_id_id_unique",
+      "entityType": "indexes",
+      "table": "wine_vintages"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "wineries_site_id_idx",
+      "entityType": "indexes",
+      "table": "wineries"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "wineries_site_id_id_unique",
+      "entityType": "indexes",
+      "table": "wineries"
+    },
+    {
+      "columns": [
+        {
+          "value": "site_id",
+          "isExpression": false
+        },
+        {
+          "value": "name",
+          "isExpression": false
+        },
+        {
+          "value": "region",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "wineries_site_id_name_region_unique",
+      "entityType": "indexes",
+      "table": "wineries"
+    }
+  ],
+  "renames": []
+}

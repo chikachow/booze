@@ -1,3 +1,4 @@
+import { storedVintageLabel } from "../api/wine-vintage.ts";
 import {
   bottles,
   grapeVarieties,
@@ -45,7 +46,7 @@ export async function listWineVintages({
   const grapeVarietiesByWine = grapeVarietiesByWineQuery(database);
   const bottleCountsByWine = bottleCountsByWineQuery(database);
   const vintageSort = sql<number>`coalesce(${wineVintages.vintageYear}, -1)`;
-  const winerySort = sql<string>`lower(${wineries.name})`;
+  const winerySort = sql<string>`lower(coalesce(${wineries.name}, ''))`;
   const wineSort = sql<string>`lower(${wineVintages.displayName})`;
   const cursor = decodePageCursor({
     cursorSchema: listWinesCursorSchema,
@@ -58,7 +59,7 @@ export async function listWineVintages({
     .from(wineVintages)
     .innerJoin(sites, eq(wineVintages.siteId, sites.id))
     .innerJoin(siteMemberships, eq(wineVintages.siteId, siteMemberships.siteId))
-    .innerJoin(
+    .leftJoin(
       wineries,
       and(eq(wineVintages.siteId, wineries.siteId), eq(wineVintages.wineryId, wineries.id)),
     )
@@ -90,7 +91,7 @@ export async function listWineVintages({
           wineVintages.brandName,
           wineVintages.baseName,
           wineVintages.displayName,
-          wineVintages.vintageLabel,
+          storedVintageLabel,
           grapeVarietiesByWine.grapeVarieties,
           wineVintages.region,
           wineVintages.wineType,
@@ -183,7 +184,7 @@ async function listAuthorisedWineVintageSummaries({
     .from(wineVintages)
     .innerJoin(sites, eq(wineVintages.siteId, sites.id))
     .innerJoin(siteMemberships, eq(wineVintages.siteId, siteMemberships.siteId))
-    .innerJoin(
+    .leftJoin(
       wineries,
       and(eq(wineVintages.siteId, wineries.siteId), eq(wineVintages.wineryId, wineries.id)),
     )
@@ -243,12 +244,12 @@ function wineVintageSummaryColumns({
     siteId: wineVintages.siteId,
     siteName: sites.name,
     wineryId: wineVintages.wineryId,
-    wineryName: wineries.name,
+    wineryName: sql<string>`coalesce(${wineries.name}, '')`,
     brandName: wineVintages.brandName,
     baseName: wineVintages.baseName,
     displayName: wineVintages.displayName,
     vintageYear: wineVintages.vintageYear,
-    vintageLabel: wineVintages.vintageLabel,
+    vintageLabel: storedVintageLabel,
     grapeVarieties: grapeVarietiesByWine.grapeVarieties,
     region: wineVintages.region,
     wineType: wineVintages.wineType,
@@ -277,7 +278,7 @@ function wineVintageSummaryFromRow(row: {
   readonly vintageYear: number | null;
   readonly wineColor: string | null;
   readonly wineType: string | null;
-  readonly wineryId: string;
+  readonly wineryId: string | null;
   readonly wineryName: string;
 }): z.infer<typeof wineVintageSummarySchema> {
   return {
@@ -305,6 +306,6 @@ function wineVintageSummaryFromRow(row: {
     wineType: row.wineType,
     wineId: mcpEntityId("wine", row.id),
     winery: row.wineryName,
-    wineryId: mcpEntityId("winery", row.wineryId),
+    wineryId: row.wineryId === null ? null : mcpEntityId("winery", row.wineryId),
   };
 }

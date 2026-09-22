@@ -95,12 +95,15 @@ export const wineVintages = sqliteTable(
     siteId: text("site_id")
       .notNull()
       .references(() => sites.id),
-    wineryId: text("winery_id").notNull(),
+    wineryId: text("winery_id"),
     brandName: text("brand_name"),
     baseName: text("base_name").notNull(),
     displayName: text("display_name").notNull(),
     designation: text("designation"),
     vintageYear: integer("vintage_year"),
+    vintageStatus: text("vintage_status", { enum: ["year", "non_vintage", "unknown"] })
+      .notNull()
+      .default("unknown"),
     vintageLabel: text("vintage_label").notNull(),
     wineType: text("wine_type"),
     wineColor: text("wine_color"),
@@ -124,12 +127,6 @@ export const wineVintages = sqliteTable(
     index("wine_vintages_site_id_idx").on(table.siteId),
     index("wine_vintages_site_id_winery_id_idx").on(table.siteId, table.wineryId),
     uniqueIndex("wine_vintages_site_id_id_unique").on(table.siteId, table.id),
-    uniqueIndex("wine_vintages_site_id_winery_base_vintage_unique").on(
-      table.siteId,
-      table.wineryId,
-      table.baseName,
-      table.vintageLabel,
-    ),
     foreignKey({
       columns: [table.siteId, table.wineryId],
       foreignColumns: [wineries.siteId, wineries.id],
@@ -406,6 +403,8 @@ export const bottleCaptures = sqliteTable(
     status: text("status").notNull().default("queued"),
     workflowInstanceId: text("workflow_instance_id"),
     importedBottleIdsJson: text("imported_bottle_ids_json"),
+    reviewCandidateJson: text("review_candidate_json"),
+    reviewRevision: integer("review_revision").notNull().default(0),
     errorMessage: text("error_message"),
     errorDetailJson: text("error_detail_json"),
     ...timestampColumns,

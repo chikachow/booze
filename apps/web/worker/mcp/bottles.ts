@@ -1,3 +1,4 @@
+import { storedVintageLabel, storedVintageStatus } from "../api/wine-vintage.ts";
 import {
   bottleLocations,
   bottles,
@@ -87,7 +88,7 @@ export async function listBottleSummaries({
         wineVintages.baseName,
         wineVintages.designation,
         wineVintages.displayName,
-        wineVintages.vintageLabel,
+        storedVintageLabel,
         grapeVarietyNames,
         wineVintages.country,
         wineVintages.region,
@@ -183,7 +184,7 @@ async function listBottleSummaryRows({
   const siteSort = sql<string>`lower(${sites.name})`;
   const storageLocationSort = sql<string>`coalesce(${bottleLocations.storageLocationId}, '')`;
   const vintageSort = sql<number>`coalesce(${wineVintages.vintageYear}, -1)`;
-  const winerySort = sql<string>`lower(${wineries.name})`;
+  const winerySort = sql<string>`lower(coalesce(${wineries.name}, ''))`;
   const wineSort = sql<string>`lower(${wineVintages.displayName})`;
   const cursor = decodePageCursor({
     cursorSchema: bottleCursorSchema,
@@ -222,7 +223,9 @@ async function listBottleSummaryRows({
       status: bottles.status,
       storageLocationId: bottleLocations.storageLocationId,
       storageLocationName: storageLocations.name,
-      vintageLabel: wineVintages.vintageLabel,
+      vintageLabel: storedVintageLabel,
+      vintageStatus: storedVintageStatus,
+      wineBottleCount: sql<number>`(select count(*) from bottles as related_bottles where related_bottles.site_id = ${bottles.siteId} and related_bottles.wine_vintage_id = ${bottles.wineVintageId})`,
       vintageYear: wineVintages.vintageYear,
       volumeMl: bottles.volumeMl,
       wineColor: wineVintages.wineColor,
@@ -230,7 +233,7 @@ async function listBottleSummaryRows({
       wineType: wineVintages.wineType,
       wineVintageId: bottles.wineVintageId,
       wineryId: wineries.id,
-      wineryName: wineries.name,
+      wineryName: sql<string>`coalesce(${wineries.name}, '')`,
     })
     .from(bottles)
     .innerJoin(sites, eq(bottles.siteId, sites.id))
@@ -239,7 +242,7 @@ async function listBottleSummaryRows({
       wineVintages,
       and(eq(bottles.siteId, wineVintages.siteId), eq(bottles.wineVintageId, wineVintages.id)),
     )
-    .innerJoin(
+    .leftJoin(
       wineries,
       and(eq(wineVintages.siteId, wineries.siteId), eq(wineVintages.wineryId, wineries.id)),
     )
@@ -337,13 +340,15 @@ function bottleResourceFromRow(row: {
   readonly storageLocationId: string | null;
   readonly storageLocationName: string | null;
   readonly vintageLabel: string;
+  readonly vintageStatus: "year" | "non_vintage" | "unknown";
+  readonly wineBottleCount: number;
   readonly vintageYear: number | null;
   readonly volumeMl: number;
   readonly wineColor: string | null;
   readonly wineNotes: string | null;
   readonly wineType: string | null;
   readonly wineVintageId: string;
-  readonly wineryId: string;
+  readonly wineryId: string | null;
   readonly wineryName: string;
 }): BottleResource {
   return {
@@ -384,7 +389,7 @@ export function summarizeBottle({
   readonly wineType: string | null;
   readonly wineId: string;
   readonly winery: string;
-  readonly wineryId: string;
+  readonly wineryId: string | null;
 } {
   return {
     bottleId: bottle.id,
@@ -411,7 +416,7 @@ export function summarizeBottle({
     wineType: bottle.wineType,
     wineId: mcpEntityId("wine", bottle.wineVintageId),
     winery: bottle.wineryName,
-    wineryId: mcpEntityId("winery", bottle.wineryId),
+    wineryId: bottle.wineryId === null ? null : mcpEntityId("winery", bottle.wineryId),
   };
 }
 
@@ -465,6 +470,6 @@ export function bottleDetail({
     wineType: bottle.wineType,
     wineId: mcpEntityId("wine", bottle.wineVintageId),
     winery: bottle.wineryName,
-    wineryId: mcpEntityId("winery", bottle.wineryId),
+    wineryId: bottle.wineryId === null ? null : mcpEntityId("winery", bottle.wineryId),
   };
 }

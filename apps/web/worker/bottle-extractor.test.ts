@@ -7,6 +7,8 @@ import type { BottleCombinedExtraction } from "./bottle-ocr.ts";
 type CombinedOptions = {
   readonly disagreements?: readonly string[];
   readonly displayNameConfidence?: number;
+  readonly displayNameValue?: string | null;
+  readonly grapeConfidence?: number;
   readonly humanReviewReasons?: readonly string[];
   readonly overallConfidence?: number;
   readonly requiresHumanReview?: boolean;
@@ -64,17 +66,42 @@ await describe("capture OCR import review decision", async () => {
     assert.equal(extracted.candidate.wine.wineryName, "");
   });
 
-  await it("requires one confident vintage, wine name, or appellation", () => {
+  await it("requires a confident descriptor rather than a vintage alone", () => {
     const decision = decideCaptureImport({
       combined: combinedExtraction({
         displayNameConfidence: 0.74,
+        grapeConfidence: 0.74,
         vintageConfidence: 0.74,
         vintageValue: "2020",
       }),
       extractors: {},
     });
     assert.equal(decision.kind, "needs_review");
-    assert.match(decision.reasons.join(" "), /No vintage, wine name or cuvee/u);
+    assert.match(decision.reasons.join(" "), /No grape variety, wine designation/u);
+  });
+
+  await it("accepts a confident varietal wine without a proprietary designation", () => {
+    const result = buildCaptureImportCandidate({
+      combined: combinedExtraction({ displayNameValue: null }),
+      extractors: {},
+    });
+    assert.equal(result.reviewDecision.kind, "auto_import");
+    assert.equal(result.candidate.wine.designation, "");
+    assert.deepEqual(result.candidate.wine.grapeVarieties, ["Shiraz"]);
+  });
+
+  await it("preserves explicit non-vintage separately from absent vintage evidence", () => {
+    for (const vintage of ["NV", "N.V.", "non-vintage", null]) {
+      const result = buildCaptureImportCandidate({
+        combined: combinedExtraction({ vintageValue: vintage }),
+        extractors: {},
+      });
+      assert.equal(
+        result.candidate.wine.vintageStatus,
+        vintage === null ? "unknown" : "non_vintage",
+      );
+      assert.equal(result.candidate.wine.vintageYear, undefined);
+    }
   });
 
   await it("honours combiner review flags, reasons, and disagreements", () => {
@@ -115,7 +142,10 @@ function combinedExtraction(options: CombinedOptions = {}): BottleCombinedExtrac
         options.wineryConfidence ?? 0.9,
       ),
       brandName: textField(null),
-      displayName: textField("Reserve", options.displayNameConfidence ?? 0.9),
+      displayName: textField(
+        "displayNameValue" in options ? (options.displayNameValue ?? null) : "Reserve",
+        options.displayNameConfidence ?? 0.9,
+      ),
       vintage: textField(
         "vintageValue" in options ? (options.vintageValue ?? null) : "2020",
         options.vintageConfidence ?? 0.9,
@@ -124,7 +154,7 @@ function combinedExtraction(options: CombinedOptions = {}): BottleCombinedExtrac
       wineColor: textField("red"),
       grapeVarieties: {
         value: ["Shiraz"],
-        confidence: 0.9,
+        confidence: options.grapeConfidence ?? 0.9,
         supported_by: ["first", "second"],
         evidence: ["Shiraz"],
         decision_reason: null,

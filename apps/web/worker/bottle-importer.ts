@@ -1,3 +1,4 @@
+import { storedVintageLabel, storedVintageStatus } from "./api/wine-vintage.ts";
 import {
   bottleCaptureRuns,
   bottleCaptures,
@@ -11,8 +12,9 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 
 import { createBottleStatements, prepareWineVintage } from "./api/catalogue.ts";
-import { stableId, vintageLabelForYear } from "./api/ids.ts";
+import { stableId } from "./api/ids.ts";
 import { retryCatalogueTransaction } from "./api/catalogue-transaction.ts";
+import { hasWineIdentity, wineVintageStatus } from "../shared/wine-identity.ts";
 import type { ImportCandidate } from "./bottle-extractor.ts";
 import {
   claimCaptureForImport,
@@ -23,14 +25,16 @@ import {
 export type ImportReviewReason =
   | "ambiguous_winery"
   | "ambiguous_wine_vintage"
-  | "missing_required_candidate";
+  | "missing_required_candidate"
+  | "possible_existing_wine"
+  | "saved_manual_corrections";
 
 export type BottleImportResult =
   | {
       readonly kind: "imported";
       readonly bottleIds: readonly string[];
       readonly wineVintageId: string;
-      readonly wineryId: string;
+      readonly wineryId: string | null;
       readonly matchResult: BottleMatchResult;
     }
   | {
@@ -78,6 +82,7 @@ type CaptureImportInput = {
   readonly positionHint: string | null;
   readonly runId: string;
   readonly workflowInstanceId?: string | null | undefined;
+  readonly expectedReviewRevision?: number | undefined;
 };
 
 export class CaptureImportConflictError extends HTTPException {
@@ -97,6 +102,20 @@ export async function importBottleCandidate(
     const committed = await getCommittedCaptureImport({ captureId, database, runId });
     if (committed !== null) {
       return committed;
+    }
+    const [captureReview] = await database
+      .select({ candidate: bottleCaptures.reviewCandidateJson })
+      .from(bottleCaptures)
+      .where(eq(bottleCaptures.id, captureId))
+      .limit(1);
+    if (captureReview !== undefined && captureReview.candidate !== null) {
+      const matchResult = {
+        kind: "needs_review",
+        reason: "saved_manual_corrections",
+        wineryCandidates: [],
+        wineVintageCandidates: [],
+      } as const;
+      return { kind: "needs_review", reason: "saved_manual_corrections", matchResult };
     }
     const matchResult = await matchBottleCandidate({ candidate, database, siteId });
     if (matchResult.kind === "needs_review") {
@@ -141,7 +160,15 @@ export async function importBottleCandidate(
 export async function importReviewedCapture(
   input: CaptureImportInput & { readonly wineVintageId?: string | undefined },
 ): Promise<Extract<BottleImportResult, { readonly kind: "imported" }>> {
-  const { captureId, database, runId, siteId, wineVintageId, workflowInstanceId } = input;
+  const {
+    captureId,
+    database,
+    runId,
+    siteId,
+    wineVintageId,
+    workflowInstanceId,
+    expectedReviewRevision,
+  } = input;
   const committed = await getCommittedCaptureImport({ captureId, database, runId });
   if (committed !== null) return committed;
   const claim = await claimCaptureForImport({
@@ -150,6 +177,7 @@ export async function importReviewedCapture(
     runId,
     siteId,
     workflowInstanceId,
+    expectedReviewRevision,
   });
   if (claim === null) throw new CaptureImportConflictError();
   const matchResult: BottleMatchResult =
@@ -397,7 +425,10 @@ export async function matchBottleCandidate({
   readonly database: BoozeDatabase;
   readonly siteId: string;
 }): Promise<BottleMatchResult> {
-  if (normalize(candidate.wine.wineryName) === "" || normalize(candidate.wine.designation) === "") {
+  if (
+    !hasWineIdentity(candidate.wine) ||
+    normalize(candidate.wine.wineryName || candidate.wine.brandName) === ""
+  ) {
     return {
       kind: "needs_review",
       reason: "missing_required_candidate",
@@ -411,34 +442,23 @@ export async function matchBottleCandidate({
     .from(wineries)
     .where(eq(wineries.siteId, siteId));
   const wineryCandidates = wineryRows
-    .filter((winery) => normalize(winery.name) === normalize(candidate.wine.wineryName))
-    .filter((winery) => compatibleText(winery.region, candidate.wine.region))
+    .filter(
+      (winery) =>
+        normalize(winery.name) === normalize(candidate.wine.wineryName || candidate.wine.brandName),
+    )
     .map((winery) => ({
       id: winery.id,
       label: winery.region === null ? winery.name : `${winery.name} (${winery.region})`,
     }));
+  const wineVintageCandidates = await findWineVintageCandidates({ candidate, database, siteId });
   if (wineryCandidates.length > 1) {
     return {
       kind: "needs_review",
       reason: "ambiguous_winery",
       wineryCandidates,
-      wineVintageCandidates: [],
+      wineVintageCandidates,
     };
   }
-  if (wineryCandidates.length === 0) {
-    return { kind: "create_new", wineryCandidates: [], wineVintageCandidates: [] };
-  }
-  const wineryCandidate = wineryCandidates[0];
-  if (wineryCandidate === undefined) {
-    return { kind: "create_new", wineryCandidates: [], wineVintageCandidates: [] };
-  }
-
-  const wineVintageCandidates = await findWineVintageCandidates({
-    candidate,
-    database,
-    siteId,
-    wineryId: wineryCandidate.id,
-  });
   if (wineVintageCandidates.length > 1) {
     return {
       kind: "needs_review",
@@ -450,9 +470,9 @@ export async function matchBottleCandidate({
   const wineVintageCandidate = wineVintageCandidates[0];
   if (wineVintageCandidate !== undefined) {
     return {
-      kind: "reuse_wine_vintage",
+      kind: "needs_review",
+      reason: "possible_existing_wine",
       wineryCandidates,
-      wineVintageCandidate,
       wineVintageCandidates,
     };
   }
@@ -467,38 +487,49 @@ async function findWineVintageCandidates({
   candidate,
   database,
   siteId,
-  wineryId,
 }: {
   readonly candidate: ImportCandidate;
   readonly database: BoozeDatabase;
   readonly siteId: string;
-  readonly wineryId: string;
 }): Promise<readonly MatchCandidate[]> {
-  const vintageLabel = vintageLabelForYear(candidate.wine.vintageYear);
+  const vintageStatus = wineVintageStatus(candidate.wine);
   const rows = await database
     .select({
       id: wineVintages.id,
       displayName: wineVintages.displayName,
-      baseName: wineVintages.baseName,
-      vintageLabel: wineVintages.vintageLabel,
-      region: wineVintages.region,
+      vintageYear: wineVintages.vintageYear,
+      vintageStatus: storedVintageStatus,
+      vintageLabel: storedVintageLabel,
+      wineryName: wineries.name,
+      brandName: wineVintages.brandName,
     })
     .from(wineVintages)
-    .where(and(eq(wineVintages.siteId, siteId), eq(wineVintages.wineryId, wineryId)));
+    .leftJoin(wineries, and(eq(wineries.id, wineVintages.wineryId), eq(wineries.siteId, siteId)))
+    .where(eq(wineVintages.siteId, siteId));
 
-  return rows
-    .filter((wine) => wine.vintageLabel === vintageLabel)
-    .filter(
-      (wine) =>
-        (normalize(candidate.wine.displayName) !== "" &&
-          normalize(wine.displayName) === normalize(candidate.wine.displayName)) ||
-        normalize(wine.baseName) === normalize(candidate.wine.designation),
-    )
-    .filter((wine) => compatibleText(wine.region, candidate.wine.region))
-    .map((wine) => ({
-      id: wine.id,
-      label: `${wine.vintageLabel} ${wine.displayName}`,
-    }));
+  const names = [candidate.wine.wineryName, candidate.wine.brandName]
+    .map((name) => normalize(name))
+    .filter(Boolean);
+  return (
+    rows
+      .filter((wine) =>
+        [wine.wineryName, wine.brandName].some((name) => names.includes(normalize(name))),
+      )
+      // Descriptions are incomplete evidence, not identity. Within one producer,
+      // an unknown vintage remains a possible match for any vintage. Even one
+      // plausible existing record needs an explicit human reuse decision.
+      .filter(
+        (wine) =>
+          vintageStatus === "unknown" ||
+          wine.vintageStatus === "unknown" ||
+          (vintageStatus === wine.vintageStatus &&
+            (vintageStatus !== "year" || wine.vintageYear === candidate.wine.vintageYear)),
+      )
+      .map((wine) => ({
+        id: wine.id,
+        label: `${wine.vintageLabel} ${wine.displayName}`,
+      }))
+  );
 }
 
 async function getExistingVintage({
@@ -510,7 +541,7 @@ async function getExistingVintage({
   readonly siteId: string;
   readonly wineVintageId: string;
 }): Promise<{
-  readonly wineryId: string;
+  readonly wineryId: string | null;
   readonly wineVintageId: string;
   readonly statements: readonly never[];
 }> {
@@ -521,7 +552,10 @@ async function getExistingVintage({
     .limit(1);
   const row = rows[0];
   if (row === undefined) {
-    throw new Error(`Wine vintage ${wineVintageId} not found in site ${siteId}`);
+    throw new HTTPException(400, {
+      message:
+        "The selected wine is no longer available in this site. Refresh and choose another wine.",
+    });
   }
   return { ...row, statements: [] };
 }
@@ -538,12 +572,6 @@ function normalize(value: string | null | undefined): string {
       .replaceAll(/\s+/gu, " ")
       .trim() ?? ""
   );
-}
-
-function compatibleText(existing: string | null, candidate: string | null | undefined): boolean {
-  const existingValue = normalize(existing ?? undefined);
-  const candidateValue = normalize(candidate);
-  return existingValue === "" || candidateValue === "" || existingValue === candidateValue;
 }
 
 export function databaseFromD1(database: D1Database): BoozeDatabase {

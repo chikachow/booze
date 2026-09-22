@@ -23,7 +23,7 @@ const app = new Hono<{ Bindings: Bindings }>()
   .onError(problemResponseForError);
 
 await describe("catalogue preparation conflicts", async () => {
-  await it("rebuilds a bottle addition and its dependent facts after a concurrent vintage insert", async () => {
+  await it("keeps a bottle addition distinct from a concurrent wine with the same description", async () => {
     const sqlite = setup();
     const { d1, batchCount } = interleavedDatabase(sqlite, (attempt) => {
       if (attempt === 1) insertWinningVintage(sqlite, "winner");
@@ -38,11 +38,12 @@ await describe("catalogue preparation conflicts", async () => {
       awards: [{ awardName: "Show", awardLevel: "Gold", awardYear: 2025 }],
     });
     assert.equal(response.status, 201, await response.clone().text());
-    assert.equal(batchCount(), 2);
+    assert.equal(batchCount(), 1);
     const body = await response.json();
     assert.ok(typeof body === "object" && body !== null && "data" in body);
     assert.ok(typeof body.data === "object" && body.data !== null && "wineVintageId" in body.data);
-    assert.equal(body.data.wineVintageId, "winner");
+    assert.notEqual(body.data.wineVintageId, "winner");
+    assert.equal(sqlite.prepare("SELECT count(*) AS count FROM wine_vintages").get()?.["count"], 2);
     assert.equal(sqlite.prepare("SELECT count(*) AS count FROM bottles").get()?.["count"], 2);
     for (const table of ["bottles", "label_extractions", "critic_reviews", "wine_awards"]) {
       assert.deepEqual(
@@ -50,17 +51,17 @@ await describe("catalogue preparation conflicts", async () => {
           .prepare(`SELECT DISTINCT wine_vintage_id FROM ${table}`)
           .all()
           .map((row) => row["wine_vintage_id"]),
-        ["winner"],
+        [body.data.wineVintageId],
       );
     }
     assert.equal(
-      sqlite.prepare("SELECT notes FROM wine_vintages").get()?.["notes"],
+      sqlite.prepare("SELECT notes FROM wine_vintages WHERE id = 'winner'").get()?.["notes"],
       "Existing notes",
     );
     assert.deepEqual(sqlite.prepare("PRAGMA foreign_key_check").all(), []);
   });
 
-  await it("rebuilds a manual import receipt using the winning vintage", async () => {
+  await it("keeps explicit manual creation distinct from a concurrent same-description wine", async () => {
     const sqlite = setup();
     insertCapture(sqlite, "needs_review");
     const { d1, batchCount } = interleavedDatabase(sqlite, (attempt) => {
@@ -68,28 +69,47 @@ await describe("catalogue preparation conflicts", async () => {
     });
     const response = await request(d1, "/bottle-captures/capture/import", {});
     assert.equal(response.status, 200, await response.clone().text());
-    assert.equal(batchCount(), 2);
-    assertCommittedImport(sqlite, "winner");
+    assert.equal(batchCount(), 1);
+    const importedId = String(
+      sqlite.prepare("SELECT wine_vintage_id FROM bottles LIMIT 1").get()?.["wine_vintage_id"],
+    );
+    assert.notEqual(importedId, "winner");
+    assertCommittedImport(sqlite, importedId);
   });
 
-  await it("resumes the automatic import claim when rebuilding a conflicted batch", async () => {
+  await it("resumes an automatic claim after a concurrent winery natural-key conflict", async () => {
     const sqlite = setup();
+    sqlite.exec("DELETE FROM wineries");
     insertCapture(sqlite, "extracting");
     const { d1, batchCount } = interleavedDatabase(sqlite, (attempt) => {
-      if (attempt === 1) insertWinningVintage(sqlite, "winner");
+      if (attempt === 1) insertWinningWinery(sqlite, "winning-winery");
     });
-    const imported = await importBottleCandidate(automaticImportInput(d1));
+    const imported = await importBottleCandidate({
+      ...automaticImportInput(d1),
+      candidate: regionalCandidate(),
+    });
     assert.equal(imported.kind, "imported");
     assert.equal(batchCount(), 2);
-    assertCommittedImport(sqlite, "winner");
+    const importedId = String(
+      sqlite.prepare("SELECT wine_vintage_id FROM bottles LIMIT 1").get()?.["wine_vintage_id"],
+    );
+    assertCommittedImport(sqlite, importedId);
+    assert.equal(
+      sqlite.prepare("SELECT winery_id FROM wine_vintages").get()?.["winery_id"],
+      "winning-winery",
+    );
   });
 
-  await it("keeps the extraction reviewable after repeated conflicts and allows manual retry", async () => {
+  await it("keeps extraction reviewable after repeated winery conflicts and allows manual retry", async () => {
     const sqlite = setup();
+    sqlite.exec("DELETE FROM wineries");
     insertCapture(sqlite, "needs_review");
+    sqlite
+      .prepare("UPDATE bottle_capture_runs SET import_candidate_json = ?")
+      .run(JSON.stringify(regionalCandidate()));
     const { d1, batchCount } = interleavedDatabase(sqlite, (attempt) => {
-      sqlite.exec("DELETE FROM wine_vintages");
-      insertWinningVintage(sqlite, `winner-${attempt}`);
+      sqlite.exec("DELETE FROM wineries");
+      insertWinningWinery(sqlite, `winner-${attempt}`);
     });
     const response = await request(d1, "/bottle-captures/capture/import", {});
     assert.equal(response.status, 409, await response.clone().text());
@@ -112,12 +132,19 @@ await describe("catalogue preparation conflicts", async () => {
       sqlite.prepare("SELECT import_candidate_json FROM bottle_capture_runs").get()?.[
         "import_candidate_json"
       ],
-      JSON.stringify(candidate),
+      JSON.stringify(regionalCandidate()),
     );
     assert.equal(sqlite.prepare("SELECT count(*) AS count FROM bottles").get()?.["count"], 0);
     const retried = await request(asD1(sqlite), "/bottle-captures/capture/import", {});
     assert.equal(retried.status, 200, await retried.clone().text());
-    assertCommittedImport(sqlite, "winner-2");
+    const importedId = String(
+      sqlite.prepare("SELECT wine_vintage_id FROM bottles LIMIT 1").get()?.["wine_vintage_id"],
+    );
+    assertCommittedImport(sqlite, importedId);
+    assert.equal(
+      sqlite.prepare("SELECT winery_id FROM wine_vintages").get()?.["winery_id"],
+      "winner-2",
+    );
   });
 
   await it("does not retry an uncertain commit and replays its persisted import receipt", async () => {
@@ -165,8 +192,7 @@ await describe("catalogue preparation conflicts", async () => {
   });
 
   await it("recognizes the D1 error wrapper while rebuilding only once", async () => {
-    const constraint =
-      "UNIQUE constraint failed: wine_vintages.site_id, wine_vintages.winery_id, wine_vintages.base_name, wine_vintages.vintage_label";
+    const constraint = "UNIQUE constraint failed: wineries.site_id, wineries.name, wineries.region";
     for (const message of [
       `D1_ERROR: ${constraint}`,
       `D1_ERROR: ${constraint}: SQLITE_CONSTRAINT`,
@@ -208,6 +234,18 @@ function insertCapture(sqlite: DatabaseSync, status: string): void {
     .prepare(`INSERT INTO bottle_capture_runs (id, capture_id, status, import_candidate_json, extractor_version, prompt_version, schema_version)
     VALUES ('run', 'capture', ?, ?, 'v1', 'v1', 'v1')`)
     .run(status, JSON.stringify(candidate));
+}
+
+function regionalCandidate() {
+  return { ...candidate, wine: { ...wine, region: "Region" } };
+}
+
+function insertWinningWinery(sqlite: DatabaseSync, id: string): void {
+  sqlite
+    .prepare(
+      "INSERT INTO wineries (id, site_id, name, region) VALUES (?, 'site', 'Producer', 'Region')",
+    )
+    .run(id);
 }
 
 function insertWinningVintage(sqlite: DatabaseSync, id: string): void {
