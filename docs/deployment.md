@@ -26,7 +26,22 @@ pnpm --filter @chikachow/booze-db exec drizzle-kit export
 
 Export describes the desired schema; it does not export stored data or apply a database change. Wrangler applies the checked-in SQL migrations and tracks their application. See the [Drizzle export documentation](https://orm.drizzle.team/docs/drizzle-kit-export).
 
-`pnpm --filter @chikachow/booze-db test` compares that export with a fresh SQLite database built from every checked-in SQL migration. It checks tables, columns, keys, indexes, and table options while allowing column order and foreign-key numbering to differ. This check also runs in `pnpm check`; it does not read production or validate Drizzle's migration-generator snapshots.
+`pnpm --filter @chikachow/booze-db test` compares that export with a fresh SQLite database built from every checked-in SQL migration. It checks tables, columns, keys, indexes, and table options while allowing column order and foreign-key numbering to differ. It also checks the generator journal against the SQL filenames and runs generation in a disposable copy: unchanged schema must leave all migration files untouched; a deliberate column addition must produce only that alteration at the next migration number and preserve existing data. These checks also run in `pnpm check` and do not read production.
+
+### Generating a schema migration
+
+Update `packages/db/src/schema.ts`, then generate and review the next migration:
+
+```sh
+pnpm --filter @chikachow/booze-db exec drizzle-kit generate --name=describe_change
+pnpm --filter @chikachow/booze-db test
+```
+
+Commit the new SQL file, its snapshot, and the updated `meta/_journal.json` together. Review generated SQL for data preservation and rehearse it on a separate database before release. For a custom data migration with no schema change, use `generate --custom --name=describe_change` and replace its SQL placeholder. Custom schema SQL must still leave the TypeScript schema, latest snapshot, and replayed SQL history consistent. See [Drizzle's generation documentation](https://orm.drizzle.team/docs/drizzle-kit-generate).
+
+The generator metadata was reconciled after `0008`: the journal records every existing SQL file, and `0008_snapshot.json` checkpoints their resulting schema, linked to the original `0000` snapshot. Intermediate snapshots for `0001`–`0007` were not reconstructed. Backfilled journal timestamps use the author dates of the first-addition Git commits, with increasing milliseconds for ties; they are ordering metadata, not production application times. Preserve these historical files; do not use `drizzle-kit drop` on deployed migrations.
+
+Wrangler remains the deployment migrator. This generator metadata does not replace D1's migration ledger or configure `drizzle-kit migrate` for the deployed database.
 
 Before a release that adds a migration, compare the remote ledger with the checked-in filenames:
 

@@ -8,6 +8,62 @@
       "when": 1780300126815,
       "tag": "0000_yielding_chronomancer",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784960060000,
+      "tag": "0001_bottle_captures",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784960060001,
+      "tag": "0002_image_thumbnails",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784960060002,
+      "tag": "0003_capture_run_artifact_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784960060003,
+      "tag": "0004_mcp_tool_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784960060004,
+      "tag": "0005_mcp_audit_site_reference_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784960060005,
+      "tag": "0006_critic_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784960060006,
+      "tag": "0007_wine_awards",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784961168000,
+      "tag": "0008_r2_object_deletion_queue",
+      "breakpoints": true
     }
   ]
 }
