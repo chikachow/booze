@@ -131,17 +131,19 @@ const bottleOcrSuggestionSchema = z.object({
   structuredExtraction: z.record(z.string(), z.unknown()).optional(),
 });
 
+// Notes record OCR uncertainty. Retain every note allowed by the provider schema;
+// a local count limit would fail an otherwise valid extraction.
 const textEvidenceFieldSchema = z.object({
   value: z.string().nullable(),
   confidence: z.number().min(0).max(1),
   evidence: z.array(z.string()).max(32),
-  notes: z.array(z.string()).max(16),
+  notes: z.array(z.string()),
 });
 const textArrayEvidenceFieldSchema = z.object({
   value: z.array(z.string()).max(32),
   confidence: z.number().min(0).max(1),
   evidence: z.array(z.string()).max(32),
-  notes: z.array(z.string()).max(16),
+  notes: z.array(z.string()),
 });
 const extractorResultSchema = z.object({
   model_role: z.literal("extractor"),
@@ -150,7 +152,7 @@ const extractorResultSchema = z.object({
     z.object({
       image_index: z.number().int().min(1).max(4),
       text: z.string(),
-      notes: z.array(z.string()).max(8),
+      notes: z.array(z.string()),
     }),
   ),
   canonical_label_text_lines: z.array(z.string()).max(80),
