@@ -36,7 +36,7 @@
   "devDependencies": {
     "@astryxdesign/cli": "0.6.2",
     "@cloudflare/vite-plugin": "1.56.0",
-    "@cloudflare/workers-types": "5.20260919.1",
+    "@cloudflare/workers-types": "5.20260920.1",
     "@playwright/test": "1.63.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "7.0.1",
