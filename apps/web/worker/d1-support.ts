@@ -5,7 +5,7 @@ export function migratedDatabase(): DatabaseSync {
   const database = new DatabaseSync(":memory:");
   database.exec("PRAGMA foreign_keys = ON");
   const migrationsDirectory = new URL("../../../packages/db/migrations/", import.meta.url);
-  for (const filename of readdirSync(migrationsDirectory)
+  for (const filename of readdirSync(migrationsDirectory, { recursive: true, encoding: "utf8" })
     .filter((name) => name.endsWith(".sql"))
     .toSorted()) {
     const migration = readFileSync(new URL(filename, migrationsDirectory), "utf8");

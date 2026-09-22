@@ -52,6 +52,7 @@
       "database_name": "booze",
       "database_id": "695e2162-ebcd-4231-ab56-63d3f619753d",
       "migrations_dir": "../../packages/db/migrations",
+      "migrations_pattern": "../../packages/db/migrations/**/*.sql",
     },
   ],
 }
