@@ -18,6 +18,14 @@ The health route confirms that the Worker responds; it does not verify Clerk sig
 
 Migrations `0000` through `0008` are the current checked-in lineage. Keep every existing SQL file unchanged and in order. Schema changes append a new migration; do not replace history with a generated initial migration, rename old files, or hide mismatches with `IF NOT EXISTS`.
 
+Drizzle Kit exports the current TypeScript schema as SQL DDL for inspection and database management:
+
+```sh
+pnpm --filter @chikachow/booze-db exec drizzle-kit export
+```
+
+Export describes the desired schema; it does not export stored data or apply a database change. Wrangler applies the checked-in SQL migrations and tracks their application. See the [Drizzle export documentation](https://orm.drizzle.team/docs/drizzle-kit-export).
+
 Before a release that adds a migration, compare the remote ledger with the checked-in filenames:
 
 ```sh
