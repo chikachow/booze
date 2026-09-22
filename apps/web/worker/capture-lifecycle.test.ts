@@ -10,7 +10,12 @@ import { problemResponseForError } from "./api/http.ts";
 import { userIdForClerkUser } from "./api/ids.ts";
 import type { Bindings } from "./api/types.ts";
 import { importBottleCandidate } from "./bottle-importer.ts";
-import { beginCaptureWorkflow, reserveCaptureRetry, updateCaptureStatus } from "./capture-store.ts";
+import {
+  beginCaptureWorkflow,
+  createBottleCapture,
+  reserveCaptureRetry,
+  updateCaptureStatus,
+} from "./capture-store.ts";
 import { asD1, migratedDatabase } from "./d1-support.ts";
 import { bottleCaptureRoutes } from "./routes/bottle-captures.ts";
 
@@ -24,6 +29,110 @@ const app = new Hono<{ Bindings: Bindings }>()
   .onError(problemResponseForError);
 
 await describe("capture lifecycle recovery", async () => {
+  await it("persists the initial Workflow owner before storing capture images", async () => {
+    const sqlite = setup();
+    let storedImages = 0;
+    // oxlint-disable typescript/no-unsafe-type-assertion -- Capture creation only writes objects to this bucket.
+    const bucket = {
+      async put() {
+        const capture = sqlite
+          .prepare("SELECT id, workflow_instance_id FROM bottle_captures")
+          .get();
+        assert.ok(capture);
+        assert.equal(capture["workflow_instance_id"], capture["id"]);
+        storedImages += 1;
+      },
+    } as unknown as R2Bucket;
+    // oxlint-enable typescript/no-unsafe-type-assertion
+    const capture = await createBottleCapture({
+      bucket,
+      database: createD1Client(asD1(sqlite)),
+      files: [new File(["photo"], "label.jpg", { type: "image/jpeg" })],
+      images: undefined,
+      positionHint: null,
+      quantity: 1,
+      siteId: "site",
+      storageLocationId: null,
+      userId: userIdForClerkUser("dev:tester"),
+    });
+    assert.equal(capture.status, "queued");
+    assert.equal(storedImages, 1);
+    assert.equal(
+      sqlite.prepare("SELECT workflow_instance_id FROM bottle_captures").get()?.[
+        "workflow_instance_id"
+      ],
+      capture.captureId,
+    );
+  });
+
+  await it("retains photos and offers retry or deletion after an initial launch failure", async () => {
+    for (const action of ["retry", "delete"]) {
+      const sqlite = setup();
+      let launchAttempts = 0;
+      const { response, bindings, objects } = await uploadCapture(sqlite, async () => {
+        launchAttempts += 1;
+        if (launchAttempts === 1) throw new Error("Workflow service unavailable");
+      });
+      assert.equal(response.status, 201);
+      const capture = sqlite
+        .prepare("SELECT id, status, workflow_instance_id FROM bottle_captures")
+        .get();
+      assert.ok(capture);
+      const captureId = capture?.["id"];
+      assert.ok(typeof captureId === "string");
+      assert.equal(capture["status"], "failed");
+      assert.equal(capture["workflow_instance_id"], captureId);
+      assert.deepEqual(await response.json(), {
+        data: {
+          captureId,
+          workflowInstanceId: null,
+          errorMessage:
+            "Capture was saved, but extraction startup could not be confirmed. Refresh capture status before retrying.",
+        },
+      });
+      const image = sqlite.prepare("SELECT image_asset_id FROM bottle_capture_images").get();
+      assert.ok(typeof image?.["image_asset_id"] === "string");
+      const original = await app.request(
+        `http://localhost/bottle-captures/${captureId}/images/${image["image_asset_id"]}?original=1`,
+        { headers: { "x-dev-user": "tester" } },
+        bindings,
+      );
+      assert.equal(original.status, 200);
+      assert.equal(await original.text(), "photo");
+      const next = await app.request(
+        `http://localhost/bottle-captures/${captureId}${action === "retry" ? "/retry" : ""}`,
+        { method: action === "retry" ? "POST" : "DELETE", headers: { "x-dev-user": "tester" } },
+        bindings,
+      );
+      assert.equal(next.status, action === "retry" ? 200 : 204);
+      assert.equal(objects.size, action === "retry" ? 1 : 0);
+      assert.equal(launchAttempts, action === "retry" ? 2 : 1);
+      assert.equal(captureStatus(sqlite), action === "retry" ? "queued" : undefined);
+    }
+  });
+
+  await it("preserves started processing after a lost initial launch acknowledgement", async () => {
+    for (const status of ["extracting", "importing", "needs_review", "imported"]) {
+      const sqlite = setup();
+      const { response, objects } = await uploadCapture(sqlite, async (id) => {
+        const database = createD1Client(asD1(sqlite));
+        assert.equal(
+          await beginCaptureWorkflow({ captureId: id, database, workflowInstanceId: id }),
+          true,
+        );
+        sqlite.prepare("UPDATE bottle_captures SET status = ? WHERE id = ?").run(status, id);
+        throw new Error("Workflow launch response lost");
+      });
+      assert.equal(response.status, 201);
+      assert.equal(captureStatus(sqlite), status);
+      assert.equal(objects.size, 1);
+      assert.equal(
+        sqlite.prepare("SELECT error_message FROM bottle_captures").get()?.["error_message"],
+        null,
+      );
+    }
+  });
+
   await it("replays a manually imported capture after a lost HTTP acknowledgement", async () => {
     const sqlite = setup("needs_review");
     const d1 = asD1(sqlite);
@@ -337,7 +446,7 @@ await describe("capture lifecycle recovery", async () => {
   });
 });
 
-function setup(status: string): DatabaseSync {
+function setup(status?: string): DatabaseSync {
   const sqlite = migratedDatabase();
   const userId = userIdForClerkUser("dev:tester");
   sqlite.prepare("INSERT INTO users (id, clerk_user_id) VALUES (?, 'dev:tester')").run(userId);
@@ -345,6 +454,7 @@ function setup(status: string): DatabaseSync {
   sqlite
     .prepare("INSERT INTO site_memberships (site_id, user_id, role) VALUES ('site', ?, 'owner')")
     .run(userId);
+  if (status === undefined) return sqlite;
   sqlite
     .prepare(`INSERT INTO bottle_captures (id, site_id, user_id, status, workflow_instance_id, quantity)
     VALUES ('capture', 'site', ?, ?, 'workflow', 2)`)
@@ -420,4 +530,41 @@ async function request(
     },
     bindings,
   );
+}
+
+async function uploadCapture(sqlite: DatabaseSync, start: (id: string) => Promise<void>) {
+  const objects = new Map<string, ArrayBuffer>();
+  // oxlint-disable typescript/no-unsafe-type-assertion -- These external bindings implement only the upload, image-read, deletion, and Workflow-launch operations used by the routes.
+  const bindings = {
+    DB: asD1(sqlite),
+    IMAGE_BUCKET: {
+      async put(key: string, bytes: ArrayBuffer) {
+        objects.set(key, bytes);
+      },
+      async get(key: string) {
+        const body = objects.get(key);
+        return body === undefined ? null : { body };
+      },
+      async delete(keys: string[]) {
+        for (const key of keys) objects.delete(key);
+      },
+    },
+    BOTTLE_CAPTURE_WORKFLOW: {
+      async create({ id }: { readonly id: string }) {
+        await start(id);
+        return { id };
+      },
+    },
+  } as unknown as Bindings;
+  // oxlint-enable typescript/no-unsafe-type-assertion
+  const body = new FormData();
+  body.set("siteId", "site");
+  body.set("quantity", "1");
+  body.set("images", new File(["photo"], "label.jpg", { type: "image/jpeg" }));
+  const response = await app.request(
+    "http://localhost/bottle-captures",
+    { method: "POST", headers: { "x-dev-user": "tester" }, body },
+    bindings,
+  );
+  return { response, bindings, objects };
 }

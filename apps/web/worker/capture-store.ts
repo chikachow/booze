@@ -151,6 +151,7 @@ export async function createBottleCapture({
   try {
     await database.insert(bottleCaptures).values({
       id: captureId,
+      workflowInstanceId: captureId,
       siteId,
       userId,
       storageLocationId,
@@ -255,21 +256,6 @@ export async function createBottleCapture({
     errorDetail: null,
   });
   return { captureId, status: "queued" };
-}
-
-export async function setCaptureWorkflowInstance({
-  captureId,
-  database,
-  workflowInstanceId,
-}: {
-  readonly captureId: string;
-  readonly database: BoozeDatabase;
-  readonly workflowInstanceId: string;
-}): Promise<void> {
-  await database
-    .update(bottleCaptures)
-    .set({ workflowInstanceId, updatedAt: sql`CURRENT_TIMESTAMP` })
-    .where(eq(bottleCaptures.id, captureId));
 }
 
 export async function listBottleCaptures({

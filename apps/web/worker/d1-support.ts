@@ -53,12 +53,18 @@ class SqliteD1Statement {
   }
 
   public async run(): Promise<D1Result> {
-    const result = this.database.prepare(this.query).run(...this.parameters);
+    return this.execute();
+  }
+
+  public execute(): D1Result {
+    const changesBefore = this.database.prepare("SELECT total_changes() AS count").get()?.["count"];
+    const results = this.database.prepare(this.query).all(...this.parameters);
+    const changesAfter = this.database.prepare("SELECT total_changes() AS count").get()?.["count"];
     /* oxlint-disable typescript/no-unsafe-type-assertion -- Minimal test-only D1 metadata. */
     return {
       success: true,
-      results: [],
-      meta: { changes: Number(result.changes) },
+      results,
+      meta: { changes: Number(changesAfter) - Number(changesBefore) },
     } as unknown as D1Result;
     /* oxlint-enable typescript/no-unsafe-type-assertion */
   }
@@ -75,7 +81,10 @@ export function asD1(database: DatabaseSync): D1Database {
       try {
         const results = [];
         for (const statement of statements) {
-          results.push(await statement.run());
+          if (!(statement instanceof SqliteD1Statement)) {
+            throw new TypeError("Expected a SQLite-backed D1 statement");
+          }
+          results.push(statement.execute());
         }
         database.exec("COMMIT");
         return results;

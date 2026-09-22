@@ -24,6 +24,7 @@ import {
 
 type AuthHeadersProvider = () => Promise<Record<string, string>>;
 type CollectionName = "inventory" | "locations" | "sites" | "captures";
+const collectionNames: readonly CollectionName[] = ["inventory", "locations", "sites", "captures"];
 type RefreshResult = "refreshed" | "superseded";
 type CollectionRequest<Resource> = {
   readonly isResource: (value: unknown) => value is Resource;
@@ -37,8 +38,8 @@ export type MutationCompletion = {
 };
 
 export type RefreshIssue = {
+  readonly collection: CollectionName;
   readonly message: string;
-  readonly refresh: MutationCompletion["refresh"];
 };
 
 type CatalogueController = {
@@ -49,8 +50,8 @@ type CatalogueController = {
   readonly loadCaptures: () => Promise<RefreshResult>;
   readonly loadCatalogue: () => Promise<RefreshResult>;
   readonly locations: readonly LocationItem[];
-  readonly refreshIssue: RefreshIssue | null;
-  readonly retryRefresh: () => Promise<void>;
+  readonly refreshIssues: readonly RefreshIssue[];
+  readonly retryRefresh: (collection?: CollectionName) => Promise<void>;
   readonly sites: readonly SiteItem[];
   readonly status: string;
   readonly setStatus: Dispatch<SetStateAction<string>>;
@@ -62,12 +63,18 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
   const [captures, setCaptures] = useState<readonly CaptureResource[]>([]);
   const [locations, setLocations] = useState<readonly LocationItem[]>([]);
   const [sites, setSites] = useState<readonly SiteItem[]>([]);
-  const [status, setStatus] = useState("Loading inventory...");
-  const [refreshIssue, setRefreshIssue] = useState<RefreshIssue | null>(null);
+  const [status, setStatusValue] = useState("Loading inventory...");
+  const [issuesByCollection, setIssuesByCollection] = useState<
+    Partial<Record<CollectionName, RefreshIssue | undefined>>
+  >({});
   const requestVersions = useRef({ inventory: 0, locations: 0, sites: 0, captures: 0 });
-  const catalogueRequestVersion = useRef(0);
+  const statusVersion = useRef(0);
   const previousCaptures = useRef<readonly CaptureResource[]>([]);
   const hasPendingCaptures = captures.some((capture) => isPendingCapture(capture));
+  const setStatus = useCallback((value: SetStateAction<string>): void => {
+    statusVersion.current += 1;
+    setStatusValue(value);
+  }, []);
 
   const loadLatestCollection = useCallback(
     async <Resource>(
@@ -78,9 +85,21 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
       const requestVersion = requestVersions.current[collection];
       try {
         const data = await loadCollection({ ...request, getAuthHeaders });
-        return requestVersion === requestVersions.current[collection] ? data : null;
+        if (requestVersion !== requestVersions.current[collection]) return null;
+        setIssuesByCollection((current) => {
+          if (current[collection] === undefined) return current;
+          return { ...current, [collection]: undefined };
+        });
+        return data;
       } catch (error) {
         if (requestVersion !== requestVersions.current[collection]) return null;
+        setIssuesByCollection((current) => ({
+          ...current,
+          [collection]: {
+            collection,
+            message: `${request.resourceName} could not be refreshed. Try again.`,
+          },
+        }));
         throw error;
       }
     },
@@ -96,11 +115,6 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     if (data === null) return "superseded";
     const nextItems = data.map((item) => apiBottleToInventoryItem(item));
     setItems(nextItems);
-    setStatus(
-      nextItems.length === 0
-        ? "No bottles catalogued yet."
-        : `${nextItems.length} bottles available.`,
-    );
     return "refreshed";
   }, [loadLatestCollection]);
 
@@ -134,28 +148,45 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     });
     if (data === null) return "superseded";
     setCaptures(data);
-    setRefreshIssue((current) => (current?.refresh === "captures" ? null : current));
     return "refreshed";
   }, [loadLatestCollection]);
 
-  const loadCatalogue = useCallback(async (): Promise<RefreshResult> => {
-    catalogueRequestVersion.current += 1;
-    const requestVersion = catalogueRequestVersion.current;
-    const results = await Promise.allSettled([
-      loadInventory(),
-      loadLocations(),
-      loadSites(),
-      loadCaptures(),
-    ]);
-    if (requestVersion !== catalogueRequestVersion.current) return "superseded";
-    const failed = results.find((result) => result.status === "rejected");
-    if (failed?.status === "rejected") {
-      throw failed.reason;
-    }
-    return results.some((result) => result.status === "fulfilled" && result.value === "superseded")
-      ? "superseded"
-      : "refreshed";
-  }, [loadCaptures, loadInventory, loadLocations, loadSites]);
+  const loadCollections = useCallback(
+    async (collections: readonly CollectionName[]): Promise<RefreshResult> => {
+      const loaders = {
+        inventory: loadInventory,
+        locations: loadLocations,
+        sites: loadSites,
+        captures: loadCaptures,
+      };
+      const pending = collections.map((collection) => ({
+        collection,
+        promise: loaders[collection](),
+        version: requestVersions.current[collection],
+      }));
+      const results = await Promise.allSettled(pending.map(async (request) => request.promise));
+      let superseded = false;
+      for (const [index, result] of results.entries()) {
+        const request = pending[index];
+        if (request === undefined) continue;
+        // A collection can be refreshed again after its leg of this batch has
+        // settled. Recheck at aggregate completion before reporting its outcome.
+        if (request.version !== requestVersions.current[request.collection]) {
+          superseded = true;
+          continue;
+        }
+        if (result.status === "rejected") throw result.reason;
+        if (result.value === "superseded") superseded = true;
+      }
+      return superseded ? "superseded" : "refreshed";
+    },
+    [loadCaptures, loadInventory, loadLocations, loadSites],
+  );
+
+  const loadCatalogue = useCallback(
+    async (): Promise<RefreshResult> => loadCollections(collectionNames),
+    [loadCollections],
+  );
 
   const refresh = useCallback(
     async (scope: MutationCompletion["refresh"]): Promise<RefreshResult> =>
@@ -165,41 +196,54 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
 
   const completeMutation = useCallback(
     async ({ refresh: scope, successMessage }: MutationCompletion): Promise<void> => {
+      statusVersion.current += 1;
+      const version = statusVersion.current;
       try {
-        if ((await refresh(scope)) === "superseded") return;
-        setRefreshIssue(null);
-        setStatus(successMessage);
+        await refresh(scope);
+        if (version === statusVersion.current) setStatusValue(successMessage);
       } catch {
-        const message = `${successMessage} Latest data could not be refreshed.`;
-        setRefreshIssue({ message, refresh: scope });
-        setStatus(message);
+        if (version === statusVersion.current) {
+          setStatusValue(`${successMessage} Latest data could not be refreshed.`);
+        }
       }
     },
     [refresh],
   );
 
-  const retryRefresh = useCallback(async (): Promise<void> => {
-    if (refreshIssue === null) {
-      return;
-    }
-    setStatus("Refreshing latest data...");
-    try {
-      if ((await refresh(refreshIssue.refresh)) === "superseded") return;
-      setRefreshIssue(null);
-      setStatus("Latest data refreshed.");
-    } catch {
-      setStatus("Latest data is still unavailable. Try refreshing again.");
-    }
-  }, [refresh, refreshIssue]);
+  const retryRefresh = useCallback(
+    async (collection?: CollectionName): Promise<void> => {
+      const failed = collectionNames.filter(
+        (name) =>
+          issuesByCollection[name] !== undefined &&
+          (collection === undefined || name === collection),
+      );
+      if (failed.length === 0) return;
+      statusVersion.current += 1;
+      const version = statusVersion.current;
+      setStatusValue("Refreshing latest data...");
+      try {
+        await loadCollections(failed);
+        if (version === statusVersion.current) setStatusValue("Latest data refreshed.");
+      } catch {
+        if (version === statusVersion.current) {
+          setStatusValue("Latest data is still unavailable. Try refreshing again.");
+        }
+      }
+    },
+    [issuesByCollection, loadCollections],
+  );
 
   useEffect(() => {
     async function load(): Promise<void> {
+      statusVersion.current += 1;
+      const version = statusVersion.current;
       try {
-        if ((await loadCatalogue()) === "refreshed") setRefreshIssue(null);
+        await loadCatalogue();
+        if (version === statusVersion.current) setStatusValue("Cellar data loaded.");
       } catch {
-        const message = "Could not load cellar data. Try refreshing.";
-        setRefreshIssue({ message, refresh: "catalogue" });
-        setStatus(message);
+        if (version === statusVersion.current) {
+          setStatusValue("Could not load cellar data. Try refreshing.");
+        }
       } finally {
         setIsLoading(false);
       }
@@ -224,13 +268,7 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
           await loadCaptures();
         }
       } catch {
-        setRefreshIssue(
-          (current) =>
-            current ?? {
-              message: "Capture progress could not be refreshed. Retrying automatically.",
-              refresh: "captures",
-            },
-        );
+        // The collection retains its warning until a current request succeeds.
       } finally {
         pending = false;
         if (!stopped) {
@@ -285,7 +323,10 @@ export function useCatalogue(getAuthHeaders: AuthHeadersProvider): CatalogueCont
     loadCaptures,
     loadCatalogue,
     locations,
-    refreshIssue,
+    refreshIssues: collectionNames.flatMap((collection) => {
+      const issue = issuesByCollection[collection];
+      return issue === undefined ? [] : [issue];
+    }),
     retryRefresh,
     sites,
     status,

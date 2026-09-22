@@ -88,7 +88,7 @@ The app must:
 
 1. enforce site membership server-side for site-scoped data;
 2. prevent cross-site bottle and storage-location access;
-3. create an owner membership when a user creates a site through the current upsert flow;
+3. create an owner membership only for a newly created site; reusing a site preserves the existing membership role;
 4. avoid frontend-only access control;
 5. allow owners to manage a site and its content;
 6. allow editors to mutate site content but not rename or delete a site;
@@ -135,6 +135,8 @@ The app must support:
 3. deleting sites;
 4. listing sites with bottle and location counts.
 
+Creating a site by name reuses the sole exact-name site accessible to the user, including a shared site where the user is a viewer, without granting additional permissions. Concurrent requests from the same user for the same name must return the same site. Separately shared sites may have duplicate names; ambiguous name-based operations must require a site ID. Renaming a site retains its ID.
+
 Deleting a site removes its bottles, wine vintages, locations, memberships, and site row. This is intentionally different from deleting a location, because a bottle cannot remain associated with a deleted site.
 
 ## Drink Queue
@@ -159,6 +161,8 @@ Image processing must:
 2. keep R2 artifacts retryable and D1 as the source of truth;
 3. preserve uncertain candidates for authorised manual review;
 4. durably queue object deletion and retry failed R2 cleanup.
+
+If photos are saved but extraction cannot start, retain the capture and photos, explain the saved result and startup failure, and offer Retry and Delete. An uncertain launch acknowledgement must not downgrade processing that already started. Automatic reconciliation of ambiguous or abruptly interrupted operations remains a follow-up.
 
 Trusted wine enrichment from winery pages, technical sheets, Vivino pages, or reviews is desirable but not required for MVP. Any enrichment must preserve source URLs and should not overwrite user-entered facts without review.
 
@@ -200,6 +204,8 @@ The app should be comfortable on a mobile browser:
 3. bottle management and location management are separate areas;
 4. inventory and drink views avoid accidental edit fields except deliberate move/consume controls;
 5. desktop layouts use available width without changing the underlying workflows.
+
+Inventory, locations, sites, and captures refresh independently. Each failed section keeps its warning and retry action until a current refresh of that section succeeds. A committed mutation is reported as saved even when reloading its data fails; older refreshes must not overwrite newer operation feedback.
 
 ## Security
 

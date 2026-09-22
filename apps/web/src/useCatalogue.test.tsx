@@ -22,6 +22,300 @@ afterEach(() => {
 });
 
 describe("useCatalogue", () => {
+  it("keeps a newer capture failure after an older catalogue refresh finishes", async () => {
+    let inventoryRequests = 0;
+    let resolveOldInventory: ((response: Response) => void) | undefined;
+    let failCaptures = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/bottles") {
+          inventoryRequests += 1;
+          if (inventoryRequests === 2)
+            return new Promise<Response>((resolve) => {
+              resolveOldInventory = resolve;
+            });
+        }
+        if (path === "/api/bottle-captures") {
+          if (failCaptures) return new Response(null, { status: 503 });
+          return jsonResponse(captures.map((capture) => ({ ...capture, status: "needs_review" })));
+        }
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    let older: Promise<void> = Promise.resolve();
+    await act(async () => {
+      older = result.current.completeMutation({
+        refresh: "catalogue",
+        successMessage: "Older bottle save.",
+      });
+    });
+    failCaptures = true;
+    // Represents a successful DELETE followed by its failed read refresh.
+    await act(async () => {
+      await result.current.completeMutation({
+        refresh: "captures",
+        successMessage: "Capture deleted.",
+      });
+    });
+    expect(result.current.refreshIssues).toEqual([
+      { collection: "captures", message: "Captures could not be refreshed. Try again." },
+    ]);
+    expect(result.current.captures).toHaveLength(captures.length);
+    await act(async () => {
+      resolveOldInventory?.(jsonResponse(bottles));
+      await older;
+    });
+    // The newer failure retains its retry affordance and status.
+    expect(result.current.captures).toHaveLength(captures.length);
+    expect(result.current.refreshIssues).toContainEqual({
+      collection: "captures",
+      message: "Captures could not be refreshed. Try again.",
+    });
+    expect(result.current.status).toBe("Capture deleted. Latest data could not be refreshed.");
+  });
+
+  it("keeps independent section failures until that section succeeds and retries only the selected section", async () => {
+    const failedPaths = new Set<string>();
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        requests.push(path);
+        return failedPaths.has(path)
+          ? new Response(null, { status: 503 })
+          : jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(result.current.status).toBe("Cellar data loaded.");
+
+    failedPaths.add("/api/bottles");
+    failedPaths.add("/api/sites");
+    await act(async () => {
+      await result.current.completeMutation({
+        refresh: "catalogue",
+        successMessage: "Bottle saved.",
+      });
+    });
+    const inventoryIssue = {
+      collection: "inventory",
+      message: "Inventory could not be refreshed. Try again.",
+    };
+    const siteIssue = { collection: "sites", message: "Sites could not be refreshed. Try again." };
+    expect(result.current.refreshIssues).toEqual(
+      expect.arrayContaining([inventoryIssue, siteIssue]),
+    );
+    expect(result.current.refreshIssues).toHaveLength(2);
+    await act(async () => {
+      await result.current.completeMutation({
+        refresh: "captures",
+        successMessage: "Capture deleted.",
+      });
+    });
+    expect(result.current.refreshIssues).toEqual(
+      expect.arrayContaining([inventoryIssue, siteIssue]),
+    );
+    expect(result.current.status).toBe("Capture deleted.");
+
+    failedPaths.delete("/api/sites");
+    requests.length = 0;
+    await act(async () => {
+      await result.current.retryRefresh("sites");
+    });
+    expect(requests).toEqual(["/api/sites"]);
+    expect(result.current.refreshIssues).toEqual([inventoryIssue]);
+    expect(result.current.status).toBe("Latest data refreshed.");
+
+    failedPaths.clear();
+    requests.length = 0;
+    await act(async () => {
+      await result.current.retryRefresh();
+    });
+    expect(requests).toEqual(["/api/bottles"]);
+    expect(result.current.refreshIssues).toEqual([]);
+  });
+
+  it("lets an older retry repair its own section without replacing a newer mutation failure", async () => {
+    let failSites = true;
+    let failCaptures = false;
+    let resolveSiteRetry: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/sites") {
+          if (failSites) return new Response(null, { status: 503 });
+          return new Promise<Response>((resolve) => {
+            resolveSiteRetry = resolve;
+          });
+        }
+        if (path === "/api/bottle-captures" && failCaptures)
+          return new Response(null, { status: 503 });
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    failSites = false;
+    let retry = Promise.resolve();
+    await act(async () => {
+      retry = result.current.retryRefresh("sites");
+    });
+    failCaptures = true;
+    await act(async () => {
+      await result.current.completeMutation({
+        refresh: "captures",
+        successMessage: "Capture deleted.",
+      });
+    });
+    await act(async () => {
+      resolveSiteRetry?.(jsonResponse(sites));
+      await retry;
+    });
+    expect(result.current.refreshIssues).toEqual([
+      { collection: "captures", message: "Captures could not be refreshed. Try again." },
+    ]);
+    expect(result.current.status).toBe("Capture deleted. Latest data could not be refreshed.");
+  });
+
+  it("ignores stale retry success after a newer request for the same section fails", async () => {
+    let captureRequests = 0;
+    let resolveRetry: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/bottle-captures") {
+          captureRequests += 1;
+          if (captureRequests === 2)
+            return new Promise<Response>((resolve) => {
+              resolveRetry = resolve;
+            });
+          return new Response(null, { status: 503 });
+        }
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    let retry = Promise.resolve();
+    await act(async () => {
+      retry = result.current.retryRefresh("captures");
+    });
+    await act(async () => {
+      await result.current.completeMutation({
+        refresh: "captures",
+        successMessage: "Capture deleted.",
+      });
+    });
+    await act(async () => {
+      resolveRetry?.(jsonResponse(captures));
+      await retry;
+    });
+    expect(result.current.captures).toEqual([]);
+    expect(result.current.refreshIssues).toEqual([
+      { collection: "captures", message: "Captures could not be refreshed. Try again." },
+    ]);
+    expect(result.current.status).toBe("Capture deleted. Latest data could not be refreshed.");
+  });
+
+  it("does not replace a newer action's progress message when an older retry finishes", async () => {
+    let siteRequests = 0;
+    let resolveRetry: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/sites") {
+          siteRequests += 1;
+          if (siteRequests === 1) return new Response(null, { status: 503 });
+          return new Promise<Response>((resolve) => {
+            resolveRetry = resolve;
+          });
+        }
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    let retry = Promise.resolve();
+    await act(async () => {
+      retry = result.current.retryRefresh("sites");
+    });
+    act(() => {
+      result.current.setStatus("Saving another bottle...");
+    });
+    await act(async () => {
+      resolveRetry?.(jsonResponse(sites));
+      await retry;
+    });
+    expect(result.current.refreshIssues).toEqual([]);
+    expect(result.current.status).toBe("Saving another bottle...");
+  });
+
+  it("keeps saved feedback when a background capture refresh repairs an already-failed aggregate leg", async () => {
+    let inventoryRequests = 0;
+    let failCaptures = false;
+    let resolveInventory: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const path = requestPath(input);
+        if (path === "/api/bottles") {
+          inventoryRequests += 1;
+          if (inventoryRequests === 2)
+            return new Promise<Response>((resolve) => {
+              resolveInventory = resolve;
+            });
+        }
+        if (path === "/api/bottle-captures" && failCaptures)
+          return new Response(null, { status: 503 });
+        return jsonResponse(dataByPath.get(path) ?? []);
+      }),
+    );
+    const { result } = renderHook(() => useCatalogue(getAuthHeaders));
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    failCaptures = true;
+    let completion = Promise.resolve();
+    await act(async () => {
+      completion = result.current.completeMutation({
+        refresh: "catalogue",
+        successMessage: "Bottle saved.",
+      });
+    });
+    expect(result.current.refreshIssues).toEqual([
+      { collection: "captures", message: "Captures could not be refreshed. Try again." },
+    ]);
+    failCaptures = false;
+    await act(async () => {
+      await result.current.loadCaptures();
+    });
+    await act(async () => {
+      resolveInventory?.(jsonResponse(bottles));
+      await completion;
+    });
+    expect(result.current.refreshIssues).toEqual([]);
+    expect(result.current.status).toBe("Bottle saved.");
+  });
+
   it("pauses capture polling in hidden tabs and refreshes immediately on return", async () => {
     vi.useFakeTimers();
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
@@ -120,7 +414,7 @@ describe("useCatalogue", () => {
     });
 
     expect(result.current.items).toHaveLength(1);
-    expect(result.current.refreshIssue).toBeNull();
+    expect(result.current.refreshIssues).toEqual([]);
     expect(result.current.status).toBe("Bottle saved.");
   });
 
@@ -158,10 +452,12 @@ describe("useCatalogue", () => {
       resolveInitialInventory?.(jsonResponse(bottles));
     });
 
-    expect(result.current.refreshIssue).toEqual({
-      message: "Bottle saved. Latest data could not be refreshed.",
-      refresh: "catalogue",
-    });
+    expect(result.current.refreshIssues).toEqual([
+      {
+        collection: "sites",
+        message: "Sites could not be refreshed. Try again.",
+      },
+    ]);
   });
 
   it("ignores an older polling failure after a catalogue refresh succeeds", async () => {
@@ -202,7 +498,7 @@ describe("useCatalogue", () => {
       rejectPoll?.(new Error("An older polling request lost its connection"));
     });
 
-    expect(result.current.refreshIssue).toBeNull();
+    expect(result.current.refreshIssues).toEqual([]);
     expect(result.current.status).toBe("Bottle saved.");
   });
 
@@ -218,7 +514,12 @@ describe("useCatalogue", () => {
     );
     const { result } = renderHook(() => useCatalogue(getAuthHeaders));
     await waitFor(() => {
-      expect(result.current.refreshIssue?.refresh).toBe("catalogue");
+      expect(result.current.refreshIssues.map((issue) => issue.collection).toSorted()).toEqual([
+        "captures",
+        "inventory",
+        "locations",
+        "sites",
+      ]);
     });
 
     unavailable = false;
@@ -227,7 +528,7 @@ describe("useCatalogue", () => {
     });
 
     expect(result.current.items).toHaveLength(1);
-    expect(result.current.refreshIssue).toBeNull();
+    expect(result.current.refreshIssues).toEqual([]);
   });
 
   it("refreshes pending captures, updates imported inventory, and stops after processing finishes", async () => {
@@ -301,13 +602,16 @@ describe("useCatalogue", () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(result.current.captures[0]?.status).toBe("extracting");
-    expect(result.current.refreshIssue?.refresh).toBe("captures");
+    expect(result.current.refreshIssues).toContainEqual({
+      collection: "captures",
+      message: "Captures could not be refreshed. Try again.",
+    });
 
     unavailable = false;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
-    expect(result.current.refreshIssue).toBeNull();
+    expect(result.current.refreshIssues).toEqual([]);
   });
 
   it("keeps a committed mutation successful and retries only its failed refresh", async () => {
@@ -339,10 +643,12 @@ describe("useCatalogue", () => {
     });
 
     expect(result.current.status).toBe("Bottle saved. Latest data could not be refreshed.");
-    expect(result.current.refreshIssue).toEqual({
-      message: "Bottle saved. Latest data could not be refreshed.",
-      refresh: "catalogue",
-    });
+    expect(result.current.refreshIssues).toEqual([
+      {
+        collection: "sites",
+        message: "Sites could not be refreshed. Try again.",
+      },
+    ]);
 
     failedPath = null;
     requests.length = 0;
@@ -350,10 +656,8 @@ describe("useCatalogue", () => {
       await result.current.retryRefresh();
     });
 
-    expect(requests.toSorted()).toEqual(
-      ["/api/bottle-captures", "/api/bottles", "/api/sites", "/api/storage-locations"].toSorted(),
-    );
-    expect(result.current.refreshIssue).toBeNull();
+    expect(requests).toEqual(["/api/sites"]);
+    expect(result.current.refreshIssues).toEqual([]);
     expect(result.current.status).toBe("Latest data refreshed.");
   });
 
@@ -387,7 +691,10 @@ describe("useCatalogue", () => {
     });
 
     expect(requests).toEqual(["/api/bottle-captures"]);
-    expect(result.current.refreshIssue?.refresh).toBe("captures");
+    expect(result.current.refreshIssues).toContainEqual({
+      collection: "captures",
+      message: "Captures could not be refreshed. Try again.",
+    });
 
     requests.length = 0;
     await act(async () => {
@@ -395,7 +702,10 @@ describe("useCatalogue", () => {
     });
 
     expect(requests).toEqual(["/api/bottle-captures"]);
-    expect(result.current.refreshIssue?.refresh).toBe("captures");
+    expect(result.current.refreshIssues).toContainEqual({
+      collection: "captures",
+      message: "Captures could not be refreshed. Try again.",
+    });
     expect(result.current.status).toBe("Latest data is still unavailable. Try refreshing again.");
   });
 });

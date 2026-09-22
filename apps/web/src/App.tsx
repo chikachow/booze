@@ -111,7 +111,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
     items,
     isLoading,
     locations,
-    refreshIssue,
+    refreshIssues,
     retryRefresh,
     sites,
     status,
@@ -284,14 +284,21 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
           </section>
         </Card>
 
-        {refreshIssue === null ? null : (
+        {refreshIssues.map((issue) => (
           <Banner
-            aria-label={refreshIssue.message}
-            endContent={<Button clickAction={retryRefresh} label="Retry refresh" variant="ghost" />}
+            key={issue.collection}
+            aria-label={issue.message}
+            endContent={
+              <Button
+                clickAction={async () => retryRefresh(issue.collection)}
+                label="Retry refresh"
+                variant="ghost"
+              />
+            }
             status="warning"
-            title={refreshIssue.message}
+            title={issue.message}
           />
-        )}
+        ))}
 
         <TabList
           hasDivider
@@ -323,7 +330,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
                 items={listedItems}
                 isLoading={isLoading}
                 onCreateSite={
-                  sites.length === 0 && refreshIssue === null
+                  sites.length === 0 && refreshIssues.length === 0
                     ? () => {
                         setArea("management");
                       }

@@ -1,6 +1,6 @@
 import { siteMemberships, sites, users, type BoozeDatabase } from "@chikachow/booze-db";
 import { verifyToken } from "@clerk/backend";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 
@@ -158,30 +158,33 @@ export async function upsertSite({
   readonly site: string;
   readonly userId: string;
 }): Promise<{ readonly siteId: string }> {
-  const existing = await database
+  const matchingSites = database
     .select({ siteId: sites.id })
     .from(sites)
     .innerJoin(siteMemberships, eq(sites.id, siteMemberships.siteId))
     .where(and(eq(sites.name, site), eq(siteMemberships.userId, userId)))
     .limit(2);
+  const siteId = generatedId("site");
+  // Both name checks and the result lookup run in the same transaction. Only
+  // the request that inserts a site adds an owner; existing roles stay intact.
+  const [, , existing] = await database.batch([
+    database.insert(sites).select(sql`
+      select ${siteId}, ${site}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      where not exists (${matchingSites.getSQL()})
+    `),
+    database.insert(siteMemberships).select(sql`
+      select ${siteId}, ${userId}, 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      where not exists (${matchingSites.getSQL()})
+    `),
+    matchingSites,
+  ]);
   if (existing.length > 1) {
     throw new HTTPException(409, {
       message: "More than one site has this name; choose a site by ID",
     });
   }
-  if (existing[0] !== undefined) return { siteId: existing[0].siteId };
-  const siteId = generatedId("site");
-  await database.batch([
-    database.insert(sites).values({ id: siteId, name: site }).onConflictDoNothing({
-      target: sites.id,
-    }),
-    database
-      .insert(siteMemberships)
-      .values({ siteId, userId, role: "owner" })
-      .onConflictDoNothing({ target: [siteMemberships.siteId, siteMemberships.userId] }),
-  ]);
-
-  return { siteId };
+  if (existing[0] === undefined) throw new Error("Site creation did not return a site");
+  return { siteId: existing[0].siteId };
 }
 
 export async function requireSitePermission({

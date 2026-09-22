@@ -26,7 +26,6 @@ import {
   getCaptureImageObject,
   listBottleCaptures,
   reserveCaptureRetry,
-  setCaptureWorkflowInstance,
   updateCaptureRun,
   updateCaptureStatus,
 } from "../capture-store.ts";
@@ -128,11 +127,6 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       });
     }
     try {
-      await setCaptureWorkflowInstance({
-        captureId: capture.captureId,
-        database,
-        workflowInstanceId: capture.captureId,
-      });
       const instance = await context.env.BOTTLE_CAPTURE_WORKFLOW.create({
         id: capture.captureId,
         params: { captureId: capture.captureId },
@@ -140,6 +134,8 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
       return created({ captureId: capture.captureId, workflowInstanceId: instance.id });
     } catch (error) {
       const details = errorDetails(error);
+      const errorMessage =
+        "Capture was saved, but extraction startup could not be confirmed. Refresh capture status before retrying.";
       logError("bottle_capture_workflow_start_failed", {
         captureId: capture.captureId,
         error: details,
@@ -153,10 +149,10 @@ export const bottleCaptureRoutes = new Hono<{ Bindings: Bindings }>()
         status: "failed",
         workflowInstanceId: capture.captureId,
         expectedStatus: "queued",
-        errorMessage: "Capture was saved, but extraction did not start. Retry the capture.",
+        errorMessage,
         errorDetail: details,
       });
-      return created({ captureId: capture.captureId, workflowInstanceId: null });
+      return created({ captureId: capture.captureId, errorMessage, workflowInstanceId: null });
     }
   })
   .get("/bottle-captures/:captureId", async (context) => {
