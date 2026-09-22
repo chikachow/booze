@@ -57,4 +57,28 @@ D1 [Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) ha
 
 Preserve original images independently when preparing a full recovery point. A D1 rollback alone cannot restore an object already deleted from R2, and restoring an old deletion queue can reintroduce pending deletions. Pause capture processing and cleanup before a coordinated recovery; restore D1 and R2 to a consistent point, inspect pending cleanup keys, then resume. Rehearse recovery against a separate database and bucket before using it on production.
 
+### Test the export as a restore input
+
+A completed export is not proof that D1 can import it unchanged. The wine identity release rehearsal on 2026-09-22 found two independent failures with the real export: inserts appeared before referenced tables existed, and large saved extraction text exceeded the SQL statement size accepted by local D1. Creating the schema first resolved only the first failure.
+
+Keep the original export unchanged and checksummed. If an isolated import fails, prepare a separate restore copy for that snapshot:
+
+1. Create all tables and required indexes before inserting rows; use deferred foreign-key checks while loading related tables. Preserve the applied migration ledger as data rather than recreating or guessing it.
+2. Bound statement sizes without truncating values. The tested copy inserted rows and then appended large text in bounded updates addressed by the original row ID. It preserved SQL quoting, nulls, blobs, and autoincrement state. This method was validated for that snapshot; tables without row IDs, triggers, generated columns, or constraints on intermediate values require separate handling and another rehearsal.
+3. Import into a fresh private local D1 persistence directory. Compare the restored schema and every application row with the original export, including IDs, relationships, full extraction text, and ledger values. Require an empty foreign-key check. Counts alone cannot detect changed values. Document any excluded platform metadata explicitly.
+4. Keep this recovery test separate from the migration rehearsal. Apply the exact candidate migrations to another restored copy, verify only the intended transformations and ledger additions, and require a no-op second migration application.
+
+The successful rehearsal used a snapshot-specific builder and comparator retained with the private backup. They are recovery artifacts, not general migration tooling. Keep their dependencies, input/output checksums, exact commands, tool versions, and comparison results with the backup so recovery does not depend on a temporary worktree. Do not copy production exports or extraction evidence into this repository.
+
+Use the verified restore copy for subsequent local rehearsals, from the matching checkout with dependencies installed:
+
+```sh
+umask 077
+BOOZE_RECOVERY_TEST=$(mktemp -d)
+pnpm --filter @chikachow/booze-web exec wrangler d1 execute booze --local --persist-to "$BOOZE_RECOVERY_TEST" --file /absolute/private/backup/recovery/before-bounded.sql
+pnpm --filter @chikachow/booze-web exec wrangler d1 execute booze --local --persist-to "$BOOZE_RECOVERY_TEST" --command 'PRAGMA foreign_key_check' --json
+```
+
+The commands above do not replace the full data/schema comparison. Never import a restore copy over an existing populated database. A local rehearsal does not itself authorize or prove a production restore: choose the recovery point, preserve later writes, and coordinate D1, R2, and the compatible Worker before any production recovery.
+
 No production restore, migration, or object cleanup is part of the project audit. Existing metadata or photos lost before a fix require recovery from an available backup; code changes cannot reconstruct them reliably.
