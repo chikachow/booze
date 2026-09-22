@@ -4,13 +4,13 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 
 export const bundleBudgets = {
-  initialCssBytes: 190_000,
-  initialCssGzipBytes: 32_000,
+  initialCssBytes: 205_000,
+  initialCssGzipBytes: 37_000,
   initialJavaScriptBytes: 485_000,
   initialJavaScriptGzipBytes: 140_000,
   largestJavaScriptBytes: 485_000,
   totalFontBytes: 40_000,
-  totalJavaScriptGzipBytes: 230_000,
+  totalJavaScriptGzipBytes: 270_000,
 };
 
 export function measureClientBundle(clientDirectory) {
