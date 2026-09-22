@@ -14,6 +14,8 @@ Local Worker secrets belong in `apps/web/.dev.vars`; browser build variables bel
 
 The health route confirms that the Worker responds; it does not verify Clerk sign-in, D1 schema, R2 access, or model extraction. Verify sign-in and a catalogue read after deployment. Use a dedicated test site for any write smoke test.
 
+The wine identity migration has additional release and rollback constraints. Complete the [wine identity release checklist](wine-identity-release.md) before merging it. CI success alone does not satisfy those checks.
+
 ## D1 migration lineage
 
 Migrations `0000` through `0008` establish the original lineage. A comment-only v1 baseline follows them; subsequent generated migrations use timestamped folders. Keep every existing SQL file unchanged and in order. Schema changes append a new migration; do not replace history with a generated initial migration, rename old files, or hide mismatches with `IF NOT EXISTS`.
@@ -28,13 +30,17 @@ Export describes the desired schema; it does not export stored data or apply a d
 
 `pnpm --filter @chikachow/booze-db test` compares that export with a fresh SQLite database built from every checked-in SQL migration. It checks tables, columns, keys, indexes, and table options while allowing column order and foreign-key numbering to differ. The database tests also validate the snapshot graph and no-change generation. `pnpm check` additionally tests upgrade from the accepted target history on populated local D1. These checks do not read production. See [migration authoring, concurrent edits, and D1 rebuilds](drizzle-migrations.md).
 
-Before a release that adds a migration, compare the remote ledger with the checked-in filenames:
+Before a release that adds a migration, read the **applied ledger** and compare it with the accepted deployed history and the proposed release's checked-in filenames:
 
 ```sh
+pnpm --filter @chikachow/booze-web exec wrangler d1 execute booze --remote --command 'SELECT id, name, applied_at FROM d1_migrations ORDER BY id' --json
+git ls-tree -r --name-only HEAD -- packages/db/migrations
 pnpm --filter @chikachow/booze-web exec wrangler d1 migrations list booze --remote
 ```
 
-Stop if the histories disagree. Reconcile the repository against the deployed lineage before applying anything. Migration `0008` adds the durable R2 deletion queue; earlier migrations established the catalogue, captures, reviews, awards, and audit log.
+Compare only `.sql` paths, relative to `packages/db/migrations/`, with the ledger names. Every applied name must be accounted for; missing accepted migrations, unknown names, or an unexplained order are stop conditions. The only unapplied files should be the reviewed release additions. `migrations list` lists pending files; it does **not** expose unknown applied entries and is not a lineage check by itself. The ledger contains no SQL checksums: also verify immutable SQL against the recorded deployed source revision and inspect the exported schema. [Cloudflare migration tracking](https://developers.cloudflare.com/d1/reference/migrations/).
+
+Reconcile any disagreement against the deployed lineage before applying anything. Do not insert ledger records to make the check pass. Migration `0008` adds the durable R2 deletion queue; earlier migrations established the catalogue, captures, reviews, awards, and audit log.
 
 Migration `0003` historically removed inline OCR evidence columns. Do not apply it to an old database that still holds that evidence without first exporting and retaining it. This audit preserves the checked-in lineage; it does not reverse historical evidence removal.
 
