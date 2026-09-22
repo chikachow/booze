@@ -10,7 +10,6 @@
   "ignorePatterns": [
     ".agents/**",
     ".playwright-mcp/**",
-    "apps/*/.vinext/**",
     "apps/*/.wrangler/**",
     "apps/*/worker-configuration.d.ts",
     "apps/*/dist/**",
