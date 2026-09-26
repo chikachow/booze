@@ -306,28 +306,28 @@ function reviewDraft(candidate: unknown): ReviewDraft {
     ),
   };
 }
+function draftFields(
+  values: Readonly<Record<string, string>>,
+): Record<string, string | number | string[]> {
+  return Object.fromEntries(
+    Object.entries(values).flatMap<[string, string | number | string[]]>(([key, value]) => {
+      if (key === "grapeVarieties")
+        return [
+          [
+            key,
+            value
+              .split(",")
+              .map((part) => part.trim())
+              .filter(Boolean),
+          ],
+        ];
+      if (numericFields.has(key)) return value.trim() === "" ? [] : [[key, Number(value)]];
+      return [[key, value.trim()]];
+    }),
+  );
+}
 function draftCandidate(draft: ReviewDraft): CaptureReviewCandidate {
-  function fields(
-    values: Readonly<Record<string, string>>,
-  ): Record<string, string | number | string[]> {
-    return Object.fromEntries(
-      Object.entries(values).flatMap<[string, string | number | string[]]>(([key, value]) => {
-        if (key === "grapeVarieties")
-          return [
-            [
-              key,
-              value
-                .split(",")
-                .map((part) => part.trim())
-                .filter(Boolean),
-            ],
-          ];
-        if (numericFields.has(key)) return value.trim() === "" ? [] : [[key, Number(value)]];
-        return [[key, value.trim()]];
-      }),
-    );
-  }
-  const wine = fields(draft.wine);
+  const wine = draftFields(draft.wine);
   if (wine["vintageStatus"] !== "year") delete wine["vintageYear"];
   const status = draft.wine["vintageStatus"];
   return {
@@ -337,7 +337,7 @@ function draftCandidate(draft: ReviewDraft): CaptureReviewCandidate {
       designation: (draft.wine["designation"] ?? "").trim(),
       vintageStatus: status === "year" || status === "non_vintage" ? status : "unknown",
     },
-    bottle: fields(draft.bottle),
+    bottle: draftFields(draft.bottle),
   };
 }
 function facts(

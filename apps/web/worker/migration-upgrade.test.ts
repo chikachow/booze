@@ -16,6 +16,10 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 const migrationPath = "packages/db/migrations/";
 const cli = fileURLToPath(new URL("../node_modules/wrangler/bin/wrangler.js", import.meta.url));
 
+function git(...args: readonly string[]): string {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8" });
+}
+
 type MigrationFiles = Readonly<Record<string, string>>;
 
 function localD1(config: string, state: string, args: readonly string[]) {
@@ -190,8 +194,6 @@ void it("upgrades the accepted target history on populated local D1 without repl
   // CI supplies the PR target SHA or previous main SHA, never the merge base.
   // Local runs use the fetched origin/main; fetch it before validating a PR.
   const ref = env["BOOZE_MIGRATION_BASE"] ?? "origin/main";
-  const git = (...args: readonly string[]) =>
-    execFileSync("git", args, { cwd: root, encoding: "utf8" });
   const sha = git("rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`).trim();
   const names = git("ls-tree", "-r", "--name-only", "-z", sha, "--", migrationPath)
     .split("\0")
