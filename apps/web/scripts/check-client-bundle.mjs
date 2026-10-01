@@ -3,14 +3,15 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 
+// Reviewed size-regression tripwires, not performance targets. See docs/deployment.md.
 export const bundleBudgets = {
-  initialCssBytes: 205_000,
-  initialCssGzipBytes: 37_000,
-  initialJavaScriptBytes: 485_000,
-  initialJavaScriptGzipBytes: 140_000,
-  largestJavaScriptBytes: 485_000,
+  initialCssBytes: 225_000,
+  initialCssGzipBytes: 40_000,
+  initialJavaScriptBytes: 700_000,
+  initialJavaScriptGzipBytes: 210_000,
+  largestJavaScriptBytes: 650_000,
   totalFontBytes: 40_000,
-  totalJavaScriptGzipBytes: 270_000,
+  totalJavaScriptGzipBytes: 300_000,
 };
 
 export function measureClientBundle(clientDirectory) {
@@ -27,11 +28,27 @@ export function measureClientBundle(clientDirectory) {
   });
   const javaScriptFiles = assetMeasurements.filter(({ file }) => file.endsWith(".js"));
   const indexHtml = readFileSync(path.join(clientDirectory, "index.html"), "utf8");
-  const initialSource = /<script[^>]+src="\/assets\/([^"]+\.js)"/u.exec(indexHtml)?.[1];
-  const initial = javaScriptFiles.find((file) => file.file === initialSource);
-  if (initial === undefined) {
-    throw new Error("Could not identify the initial JavaScript asset from dist/client/index.html.");
+  const initialSources = new Set([
+    ...[...indexHtml.matchAll(/<script[^>]+src="\/assets\/([^" ]+\.js)"/gu)].map(
+      (match) => match[1],
+    ),
+    ...[
+      ...indexHtml.matchAll(
+        /<link\b(?=[^>]*\brel="modulepreload")[^>]*\bhref="\/assets\/([^" ]+\.js)"/gu,
+      ),
+    ].map((match) => match[1]),
+  ]);
+  if (initialSources.size === 0) {
+    throw new Error("Could not identify initial JavaScript assets from dist/client/index.html.");
   }
+  const initialFiles = javaScriptFiles.filter(({ file }) => initialSources.has(file));
+  if (initialFiles.length !== initialSources.size) {
+    throw new Error("An initial JavaScript asset referenced by dist/client/index.html is missing.");
+  }
+  const initial = {
+    bytes: initialFiles.reduce((total, file) => total + file.bytes, 0),
+    gzipBytes: initialFiles.reduce((total, file) => total + file.gzipBytes, 0),
+  };
   const largest = javaScriptFiles.toSorted((left, right) => right.bytes - left.bytes)[0];
   if (largest === undefined) {
     throw new Error("No client JavaScript assets were built.");

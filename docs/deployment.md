@@ -8,6 +8,16 @@ Worker secrets include `CLERK_SECRET_KEY` and, for photo extraction, `CF_AIG_TOK
 
 Local Worker secrets belong in `apps/web/.dev.vars`; browser build variables belong in `apps/web/.env.local`. Both are ignored. See [Cloudflare's environment-variable guidance](https://developers.cloudflare.com/workers/local-development/environment-variables/).
 
+CI builds both without a browser key and with a public test fixture key, enforcing the same bundle budgets for each. Deployment builds again with the production environment's actual key; its exact output must also pass those budgets.
+
+### Bundle regression checks
+
+The bundle limits are review tripwires, not measured user-experience targets. Do not add code or bundler complexity solely to squeeze below a limit; investigate a change and rebaseline deliberate increases when appropriate.
+
+The October 2026 production-key baseline with Vite's default splitting is 642,880 bytes / 189,021 bytes gzip for the JavaScript entry plus its HTML module preloads, 270,082 bytes gzip for all JavaScript, and 202,351 bytes / 35,981 bytes gzip for initial CSS. The largest JavaScript chunk is 595,488 bytes; fonts total 30,436 bytes. The corresponding limits allow roughly 10% headroom, rounded to practical thresholds; the existing 40,000-byte font limit is retained.
+
+Initial JavaScript includes each local script and module-preload asset in the built HTML once. It excludes dynamic imports, including Clerk and on-demand catalogue views; total JavaScript includes all emitted chunks. These gzip sizes are comparable build measurements, not a claim about the CDN's compression, cached transfers, browser execution time, or time to usable authenticated content. Evaluate those separately before tuning chunk boundaries.
+
 ## Release sequence
 
 `deploy.yml` runs after successful CI for a push to `main` and checks out that tested commit. It checks browser authentication configuration, builds the Worker and browser assets, applies pending D1 migrations, deploys the built output, and probes `/healthz`.
