@@ -25,4 +25,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter @chikachow/booze-web run build
+      - name: Build without browser authentication configuration
+        run: pnpm --filter @chikachow/booze-web run build
+
+      - name: Build with browser authentication configuration
+        run: pnpm --filter @chikachow/booze-web run build
+        env:
+          # Public test fixture: exercise the configured build without deployment secrets.
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_YnVuZGxlLWJ1ZGdldC1jaS5jbGVyay5hY2NvdW50cy5kZXYk
