@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@astryxdesign/core": "0.6.3",
-    "@astryxdesign/theme-neutral": "0.6.3",
+    "@astryxdesign/theme-neutral": "0.6.5",
     "@chikachow/booze-db": "workspace:*",
     "@clerk/backend": "3.20.1",
     "@clerk/react": "6.17.2",
@@ -34,7 +34,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "0.6.3",
+    "@astryxdesign/cli": "0.6.5",
     "@cloudflare/vite-plugin": "1.62.2",
     "@cloudflare/workers-types": "5.20260929.1",
     "@playwright/test": "1.63.0",
