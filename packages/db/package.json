@@ -16,7 +16,7 @@
     "drizzle-orm": "1.0.0-rc.4"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260929.1",
+    "@cloudflare/workers-types": "5.20261004.1",
     "drizzle-kit": "1.0.0-rc.4"
   }
 }
