@@ -42,6 +42,7 @@ describe("LazyLoadErrorBoundary", () => {
       screen.getByRole("alert", { name: "Cellar workspace could not be loaded" }),
     ).toBeVisible();
     expect(screen.getByText("Reload the latest application files.")).toBeVisible();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
     const button = screen.getByRole("button", { name: "Retry" });
     await waitFor(() => {
       expect(button).toHaveFocus();
@@ -49,6 +50,7 @@ describe("LazyLoadErrorBoundary", () => {
 
     await userEvent.click(button);
     expect(retry).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("keeps recovery available when the retry callback throws", async () => {

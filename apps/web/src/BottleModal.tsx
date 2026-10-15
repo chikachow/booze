@@ -384,9 +384,11 @@ export function BottleModal({
             {onMarkConsumed !== undefined && hasUnsavedChanges ? (
               <p className="field-hint">Save your changes before marking this bottle drunk.</p>
             ) : null}
-            {consumeError === null ? null : <Banner status="error" title={consumeError} />}
+            {consumeError === null ? null : (
+              <Banner role="alert" status="error" title={consumeError} />
+            )}
             {submitError === null ? null : (
-              <Banner aria-live="assertive" status="error" title={submitError} />
+              <Banner role="alert" status="error" title={submitError} />
             )}
           </div>
         </form>

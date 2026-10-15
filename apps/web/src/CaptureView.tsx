@@ -238,7 +238,7 @@ export function CaptureArea({
               />
             </div>
             {fileSelectionMessage === null ? null : (
-              <Banner status="warning" title={fileSelectionMessage} />
+              <Banner role="alert" status="warning" title={fileSelectionMessage} />
             )}
             {files.length === 0 ? null : (
               <ul className="photo-list" aria-label="Selected bottle photos">
@@ -260,6 +260,7 @@ export function CaptureArea({
               type="submit"
               variant="primary"
             />
+            {/* Submission outcomes are already announced by the app's persistent status region. */}
             {submitResult === null ? null : (
               <Banner
                 status={

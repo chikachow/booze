@@ -296,6 +296,7 @@ export function Catalogue({ authMode, authControl, getAuthHeaders }: CataloguePr
                 variant="ghost"
               />
             }
+            role="alert"
             status="warning"
             title={issue.message}
           />
