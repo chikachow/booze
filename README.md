@@ -21,6 +21,14 @@ pnpm check
 pnpm --filter @chikachow/booze-web build
 ```
 
+`check` first validates the frozen lockfile, declared peer requirements, and
+lockfile deduplication. The required CI dependency job runs the same gates and
+rejects lockfile changes. Dependency resolution permits intermediate peer
+conflicts; strict validation re-runs resolution with lifecycle scripts disabled.
+Run `pnpm dedupe --ignore-scripts` to fix avoidable duplication, then review the
+lockfile and repeat the checks. Node declarations stay on the Node 24 runtime
+major; Dependabot leaves major upgrades for a runtime change.
+
 Fetch current `origin/main` before running checks: the local D1 migration test uses it as the accepted upgrade history. See [migration authoring](docs/drizzle-migrations.md) for generation and parallel edits.
 
 The checks include migrated SQLite and D1 upgrade tests, React interaction tests, generated-theme validation, and Chrome browser tests in light and dark modes. Browser tests require Google Chrome and reserve port 4174. The build checks client bundle budgets.
