@@ -56,6 +56,13 @@ export function DestructiveActionDialog({
   }, [isOpen]);
 
   useEffect(() => {
+    // Focus only after React has committed the enabled recovery control.
+    if (error !== null && !isPending) {
+      cancelRef.current?.focus();
+    }
+  }, [error, isPending]);
+
+  useEffect(() => {
     const trapFocus = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== "Tab") {
         return;
@@ -96,18 +103,11 @@ export function DestructiveActionDialog({
         closeAndRestoreFocus(onSuccess);
         return;
       }
-      showFailure();
+      setError(failureMessage);
     } catch {
-      showFailure();
+      setError(failureMessage);
     }
     finishPending();
-  }
-
-  function showFailure(): void {
-    setError(failureMessage);
-    requestAnimationFrame(() => {
-      cancelRef.current?.focus();
-    });
   }
 
   function changeOpen(nextIsOpen: boolean): void {

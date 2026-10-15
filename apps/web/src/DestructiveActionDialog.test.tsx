@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -121,5 +121,50 @@ describe("DestructiveActionDialog", () => {
     expect(action).toHaveFocus();
     await user.tab();
     expect(cancel).toHaveFocus();
+  });
+
+  it("restores safe focus when an animation frame runs before the failure commit", async () => {
+    const user = userEvent.setup();
+    let resolveAction: ((result: boolean) => void) | undefined;
+    render(
+      <DestructiveActionDialog
+        actionLabel="Delete capture"
+        description="This cannot be undone."
+        failureMessage="Capture was not deleted."
+        isOpen
+        title="Delete this capture?"
+        onAction={() =>
+          new Promise<boolean>((resolve) => {
+            resolveAction = resolve;
+          })
+        }
+        onOpenChange={vi.fn()}
+      />,
+    );
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    await user.click(screen.getByRole("button", { name: "Delete capture" }));
+    expect(cancel).toBeDisabled();
+
+    const frames: FrameRequestCallback[] = [];
+    const requestFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        frames.push(callback);
+        return frames.length;
+      });
+    try {
+      await act(async () => {
+        resolveAction?.(false);
+        await Promise.resolve();
+        // React has queued its state updates, but the disabled DOM has not committed yet.
+        expect(cancel).toBeDisabled();
+        for (const callback of frames.splice(0)) callback(0);
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent("Capture was not deleted.");
+      expect(cancel).toBeEnabled();
+      expect(cancel).toHaveFocus();
+    } finally {
+      requestFrame.mockRestore();
+    }
   });
 });
