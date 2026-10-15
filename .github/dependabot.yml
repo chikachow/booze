@@ -27,10 +27,14 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       astryx-design:
         patterns:
           - "@astryxdesign/*"
+          - gpt-tokenizer
       clerk:
         patterns:
           - "@clerk/*"
@@ -64,3 +68,7 @@ updates:
         patterns:
           - "@vitejs/plugin-react"
           - vite
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
