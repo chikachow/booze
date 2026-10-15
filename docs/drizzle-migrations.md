@@ -1,6 +1,6 @@
 # Drizzle migrations on D1
 
-Booze uses Drizzle ORM and Kit **1.0.0-rc.4** for schema definitions, SQL export, and migration generation. Wrangler applies migrations and owns the `d1_migrations` ledger. The v1 snapshot graph allows compatible editor branches to coexist without a shared journal. It is still a release candidate: graph checking, SQL replay, and migration review serve different purposes. [Drizzle v1 guide](https://orm.drizzle.team/docs/upgrade-v1).
+Booze uses Drizzle ORM and Kit **1.0.0-rc.5-5935859** for schema definitions, SQL export, and migration generation. Wrangler applies migrations and owns the `d1_migrations` ledger. The v1 snapshot graph allows compatible editor branches to coexist without a shared journal. It is still a release candidate: graph checking, SQL replay, and migration review serve different purposes. [Drizzle v1 guide](https://orm.drizzle.team/docs/upgrade-v1).
 
 ## Authoring and parallel changes
 
