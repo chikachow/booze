@@ -159,7 +159,7 @@ export function DestructiveActionDialog({
         <p className="field-hint" id={descriptionId}>
           {description}
         </p>
-        {error === null ? null : <Banner status="error" title={error} />}
+        {error === null ? null : <Banner role="alert" status="error" title={error} />}
         <div className="dialog-actions">
           <Button
             ref={cancelRef}

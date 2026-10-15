@@ -34,7 +34,6 @@ updates:
       astryx-design:
         patterns:
           - "@astryxdesign/*"
-          - gpt-tokenizer
       clerk:
         patterns:
           - "@clerk/*"

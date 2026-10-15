@@ -77,6 +77,7 @@ export class LazyLoadErrorBoundary extends Component<
           />
         }
         description={this.props.description}
+        role="alert"
         status="error"
         title={this.props.title}
       />

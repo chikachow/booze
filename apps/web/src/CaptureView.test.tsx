@@ -180,6 +180,9 @@ describe("CaptureArea photo picker", () => {
     expect(
       screen.getByText("Only 4 photos can be attached. 1 extra file was not added."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Only 4 photos can be attached. 1 extra file was not added.",
+    );
     expect(screen.getByRole("button", { name: "Add more bottle photos" })).toBeDisabled();
   });
 

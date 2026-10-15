@@ -4,7 +4,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-export const themeArtifacts = ["booze.css", "booze.js", "booze.d.ts", "booze.variants.d.ts"];
+export const themeArtifacts = [
+  "booze.css",
+  "booze.css.d.ts",
+  "booze.js",
+  "booze.d.ts",
+  "booze.variants.d.ts",
+];
 
 export function normaliseGeneratedHeader(value) {
   return value

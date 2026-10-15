@@ -24,31 +24,40 @@ describe("DestructiveActionDialog", () => {
     expect(screen.queryByRole("button", { name: "Delete location" })).not.toBeInTheDocument();
   });
 
-  it("keeps accessible failure feedback inside the active alert dialog", async () => {
-    const user = userEvent.setup();
-    const onOpenChange = vi.fn();
+  it.each(["unsuccessful", "rejected"])(
+    "keeps %s action feedback inside the active alert dialog",
+    async (outcome) => {
+      const user = userEvent.setup();
+      const onOpenChange = vi.fn();
 
-    render(
-      <DestructiveActionDialog
-        actionLabel="Delete bottle"
-        description="This cannot be undone."
-        failureMessage="Bottle was not deleted. Try again."
-        isOpen
-        title="Delete this bottle?"
-        onAction={async () => false}
-        onOpenChange={(isOpen) => {
-          onOpenChange(isOpen);
-        }}
-      />,
-    );
+      render(
+        <DestructiveActionDialog
+          actionLabel="Delete bottle"
+          description="This cannot be undone."
+          failureMessage="Bottle was not deleted. Try again."
+          isOpen
+          title="Delete this bottle?"
+          onAction={async () => {
+            if (outcome === "rejected") throw new Error("delete failed");
+            return false;
+          }}
+          onOpenChange={(isOpen) => {
+            onOpenChange(isOpen);
+          }}
+        />,
+      );
 
-    const dialog = screen.getByRole("alertdialog", { name: "Delete this bottle?" });
-    await user.click(screen.getByRole("button", { name: "Delete bottle" }));
+      const dialog = screen.getByRole("alertdialog", { name: "Delete this bottle?" });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Delete bottle" }));
 
-    expect(await screen.findByText("Bottle was not deleted. Try again.")).toBeVisible();
-    expect(dialog).toContainElement(screen.getByRole("alert"));
-    expect(onOpenChange).not.toHaveBeenCalledWith(false);
-  });
+      expect(await screen.findByText("Bottle was not deleted. Try again.")).toBeVisible();
+      expect(dialog).toContainElement(screen.getByRole("alert"));
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      expect(screen.getByRole("alert").querySelector('[role="alert"], [aria-live]')).toBeNull();
+      expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    },
+  );
 
   it("blocks repeat activation and closes only after success", async () => {
     const user = userEvent.setup();
@@ -79,10 +88,12 @@ describe("DestructiveActionDialog", () => {
     await user.dblClick(action);
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(action).toBeDisabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     resolveAction?.(true);
     expect(await screen.findByRole("button", { name: "Delete site" })).toBeEnabled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("keeps keyboard focus cycling inside the active dialog", async () => {

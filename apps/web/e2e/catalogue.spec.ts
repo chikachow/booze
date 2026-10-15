@@ -225,6 +225,8 @@ async function failDestructiveAction(
   await action.focus();
   await action.press("Enter");
   await expect(dialog.getByRole("alert")).toContainText(failureMessage);
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
   await expect(dialog).toBeVisible();
   await expectNoAxeViolations(page);
   await action.focus();
@@ -375,6 +377,8 @@ test("keeps failed editor values and rejects malformed award numbers", async ({ 
   await expectNoAxeViolations(page);
   await dialog.getByRole("combobox", { name: "What are you editing?" }).click();
   await page.getByRole("option", { name: "Correct wine details" }).click();
+  await expect(dialog.getByText(/Corrections will update all/u)).toBeVisible();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
   const winery = dialog.getByRole("textbox", { name: /Winery/u });
   await winery.fill("Unsaved Browser Winery");
   await dialog.getByRole("button", { name: "Add review" }).click();
@@ -572,6 +576,12 @@ test("clears submitted capture files without duplicating a committed capture", a
   await expect(
     page.getByText("Capture submitted. Extraction will run in the background.", { exact: true }),
   ).toBeVisible();
+  // The app status region announces this outcome; the visible copy must not announce it again.
+  const submittedBanner = page.locator(".astryx-banner-frame").filter({
+    hasText: "Capture submitted. Extraction will run in the background.",
+  });
+  await expect(submittedBanner).not.toHaveAttribute("role");
+  await expect(submittedBanner).not.toHaveAttribute("aria-live");
   await expect(page.getByText("0 of 4 selected.", { exact: false })).toBeVisible();
   await expect(
     page.getByRole("alert", {
@@ -596,6 +606,7 @@ test("recovers from a rejected cold workspace chunk", async ({ page }) => {
     name: "Cellar workspace could not be loaded",
   });
   await expect(recovery).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(1);
   await expect(recovery.getByRole("button", { name: "Retry" })).toBeFocused();
   await expectNoAxeViolations(page);
 
@@ -738,4 +749,34 @@ test("astryx regression: in-place navigation is marked current item", async ({ p
     "aria-current",
     "true",
   );
+});
+
+test.describe("phone theme", () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+
+  test("uses readable phone typography and keeps destructive errors accessible", async ({
+    page,
+  }, testInfo) => {
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    await expect(page.getByRole("textbox", { name: "Search bottles" })).toHaveCSS(
+      "font-size",
+      "16px",
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+
+    await page.locator(".bottle-card").first().getByRole("button", { name: "Edit" }).click();
+    await page
+      .getByRole("dialog", { name: "Edit bottle" })
+      .getByRole("button", { name: "Delete bottle" })
+      .click();
+    const dialog = page.getByRole("alertdialog", { name: "Delete this bottle?" });
+    await dialog.getByRole("button", { name: "Delete bottle" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Bottle was not deleted");
+    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await expectNoAxeViolations(page);
+    await page.screenshot({ path: testInfo.outputPath("phone-destructive-error.png") });
+  });
 });
