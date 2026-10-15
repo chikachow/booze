@@ -133,12 +133,12 @@ describe("DestructiveActionDialog", () => {
         failureMessage="Capture was not deleted."
         isOpen
         title="Delete this capture?"
-        onAction={() =>
+        onAction={async () =>
           new Promise<boolean>((resolve) => {
             resolveAction = resolve;
           })
         }
-        onOpenChange={vi.fn()}
+        onOpenChange={vi.fn<(isOpen: boolean) => void>()}
       />,
     );
     const cancel = screen.getByRole("button", { name: "Cancel" });
@@ -146,19 +146,19 @@ describe("DestructiveActionDialog", () => {
     expect(cancel).toBeDisabled();
 
     const frames: FrameRequestCallback[] = [];
-    const requestFrame = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockImplementation((callback) => {
-        frames.push(callback);
-        return frames.length;
-      });
+    const requestFrame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((frame) => {
+      frames.push(frame);
+      return frames.length;
+    });
     try {
       await act(async () => {
         resolveAction?.(false);
-        await Promise.resolve();
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
         // React has queued its state updates, but the disabled DOM has not committed yet.
         expect(cancel).toBeDisabled();
-        for (const callback of frames.splice(0)) callback(0);
+        for (const frame of frames.splice(0)) frame(0);
       });
       expect(screen.getByRole("alert")).toHaveTextContent("Capture was not deleted.");
       expect(cancel).toBeEnabled();
