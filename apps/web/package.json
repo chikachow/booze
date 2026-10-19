@@ -21,7 +21,7 @@
     "@astryxdesign/core": "0.7.0",
     "@astryxdesign/theme-neutral": "0.7.0",
     "@chikachow/booze-db": "workspace:*",
-    "@clerk/backend": "3.23.2",
+    "@clerk/backend": "3.25.0",
     "@clerk/react": "6.17.8",
     "@fontsource-variable/figtree": "5.3.0",
     "@modelcontextprotocol/sdk": "1.32.1",
